@@ -1,0 +1,42 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # 1. Pass API endpoints directly to backend handler (never rewrite to index.html)
+    RewriteRule ^api(/.*)?$ - [L]
+    RewriteRule ^google-auth(/.*)?$ - [L]
+
+    # 2. Serve physical files and directories directly
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # 3. Prevent missing static assets from falling back to index.html (prevents MIME errors)
+    RewriteCond %{REQUEST_URI} \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|mp3|wav|ogg|json)$ [NC]
+    RewriteRule ^ - [R=404,L]
+
+    # 4. Route all remaining SPA routes to index.html
+    RewriteRule ^ index.html [L]
+</IfModule>
+
+# Correct MIME Types
+<IfModule mod_mime.c>
+    AddType application/javascript .js
+    AddType text/css .css
+    AddType image/svg+xml .svg
+</IfModule>
+
+# Caching Configuration
+<IfModule mod_headers.c>
+    # Prevent caching of index.html so updated bundle references are loaded immediately
+    <FilesMatch "^index\.html$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </FilesMatch>
+
+    # Cache immutable static assets in /assets/ for 1 year
+    <FilesMatch "\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+</IfModule>

@@ -1,0 +1,88 @@
+================================================================================
+WINCASHZ PRODUCTION CPANEL DEPLOYMENT GUIDE (ZERO-SSH / NO CLI REQUIRED)
+================================================================================
+
+This package contains everything needed to run Wincashz on Namecheap cPanel shared hosting.
+No Terminal, Composer, npm, or artisan commands are needed on the server.
+
+--------------------------------------------------------------------------------
+STEP 1: CREATE DATABASE IN CPANEL
+--------------------------------------------------------------------------------
+1. Log into Namecheap cPanel.
+2. Go to "MySQL Database Wizard".
+3. Create a new database (e.g. youruser_wincashz).
+4. Create a database user with a strong password.
+5. Grant "ALL PRIVILEGES" to the user for that database.
+6. Note down the Database Name, Username, and Password.
+
+--------------------------------------------------------------------------------
+STEP 2: IMPORT DATABASE SCHEMA
+--------------------------------------------------------------------------------
+1. In cPanel, open "phpMyAdmin".
+2. Select your newly created database from the left sidebar.
+3. Click the "Import" tab at the top.
+4. Choose the file: DEPLOY/wincashz-database.sql
+5. Click "Import" at the bottom.
+6. Verify all 16 tables are created cleanly with zero errors.
+
+--------------------------------------------------------------------------------
+STEP 3: UPLOAD FILES VIA CPANEL FILE MANAGER
+--------------------------------------------------------------------------------
+1. Open cPanel "File Manager".
+2. Navigate into your web root directory (usually `public_html/`).
+3. Click "Upload" and upload `wincashz-production.zip`.
+4. Right-click `wincashz-production.zip` in File Manager and select "Extract".
+5. Extract directly into `public_html/`.
+6. Make sure the structure inside `public_html/` is:
+   public_html/
+   ├── index.html
+   ├── favicon.svg
+   ├── .htaccess
+   ├── assets/
+   │   ├── index-*.js
+   │   └── index-*.css
+   └── api/
+       ├── app/
+       ├── bootstrap/
+       ├── config/
+       ├── database/
+       ├── public/
+       │   ├── index.php
+       │   └── .htaccess
+       ├── routes/
+       ├── storage/
+       ├── vendor/
+       ├── .htaccess
+       ├── .env.example
+       └── artisan
+
+--------------------------------------------------------------------------------
+STEP 4: CONFIGURE PRODUCTION ENVIRONMENT (.env)
+--------------------------------------------------------------------------------
+1. In cPanel File Manager, make sure "Show Hidden Files (dotfiles)" is enabled in Settings (top-right gear icon).
+2. Inside `public_html/api/`, create a file named `.env` (or copy from `PRODUCTION_ENV_TEMPLATE.txt`).
+3. Fill in your MySQL credentials:
+   DB_DATABASE=youruser_wincashz
+   DB_USERNAME=youruser_wincashz
+   DB_PASSWORD=your_actual_db_password
+4. Set your APP_KEY and JWT_SECRET.
+5. Save the `.env` file.
+
+--------------------------------------------------------------------------------
+STEP 5: VERIFY FILE PERMISSIONS
+--------------------------------------------------------------------------------
+1. Ensure `public_html/api/storage` and `public_html/api/bootstrap/cache` are writable (permission 755 or 775).
+2. Ensure `.env` permission is 600 or 644.
+
+--------------------------------------------------------------------------------
+STEP 6: TEST YOUR LIVE DEPLOYMENT
+--------------------------------------------------------------------------------
+1. Open https://wincashz.com/ in your browser.
+2. Verify the landing page loads cleanly without errors.
+3. Test user registration and login (both redirect to /earn).
+4. Verify dynamic offerwalls and earn tabs load from the database.
+5. Verify admin panel routes at `/admin` and postback endpoint at `/api/offerwall-postback/{slug}`.
+
+================================================================================
+DEPLOYMENT COMPLETE!
+================================================================================

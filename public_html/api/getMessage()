@@ -1,0 +1,6 @@
+PHP 8.4.26 (cli) (built: Sep 22 2026 15:09:58) (ZTS Visual C++ 2022 x64)
+Copyright (c) The PHP Group
+Built by The PHP Group
+Zend Engine v4.4.26, Copyright (c) Zend Technologies
+
+Parse error: syntax error, unexpected token "\" in Command line code on line 1

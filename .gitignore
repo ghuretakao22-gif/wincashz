@@ -1,0 +1,28 @@
+# Environment files
+.env
+.env.*
+*.env
+public_html/api/.env
+public_html/api/.env.*
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+vendor/
+public_html/api/vendor/
+
+# Storage & Logs
+storage/logs/
+public_html/api/storage/logs/
+*.log
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Temporary scratch & cache files
+scratch/
+.phpunit.result.cache
+.phpunit.cache/
