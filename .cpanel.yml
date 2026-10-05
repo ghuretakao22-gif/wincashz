@@ -29,3 +29,8 @@ deployment:
     - /bin/cp public_html/api/composer.json $DEPLOYPATH/api/
     - /bin/cp public_html/api/composer.lock $DEPLOYPATH/api/
     - /bin/cp public_html/api/.htaccess $DEPLOYPATH/api/
+    - cd $DEPLOYPATH/api && COMPOSER_BIN=$(which composer 2>/dev/null || which composer.phar 2>/dev/null || echo "composer") && $COMPOSER_BIN install --no-dev --prefer-dist --optimize-autoloader --no-interaction
+    - cd $DEPLOYPATH/api && php artisan config:clear
+    - cd $DEPLOYPATH/api && php artisan route:clear
+    - cd $DEPLOYPATH/api && php artisan view:clear
+    - cd $DEPLOYPATH/api && php artisan cache:clear
