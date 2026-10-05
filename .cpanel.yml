@@ -2,6 +2,16 @@
 deployment:
   tasks:
     - export DEPLOYPATH=/home/$USER/public_html
+    - /bin/mkdir -p $DEPLOYPATH/api/storage/app/public
+    - /bin/mkdir -p $DEPLOYPATH/api/storage/app/private
+    - /bin/mkdir -p $DEPLOYPATH/api/storage/framework/cache/data
+    - /bin/mkdir -p $DEPLOYPATH/api/storage/framework/sessions
+    - /bin/mkdir -p $DEPLOYPATH/api/storage/framework/testing
+    - /bin/mkdir -p $DEPLOYPATH/api/storage/framework/views
+    - /bin/mkdir -p $DEPLOYPATH/api/storage/logs
+    - /bin/mkdir -p $DEPLOYPATH/api/bootstrap/cache
+    - /bin/chmod -R 775 $DEPLOYPATH/api/storage
+    - /bin/chmod -R 775 $DEPLOYPATH/api/bootstrap/cache
     - /bin/cp -R public_html/assets $DEPLOYPATH/
     - /bin/cp public_html/index.html $DEPLOYPATH/
     - /bin/cp public_html/favicon.png $DEPLOYPATH/
