@@ -1827,12 +1827,14 @@ class AdminController extends Controller
                 ]);
             }
 
+            $notificationMessage = 'You have received '.$this->normalizeMoney($reward).' coins from '.$offerwallSlug.' for '.$offerName;
+
             UserNotification::create([
                 'user_id' => $lockedUser->id,
                 'type' => 'task_completed',
                 'icon' => 'coins',
-                'title' => 'You have received '.$this->normalizeMoney($reward).' coins from '.$offerwallSlug.' for '.$offerName,
-                'message' => null,
+                'title' => 'Offer Completed',
+                'message' => $notificationMessage,
             ]);
         });
 
