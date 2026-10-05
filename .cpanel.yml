@@ -1,0 +1,21 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/$USER/public_html
+    - /bin/cp -R public_html/assets $DEPLOYPATH/
+    - /bin/cp public_html/index.html $DEPLOYPATH/
+    - /bin/cp public_html/favicon.png $DEPLOYPATH/
+    - /bin/cp public_html/favicon.svg $DEPLOYPATH/
+    - /bin/cp public_html/icons.svg $DEPLOYPATH/
+    - /bin/cp public_html/.htaccess $DEPLOYPATH/
+    - /bin/cp -R public_html/api/app $DEPLOYPATH/api/
+    - /bin/cp -R public_html/api/bootstrap $DEPLOYPATH/api/
+    - /bin/cp -R public_html/api/config $DEPLOYPATH/api/
+    - /bin/cp -R public_html/api/database $DEPLOYPATH/api/
+    - /bin/cp -R public_html/api/public $DEPLOYPATH/api/
+    - /bin/cp -R public_html/api/resources $DEPLOYPATH/api/
+    - /bin/cp -R public_html/api/routes $DEPLOYPATH/api/
+    - /bin/cp public_html/api/artisan $DEPLOYPATH/api/
+    - /bin/cp public_html/api/composer.json $DEPLOYPATH/api/
+    - /bin/cp public_html/api/composer.lock $DEPLOYPATH/api/
+    - /bin/cp public_html/api/.htaccess $DEPLOYPATH/api/
