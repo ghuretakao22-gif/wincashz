@@ -1,12 +1,17 @@
 const getApiBase = () => {
+  let base = '';
   if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE_URL) {
-    const base = import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '');
-    return base.endsWith('/api') ? base : `${base}/api`;
+    base = import.meta.env.VITE_API_BASE_URL;
+  } else if (typeof window !== 'undefined' && window.VITE_API_BASE_URL) {
+    base = window.VITE_API_BASE_URL;
   }
-  if (typeof window !== 'undefined' && window.VITE_API_BASE_URL) {
-    const base = window.VITE_API_BASE_URL.replace(/\/$/, '');
-    return base.endsWith('/api') ? base : `${base}/api`;
+
+  if (base) {
+    let cleanBase = base.replace(/\/$/, '');
+    cleanBase = cleanBase.replace(/\/(api\/public|api|public)$/i, '');
+    return `${cleanBase}/api`;
   }
+
   return '/api';
 };
 
