@@ -31,6 +31,30 @@ class IpCountryResolver
             return $headerCountry ?: 'Local';
         }
 
+        try {
+            $res = \Illuminate\Support\Facades\Http::timeout(3)->get("https://ipapi.co/{$resolvedIp}/json/");
+            if ($res->successful()) {
+                $data = $res->json();
+                $country = $data['country_name'] ?? $data['country'] ?? null;
+                if ($this->isFilledString($country)) {
+                    return $this->normalizeCountryValue($country);
+                }
+            }
+        } catch (\Throwable $e) {
+        }
+
+        try {
+            $res = \Illuminate\Support\Facades\Http::timeout(3)->get("https://api.country.is/{$resolvedIp}");
+            if ($res->successful()) {
+                $data = $res->json();
+                $country = $data['country'] ?? $data['country_name'] ?? null;
+                if ($this->isFilledString($country)) {
+                    return $this->normalizeCountryValue($country);
+                }
+            }
+        } catch (\Throwable $e) {
+        }
+
         return $headerCountry ?: 'Unknown';
     }
 

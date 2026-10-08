@@ -418,4 +418,76 @@ class OfferwallPostbackTest extends TestCase
 
         $response->assertOk()->assertContent('Ok');
     }
+
+    public function test_cpalead_postback_converts_usd_payout_to_coins_correctly(): void
+    {
+        DB::table('offerwalls')->insert([
+            'name' => 'CPALead',
+            'badge' => null,
+            'logo_url' => 'https://example.com/cpalead.png',
+            'category' => 'offerwall',
+            'iframe_url' => 'https://example.com/cpalead/frame',
+            'rating' => 5,
+            'is_active' => true,
+            'sort_order' => 1,
+            'unlock_level' => 1,
+            'postback_slug' => 'cpalead',
+            'postback_parameters' => json_encode([
+                'userId' => ['name' => 'subid', 'placeholder' => '{userId}'],
+                'transactionId' => ['name' => 'transid', 'placeholder' => '{transactionId}'],
+                'revenue' => ['name' => 'payout', 'placeholder' => '{payout}'],
+                'offerName' => ['name' => 'campaign_name', 'placeholder' => '{offerName}'],
+                'offerId' => ['name' => 'campaign_id', 'placeholder' => '{offerId}'],
+                'ip' => ['name' => 'ip', 'placeholder' => '{ip}'],
+                'country' => ['name' => 'country', 'placeholder' => '{country}'],
+                'extras' => [],
+            ]),
+            'postback_url' => 'https://example.com/api/offerwall-postback/cpalead',
+            'postback_signature_required' => false,
+            'postback_whitelist_ip_required' => false,
+            'postback_whitelist_ips' => json_encode([]),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $userId = DB::table('users')->insertGetId([
+            'name' => 'CPALead User',
+            'username' => 'cpaleaduser',
+            'email' => 'cpalead@example.com',
+            'role' => 'user',
+            'ip' => '127.0.0.1',
+            'country' => 'United States',
+            'balance' => 0,
+            'level' => 1,
+            'referral_code' => 'CPA123',
+            'referred_by' => null,
+            'total_referred' => 0,
+            'referral_earning' => 0,
+            'email_verified_at' => now(),
+            'password' => bcrypt('secret123'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->get('/api/offerwall-postback/cpalead?subid='.$userId.'&transid=cpa-tx-101&payout=0.47&campaign_name=Hero+Wars&campaign_id=987&ip=127.0.0.1&country=US');
+        $response->assertOk()->assertContent('Ok');
+
+        $completedTask = DB::table('completed_tasks')->where('transaction_id', 'cpa-tx-101')->first();
+        $this->assertNotNull($completedTask);
+        $this->assertSame(0.47, (float) $completedTask->revenue);
+        $this->assertSame(470.0, (float) $completedTask->currency_reward);
+        $this->assertSame(470.0, (float) DB::table('users')->where('id', $userId)->value('balance'));
+
+        $timelineEntry = DB::table('timeline_entries')->where('task_id', '987')->first();
+        $this->assertNotNull($timelineEntry);
+        $this->assertSame(470.0, (float) $timelineEntry->currency_reward);
+
+        $notification = DB::table('user_notifications')->where('user_id', $userId)->first();
+        $this->assertNotNull($notification);
+        $this->assertSame('You have received 470 coins from cpalead for Hero Wars', $notification->title);
+
+        $transaction = DB::table('transactions')->where('transaction_id', 'cpa-tx-101')->first();
+        $this->assertNotNull($transaction);
+        $this->assertSame(470.0, (float) $transaction->amount);
+    }
 }

@@ -162,7 +162,7 @@
 .animate-ticker {
   display: inline-flex;
   width: max-content;
-  animation: ticker-marquee 98s linear infinite;
+  animation: ticker-marquee 130s linear infinite;
 }
 
 .animate-ticker:hover {
@@ -236,6 +236,9 @@
   }
   .btn-shimmer::after {
     animation-duration: 6s;
+  }
+  .animate-ticker {
+    animation-duration: 155s !important;
   }
 }
 

@@ -57,120 +57,180 @@ class AdminController extends Controller
 
     public function dashboard(): JsonResponse
     {
-        $today = Carbon::today();
-        $startOfDay = $today->copy()->startOfDay();
-        $endOfDay = $today->copy()->endOfDay();
+        try {
+            $today = Carbon::today();
+            $startOfDay = $today->copy()->startOfDay();
+            $endOfDay = $today->copy()->endOfDay();
 
-        $totalUsers = User::count();
-        $totalCompletedTasks = CompletedTask::count();
-        $todayCompletedTasks = CompletedTask::whereBetween('created_at', [$startOfDay, $endOfDay])->count();
-        $totalChargebacks = Chargeback::count();
-        $todayChargebacks = Chargeback::whereBetween('created_at', [$startOfDay, $endOfDay])->count();
+            $totalUsers = Schema::hasTable('users') ? User::count() : 0;
+            $totalCompletedTasks = Schema::hasTable('completed_tasks') ? CompletedTask::count() : 0;
+            $todayCompletedTasks = Schema::hasTable('completed_tasks')
+                ? CompletedTask::whereBetween('created_at', [$startOfDay, $endOfDay])->count()
+                : 0;
+            $totalChargebacks = Schema::hasTable('chargebacks') ? Chargeback::count() : 0;
+            $todayChargebacks = Schema::hasTable('chargebacks')
+                ? Chargeback::whereBetween('created_at', [$startOfDay, $endOfDay])->count()
+                : 0;
 
-        $pendingWithdrawalsQuery = Transaction::query()
-            ->where('type', 'like', 'withdrawal%')
-            ->where('status', 'pending');
-        $pendingWithdrawalsCount = (int) $pendingWithdrawalsQuery->count();
-        $pendingWithdrawalsAmount = (float) $pendingWithdrawalsQuery->sum('amount');
+            $pendingWithdrawalsCount = 0;
+            $pendingWithdrawalsAmount = 0.0;
+            $allWithdrawalsCount = 0;
+            $allWithdrawalsAmount = 0.0;
 
-        $allWithdrawalsCount = Transaction::query()
-            ->where('type', 'like', 'withdrawal%')
-            ->count();
-        $allWithdrawalsAmount = (float) Transaction::query()
-            ->where('type', 'like', 'withdrawal%')
-            ->where('status', 'completed')
-            ->sum('amount');
+            if (Schema::hasTable('transactions')) {
+                $pendingWithdrawalsQuery = Transaction::query()
+                    ->where('type', 'like', 'withdrawal%')
+                    ->where('status', 'pending');
+                $pendingWithdrawalsCount = (int) $pendingWithdrawalsQuery->count();
+                $pendingWithdrawalsAmount = (float) $pendingWithdrawalsQuery->sum('amount');
 
-        $totalRevenue = (float) CompletedTask::sum('revenue');
-        $todayRevenue = (float) CompletedTask::whereBetween('created_at', [$startOfDay, $endOfDay])->sum('revenue');
-        $totalChargebackRevenue = (float) Chargeback::sum('revenue');
-        $todayChargebackRevenue = (float) Chargeback::whereBetween('created_at', [$startOfDay, $endOfDay])->sum('revenue');
-        $netRevenue = round($totalRevenue - $totalChargebackRevenue, 2);
+                $allWithdrawalsCount = Transaction::query()
+                    ->where('type', 'like', 'withdrawal%')
+                    ->count();
+                $allWithdrawalsAmount = (float) Transaction::query()
+                    ->where('type', 'like', 'withdrawal%')
+                    ->where('status', 'completed')
+                    ->sum('amount');
+            }
 
-        $activeOfferwalls = 0;
-        if (Schema::hasTable('offerwalls')) {
-            $activeOfferwalls = DB::table('offerwalls')->where('status', '!=', 0)->count();
+            $totalRevenue = Schema::hasTable('completed_tasks') ? (float) CompletedTask::sum('revenue') : 0.0;
+            $todayRevenue = Schema::hasTable('completed_tasks')
+                ? (float) CompletedTask::whereBetween('created_at', [$startOfDay, $endOfDay])->sum('revenue')
+                : 0.0;
+            $totalChargebackRevenue = Schema::hasTable('chargebacks') ? (float) Chargeback::sum('revenue') : 0.0;
+            $todayChargebackRevenue = Schema::hasTable('chargebacks')
+                ? (float) Chargeback::whereBetween('created_at', [$startOfDay, $endOfDay])->sum('revenue')
+                : 0.0;
+            $netRevenue = round($totalRevenue - $totalChargebackRevenue, 2);
+
+            $activeOfferwalls = 0;
+            if (Schema::hasTable('offerwalls')) {
+                $activeOfferwalls = DB::table('offerwalls')->where('status', '!=', 0)->count();
+            }
+
+            $summaryData = [
+                'totalUsers' => $totalUsers,
+                'totalCompletedOffers' => $totalCompletedTasks,
+                'todayCompletedOffers' => $todayCompletedTasks,
+                'totalRevenueUsd' => round($totalRevenue, 2),
+                'todayRevenueUsd' => round($todayRevenue, 2),
+                'totalChargebackUsd' => round($totalChargebackRevenue, 2),
+                'todayChargebackUsd' => round($todayChargebackRevenue, 2),
+                'totalChargebacks' => $totalChargebacks,
+                'todayChargebacks' => $todayChargebacks,
+                'netRevenueUsd' => $netRevenue,
+                'pendingWithdrawalsCount' => $pendingWithdrawalsCount,
+                'pendingWithdrawalsAmount' => round($pendingWithdrawalsAmount, 2),
+                'allWithdrawalsCount' => $allWithdrawalsCount,
+                'allWithdrawalsAmount' => round($allWithdrawalsAmount, 2),
+                'activeOfferwalls' => $activeOfferwalls,
+            ];
+
+            $googleAuthEnabled = false;
+            if (Schema::hasTable('google_authentications')) {
+                try {
+                    $googleAuthEnabled = GoogleAuthentication::isEnabled();
+                } catch (\Throwable $e) {
+                    $googleAuthEnabled = false;
+                }
+            }
+
+            return response()->json([
+                'summary' => $summaryData,
+                'stats' => $summaryData,
+                'metrics' => [
+                    [
+                        'label' => 'All Users',
+                        'value' => $totalUsers,
+                    ],
+                    [
+                        'label' => 'Completed Tasks',
+                        'value' => $totalCompletedTasks,
+                    ],
+                    [
+                        'label' => 'All Chargebacks',
+                        'value' => $totalChargebacks,
+                    ],
+                    [
+                        'label' => 'Pending Withdrawals',
+                        'value' => $pendingWithdrawalsCount,
+                    ],
+                    [
+                        'label' => 'All Withdrawals',
+                        'value' => $allWithdrawalsCount,
+                    ],
+                ],
+                'revenue' => [
+                    [
+                        'label' => 'Today Revenue',
+                        'value' => number_format($todayRevenue, 2, '.', ''),
+                    ],
+                    [
+                        'label' => 'Total Revenue',
+                        'value' => number_format($totalRevenue, 2, '.', ''),
+                    ],
+                    [
+                        'label' => 'Today Chargeback',
+                        'value' => number_format($todayChargebackRevenue, 2, '.', ''),
+                    ],
+                    [
+                        'label' => 'Total Chargeback',
+                        'value' => number_format($totalChargebackRevenue, 2, '.', ''),
+                    ],
+                    [
+                        'label' => 'Net Revenue',
+                        'value' => number_format($netRevenue, 2, '.', ''),
+                    ],
+                ],
+                'activity' => [
+                    'users' => $this->recentUsers(),
+                    'tasks' => $this->recentTasks(),
+                    'withdrawals' => $this->recentWithdrawals(),
+                    'chargebacks' => $this->recentChargebacks(),
+                    'transactions' => $this->recentTransactions(),
+                    'cashoutMethods' => $this->recentCashoutMethods(),
+                ],
+                'settings' => [
+                    'timelineEnabled' => $this->timelineEnabled(),
+                    'logoUrl' => $this->siteLogo(),
+                    'googleAuthenticationEnabled' => $googleAuthEnabled,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Admin dashboard error: ' . $e->getMessage(), ['exception' => $e]);
+            return response()->json([
+                'error' => 'Database error loading dashboard data',
+                'message' => $e->getMessage(),
+                'summary' => [
+                    'totalUsers' => 0,
+                    'totalCompletedOffers' => 0,
+                    'todayCompletedOffers' => 0,
+                    'totalRevenueUsd' => 0.0,
+                    'todayRevenueUsd' => 0.0,
+                    'totalChargebackUsd' => 0.0,
+                    'todayChargebackUsd' => 0.0,
+                    'totalChargebacks' => 0,
+                    'todayChargebacks' => 0,
+                    'netRevenueUsd' => 0.0,
+                    'pendingWithdrawalsCount' => 0,
+                    'pendingWithdrawalsAmount' => 0.0,
+                    'allWithdrawalsCount' => 0,
+                    'allWithdrawalsAmount' => 0.0,
+                    'activeOfferwalls' => 0,
+                ],
+                'stats' => [],
+                'metrics' => [],
+                'revenue' => [],
+                'activity' => [
+                    'users' => [],
+                    'tasks' => [],
+                    'withdrawals' => [],
+                    'chargebacks' => [],
+                    'transactions' => [],
+                    'cashoutMethods' => [],
+                ],
+            ], 500);
         }
-
-        $summaryData = [
-            'totalUsers' => $totalUsers,
-            'totalCompletedOffers' => $totalCompletedTasks,
-            'todayCompletedOffers' => $todayCompletedTasks,
-            'totalRevenueUsd' => round($totalRevenue, 2),
-            'todayRevenueUsd' => round($todayRevenue, 2),
-            'totalChargebackUsd' => round($totalChargebackRevenue, 2),
-            'todayChargebackUsd' => round($todayChargebackRevenue, 2),
-            'totalChargebacks' => $totalChargebacks,
-            'todayChargebacks' => $todayChargebacks,
-            'netRevenueUsd' => $netRevenue,
-            'pendingWithdrawalsCount' => $pendingWithdrawalsCount,
-            'pendingWithdrawalsAmount' => round($pendingWithdrawalsAmount, 2),
-            'allWithdrawalsCount' => $allWithdrawalsCount,
-            'allWithdrawalsAmount' => round($allWithdrawalsAmount, 2),
-            'activeOfferwalls' => $activeOfferwalls,
-        ];
-
-        return response()->json([
-            'summary' => $summaryData,
-            'stats' => $summaryData,
-            'metrics' => [
-                [
-                    'label' => 'All Users',
-                    'value' => $totalUsers,
-                ],
-                [
-                    'label' => 'Completed Tasks',
-                    'value' => $totalCompletedTasks,
-                ],
-                [
-                    'label' => 'All Chargebacks',
-                    'value' => $totalChargebacks,
-                ],
-                [
-                    'label' => 'Pending Withdrawals',
-                    'value' => $pendingWithdrawalsCount,
-                ],
-                [
-                    'label' => 'All Withdrawals',
-                    'value' => $allWithdrawalsCount,
-                ],
-            ],
-            'revenue' => [
-                [
-                    'label' => 'Today Revenue',
-                    'value' => number_format($todayRevenue, 2, '.', ''),
-                ],
-                [
-                    'label' => 'Total Revenue',
-                    'value' => number_format($totalRevenue, 2, '.', ''),
-                ],
-                [
-                    'label' => 'Today Chargeback',
-                    'value' => number_format($todayChargebackRevenue, 2, '.', ''),
-                ],
-                [
-                    'label' => 'Total Chargeback',
-                    'value' => number_format($totalChargebackRevenue, 2, '.', ''),
-                ],
-                [
-                    'label' => 'Net Revenue',
-                    'value' => number_format($netRevenue, 2, '.', ''),
-                ],
-            ],
-            'activity' => [
-                'users' => $this->recentUsers(),
-                'tasks' => $this->recentTasks(),
-                'withdrawals' => $this->recentWithdrawals(),
-                'chargebacks' => $this->recentChargebacks(),
-                'transactions' => $this->recentTransactions(),
-                'cashoutMethods' => $this->recentCashoutMethods(),
-            ],
-            'settings' => [
-                'timelineEnabled' => $this->timelineEnabled(),
-                'logoUrl' => $this->siteLogo(),
-                'googleAuthenticationEnabled' => GoogleAuthentication::isEnabled(),
-            ],
-        ]);
     }
 
     public function summary(): JsonResponse
@@ -1644,8 +1704,30 @@ class AdminController extends Controller
         $userIdValue = $this->resolvePostbackValue($request, 'userId', $parameterMap, null);
         $userId = $userIdValue === null || trim((string) $userIdValue) === '' ? 0 : (int) $userIdValue;
         $transactionId = trim((string) $this->resolvePostbackValue($request, 'transactionId', $parameterMap, ''));
-        $revenue = (float) $this->resolvePostbackValue($request, 'revenue', $parameterMap, 0);
-        $reward = (float) $this->resolvePostbackValue($request, 'reward', $parameterMap, $revenue);
+        $rawRevenue = $this->resolvePostbackValue($request, 'revenue', $parameterMap, null);
+        $rawReward = $this->resolvePostbackValue($request, 'reward', $parameterMap, null);
+
+        $revenue = $rawRevenue !== null ? (float) $rawRevenue : 0.0;
+        $reward = $rawReward !== null ? (float) $rawReward : null;
+
+        if ($reward !== null && $reward > 0) {
+            if ($revenue > 0) {
+                if ($reward == $revenue && $revenue < 5.0) {
+                    $reward = round($revenue * 1000, 2);
+                } else {
+                    $reward = round($reward, 2);
+                }
+            } else {
+                $reward = round($reward, 2);
+                $revenue = round($reward / 1000, 2);
+            }
+        } else {
+            if ($revenue > 0) {
+                $reward = round($revenue * 1000, 2);
+            } else {
+                $reward = 0.0;
+            }
+        }
         $rawOfferName = $this->resolvePostbackValue($request, 'offerName', $parameterMap, null);
         $offerName = trim((string) $rawOfferName);
         $offerId = trim((string) $this->resolvePostbackValue($request, 'offerId', $parameterMap, ''));
@@ -1756,11 +1838,6 @@ class AdminController extends Controller
             return $this->postbackAcknowledgementResponse();
         }
 
-        if (!$userIdResolved) {
-            Log::warning("Postback drop: USER_NOT_RESOLVED (user_id={$userId}) for provider {$offerwallSlug}");
-            return $this->postbackAcknowledgementResponse();
-        }
-
         if ($status === 'pending') {
             Log::info("Postback info: STATUS_PENDING for transaction {$transactionId}");
             return $this->postbackAcknowledgementResponse();
@@ -1785,23 +1862,21 @@ class AdminController extends Controller
                 $user,
                 $existingCompletedTask
             ): void {
-                $lockedUser = User::query()->whereKey($user->id)->lockForUpdate()->first();
-                if (!$lockedUser) {
-                    return;
-                }
-
+                $lockedUser = $user ? User::query()->whereKey($user->id)->lockForUpdate()->first() : null;
                 $reversalAmount = abs((float) ($existingCompletedTask?->currency_reward ?? $reward));
 
                 if ($existingCompletedTask) {
                     $existingCompletedTask->delete();
                 }
 
-                $lockedUser->decrement('balance', $reversalAmount);
+                if ($lockedUser) {
+                    $lockedUser->decrement('balance', $reversalAmount);
+                }
 
                 $chargeback = Chargeback::create([
                     'offer_wall_name' => $offerwallSlug,
-                    'user_id' => $lockedUser->id,
-                    'user_name' => $lockedUser->username,
+                    'user_id' => $lockedUser?->id ?? 0,
+                    'user_name' => $lockedUser?->username ?? 'anonymous',
                     'transaction_id' => $transactionId,
                     'offer_name' => $offerName,
                     'offer_id' => $offerId !== '' ? $offerId : null,
@@ -1812,33 +1887,35 @@ class AdminController extends Controller
                     'status' => 'chargeback',
                 ]);
 
-                Transaction::create([
-                    'user_id' => $lockedUser->id,
-                    'user_name' => $lockedUser->username,
-                    'type' => 'chargeback',
-                    'status' => 'approved',
-                    'amount' => -round($reversalAmount, 2),
-                    'reference_type' => 'chargeback',
-                    'reference_id' => $chargeback->id,
-                    'transaction_id' => $transactionId,
-                    'title' => $offerName,
-                    'description' => 'Offerwall: '.$offerwallName,
-                    'meta' => json_encode([
-                        'offerWallName' => $offerwallSlug,
-                        'offerId' => $offerId,
-                    ], JSON_UNESCAPED_UNICODE),
-                ]);
+                if ($lockedUser) {
+                    Transaction::create([
+                        'user_id' => $lockedUser->id,
+                        'user_name' => $lockedUser->username,
+                        'type' => 'chargeback',
+                        'status' => 'approved',
+                        'amount' => -round($reversalAmount, 2),
+                        'reference_type' => 'chargeback',
+                        'reference_id' => $chargeback->id,
+                        'transaction_id' => $transactionId,
+                        'title' => $offerName,
+                        'description' => 'Offerwall: '.$offerwallName,
+                        'meta' => json_encode([
+                            'offerWallName' => $offerwallSlug,
+                            'offerId' => $offerId,
+                        ], JSON_UNESCAPED_UNICODE),
+                    ]);
 
-                UserNotification::create([
-                    'user_id' => $lockedUser->id,
-                    'type' => 'chargeback',
-                    'icon' => 'rotate-ccw',
-                    'title' => 'Chargeback received',
-                    'message' => 'you have a charge back '.$this->normalizeMoney($reversalAmount).' from '.$offerwallSlug,
-                ]);
+                    UserNotification::create([
+                        'user_id' => $lockedUser->id,
+                        'type' => 'chargeback',
+                        'icon' => 'rotate-ccw',
+                        'title' => 'Chargeback received',
+                        'message' => 'you have a charge back '.$this->normalizeMoney($reversalAmount).' from '.$offerwallSlug,
+                    ]);
+                }
             });
 
-            Log::info("Postback success: CHARGEBACK_PROCESSED for user #{$user->id}, transaction {$transactionId}");
+            Log::info("Postback success: CHARGEBACK_PROCESSED for transaction {$transactionId}");
             return $this->postbackAcknowledgementResponse();
         }
 
@@ -1859,15 +1936,12 @@ class AdminController extends Controller
             $reward,
             $user
         ): void {
-            $lockedUser = User::query()->whereKey($user->id)->lockForUpdate()->first();
-            if (!$lockedUser) {
-                return;
-            }
+            $lockedUser = $user ? User::query()->whereKey($user->id)->lockForUpdate()->first() : null;
 
             $completedTask = CompletedTask::create([
                 'offer_wall_name' => $offerwallSlug,
-                'user_id' => $lockedUser->id,
-                'user_name' => $lockedUser->username,
+                'user_id' => $lockedUser?->id ?? 0,
+                'user_name' => $lockedUser?->username ?? 'anonymous',
                 'transaction_id' => $transactionId,
                 'offer_name' => $offerName,
                 'offer_id' => $offerId !== '' ? $offerId : null,
@@ -1877,58 +1951,69 @@ class AdminController extends Controller
                 'country' => $country ?? 'unknown',
             ]);
 
-            Transaction::create([
-                'user_id' => $lockedUser->id,
-                'user_name' => $lockedUser->username,
-                'type' => 'completed_task',
-                'status' => 'completed',
-                'amount' => round($reward, 2),
-                'reference_type' => 'completed_task',
-                'reference_id' => $completedTask->id,
-                'transaction_id' => $transactionId,
-                'title' => $offerName,
-                'description' => 'Offerwall: '.$offerwallName,
-                'meta' => json_encode([
-                    'offerWallName' => $offerwallSlug,
-                    'offerId' => $offerId,
-                ], JSON_UNESCAPED_UNICODE),
-            ]);
-
-            $lockedUser->increment('balance', round($reward, 2));
-
-            if (Schema::hasTable('timeline_entries')) {
-                TimelineEntry::query()->create([
+            if ($lockedUser) {
+                Transaction::create([
                     'user_id' => $lockedUser->id,
                     'user_name' => $lockedUser->username,
-                    'user_avatar' => $this->resolveUserAvatar($lockedUser),
-                    'offer_wall_name' => $offerwallSlug,
-                    'offer_name' => $offerName,
-                    'task_id' => $offerId !== '' ? $offerId : $transactionId,
-                    'currency_reward' => round($reward, 2),
-                    'country' => $country ?? ($lockedUser->country ?? 'unknown'),
-                    'ip' => $requestIp !== '' ? $requestIp : null,
-                    'status' => 'approved',
-                    'meta' => [
-                        'offerWallName' => $offerwallSlug,
-                        'offerId' => $offerId !== '' ? $offerId : null,
-                        'transactionId' => $transactionId,
-                    ],
                     'type' => 'completed_task',
+                    'status' => 'completed',
+                    'amount' => round($reward, 2),
+                    'reference_type' => 'completed_task',
+                    'reference_id' => $completedTask->id,
+                    'transaction_id' => $transactionId,
+                    'title' => $offerName,
+                    'description' => 'Offerwall: '.$offerwallName,
+                    'meta' => json_encode([
+                        'offerWallName' => $offerwallSlug,
+                        'offerId' => $offerId,
+                    ], JSON_UNESCAPED_UNICODE),
+                ]);
+
+                $lockedUser->increment('balance', round($reward, 2));
+
+                if (Schema::hasTable('timeline_entries')) {
+                    $timelineData = [
+                        'user_id' => $lockedUser->id,
+                        'user_name' => $lockedUser->username,
+                        'user_avatar' => $this->resolveUserAvatar($lockedUser),
+                        'offer_wall_name' => $offerwallSlug,
+                        'offer_name' => $offerName,
+                        'task_id' => $offerId !== '' ? $offerId : $transactionId,
+                        'currency_reward' => round($reward, 2),
+                        'type' => 'completed_task',
+                    ];
+                    if (Schema::hasColumn('timeline_entries', 'country')) {
+                        $timelineData['country'] = $country ?? ($lockedUser->country ?? 'unknown');
+                    }
+                    if (Schema::hasColumn('timeline_entries', 'ip')) {
+                        $timelineData['ip'] = $requestIp !== '' ? $requestIp : null;
+                    }
+                    if (Schema::hasColumn('timeline_entries', 'status')) {
+                        $timelineData['status'] = 'approved';
+                    }
+                    if (Schema::hasColumn('timeline_entries', 'meta')) {
+                        $timelineData['meta'] = [
+                            'offerWallName' => $offerwallSlug,
+                            'offerId' => $offerId !== '' ? $offerId : null,
+                            'transactionId' => $transactionId,
+                        ];
+                    }
+                    TimelineEntry::query()->create($timelineData);
+                }
+
+                $notificationTitle = 'You have received '.$this->normalizeMoney($reward).' coins from '.$offerwallSlug.' for '.$offerName;
+
+                UserNotification::create([
+                    'user_id' => $lockedUser->id,
+                    'type' => 'task_completed',
+                    'icon' => 'coins',
+                    'title' => $notificationTitle,
+                    'message' => null,
                 ]);
             }
-
-            $notificationMessage = 'You have received '.$this->normalizeMoney($reward).' coins from '.$offerwallSlug.' for '.$offerName;
-
-            UserNotification::create([
-                'user_id' => $lockedUser->id,
-                'type' => 'task_completed',
-                'icon' => 'coins',
-                'title' => 'Offer Completed',
-                'message' => $notificationMessage,
-            ]);
         });
 
-        Log::info("Postback success: CREDITED user #{$user->id} with {$reward} coins for transaction {$transactionId}");
+        Log::info("Postback success: CREDITED user ".($user ? "#{$user->id}" : "anonymous")." with {$reward} coins for transaction {$transactionId}");
         return $this->postbackAcknowledgementResponse();
     }
 
@@ -1963,6 +2048,10 @@ class AdminController extends Controller
 
     private function resolveTimelineLinkedUser(?int $userId, ?string $userName): ?User
     {
+        if (!Schema::hasTable('users')) {
+            return null;
+        }
+
         $query = User::query();
         $hasUserId = $userId !== null;
         $hasUserName = trim((string) $userName) !== '';
@@ -2036,7 +2125,7 @@ class AdminController extends Controller
             'userId' => ['userId', 'user_id', 'identity_id', 'subId', 'sub_id', 'subid', 'sub_id1', 'subid1', 'userid', 'userID', 'player_id', 'member', 'uid', 'user', 'usr', 'USER_ID', 'SUBID', 'SUB_ID'],
             'transactionId' => ['transId', 'trans_id', 'transid', 'txid', 'tx_id', 'txn_id', 'txId', 'txnId', 'transactionId', 'transaction_id', 'transactionid', 'transactionID', 'conversion', 'conv_id', 'offerwall_transaction_id', 'order_id', 'orderId', 'id', 'claim_id', 'TXID', 'TRANS_ID', 'TRANSACTION_ID'],
             'revenue' => ['payout', 'payout_usd', 'amount', 'revenue', 'site_revenue', 'user_amount', 'commission', 'PAYOUT', 'REVENUE'],
-            'reward' => ['reward', 'reward_value', 'rewardValue', 'coins', 'points', 'amount', 'user_amount', 'currencyReward', 'currency_reward', 'currencyAmount', 'currency_amount', 'virtual_amount', 'payout', 'payout_usd', 'credited_amount', 'REWARD', 'POINTS', 'COINS'],
+            'reward' => ['reward', 'reward_value', 'rewardValue', 'coins', 'points', 'amount', 'user_amount', 'currencyReward', 'currency_reward', 'currencyAmount', 'currency_amount', 'virtual_amount', 'credited_amount', 'REWARD', 'POINTS', 'COINS'],
             'offerName' => ['offer_name', 'offername', 'title', 'offer_title', 'campaign_name', 'campaign_title', 'task_name', 'task_title', 'name', 'offerName', 'offerTitle', 'campaignName', 'campaignTitle', 'taskName', 'taskTitle', 'program_name', 'program_title', 'event_name', 'eventName', 'subid4', 'sub_id4', 'subid3', 'sub_id3', 'subid2', 'sub_id2', 'subid_4', 'OFFER_NAME', 'OFFERNAME', 'TITLE', 'OFFER_TITLE', 'CAMPAIGN_NAME', 'CAMPAIGN_TITLE', 'TASK_NAME', 'TASK_TITLE', 'NAME'],
             'offerId' => ['offerId', 'campaign_id', 'offer_id', 'program_id', 'id', 'offerID', 'campaignID'],
             'status' => ['status', 'result', 'type', 'STATUS', 'state'],
@@ -2081,7 +2170,7 @@ class AdminController extends Controller
                 }
             }
 
-            return (float) $default;
+            return $default !== null ? (float) $default : null;
         }
 
         foreach ($keys as $key) {
@@ -3454,16 +3543,25 @@ class AdminController extends Controller
 
     private function recentUsers()
     {
+        if (!Schema::hasTable('users')) {
+            return collect();
+        }
         return User::query()->latest()->limit(5)->get(['id', 'name', 'username', 'email', 'role', 'balance', 'created_at']);
     }
 
     private function recentTasks()
     {
+        if (!Schema::hasTable('completed_tasks')) {
+            return collect();
+        }
         return CompletedTask::query()->latest()->limit(5)->get(['id', 'offer_wall_name', 'offer_name', 'transaction_id', 'currency_reward', 'country', 'created_at']);
     }
 
     private function recentWithdrawals()
     {
+        if (!Schema::hasTable('transactions')) {
+            return collect();
+        }
         return Transaction::query()
             ->where('type', 'like', 'withdrawal%')
             ->latest()
@@ -3473,11 +3571,17 @@ class AdminController extends Controller
 
     private function recentChargebacks()
     {
+        if (!Schema::hasTable('chargebacks')) {
+            return collect();
+        }
         return Chargeback::query()->latest()->limit(5)->get(['id', 'offer_wall_name', 'offer_name', 'transaction_id', 'currency_reward', 'status', 'created_at']);
     }
 
     private function recentTransactions()
     {
+        if (!Schema::hasTable('transactions')) {
+            return collect();
+        }
         return Transaction::query()->latest()->limit(5)->get(['id', 'user_name', 'type', 'status', 'amount', 'transaction_id', 'title', 'created_at']);
     }
 
