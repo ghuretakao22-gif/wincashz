@@ -144,8 +144,9 @@ export default function AdminCompletedOffersPage() {
       const mStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       set.add(mStr);
     }
-    tasks.forEach(t => {
-      const dt = String(t.createdAt || '');
+    const safeList = Array.isArray(tasks) ? tasks : [];
+    safeList.forEach((t) => {
+      const dt = String(t?.createdAt || '');
       if (dt.length >= 7 && dt.startsWith('202')) {
         set.add(dt.substring(0, 7));
       }
@@ -156,17 +157,18 @@ export default function AdminCompletedOffersPage() {
   // Dynamic Calendar Days for selectedMonth
   const calendarDays = useMemo(() => {
     if (selectedMonth === 'all') return [];
-    const [yearStr, monthStr] = selectedMonth.split('-');
+    const [yearStr, monthStr] = String(selectedMonth || '').split('-');
     const year = Number(yearStr);
     const month = Number(monthStr);
     if (isNaN(year) || isNaN(month)) return [];
 
     const totalDays = new Date(year, month, 0).getDate();
+    const safeList = Array.isArray(tasks) ? tasks : [];
     const days = [];
     for (let d = 1; d <= totalDays; d++) {
       const dayKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const count = tasks.filter(t => {
-        const dt = String(t.createdAt || '');
+      const count = safeList.filter((t) => {
+        const dt = String(t?.createdAt || '');
         return dt.startsWith(dayKey);
       }).length;
       days.push({ day: d, dateKey: dayKey, count });
@@ -175,9 +177,10 @@ export default function AdminCompletedOffersPage() {
   }, [selectedMonth, tasks]);
 
   const offerwallNames = useMemo(() => {
-    const set = new Set(availableOfferwalls);
-    tasks.forEach((t) => {
-      if (t.offerWall && t.offerWall !== '—' && t.offerWall !== '-') {
+    const set = new Set(Array.isArray(availableOfferwalls) ? availableOfferwalls : []);
+    const safeList = Array.isArray(tasks) ? tasks : [];
+    safeList.forEach((t) => {
+      if (t?.offerWall && t.offerWall !== '—' && t.offerWall !== '-') {
         set.add(t.offerWall);
       }
     });
@@ -189,14 +192,15 @@ export default function AdminCompletedOffersPage() {
     let mLabel = selectedMonth === 'all' ? 'All Months' : selectedMonth;
     if (selectedMonth !== 'all') {
       try {
-        const [y, m] = selectedMonth.split('-');
+        const [y, m] = String(selectedMonth || '').split('-');
         const d = new Date(Number(y), Number(m) - 1, 1);
         mLabel = d.toLocaleString('default', { month: 'long', year: 'numeric' });
       } catch (e) {}
     }
     const dLabel = selectedDay !== 'all' ? selectedDay : 'All Days';
-    return `${mLabel} • ${dLabel} • ${paginationInfo.total.toLocaleString()} Total Offers`;
-  }, [selectedMonth, selectedDay, paginationInfo.total]);
+    const totalCount = Number(paginationInfo?.total || 0);
+    return `${mLabel} • ${dLabel} • ${totalCount.toLocaleString()} Total Offers`;
+  }, [selectedMonth, selectedDay, paginationInfo?.total]);
 
   return (
     <div className="space-y-5">
@@ -413,7 +417,7 @@ export default function AdminCompletedOffersPage() {
               <option value={250}>250 / page</option>
               <option value={500}>500 / page</option>
               <option value={1000}>1000 / page</option>
-              <option value="all">All ({filtered.length.toLocaleString()})</option>
+              <option value="all">All ({(Number(paginationInfo?.total) || (Array.isArray(tasks) ? tasks.length : 0)).toLocaleString()})</option>
             </select>
           </div>
         </div>
@@ -451,13 +455,13 @@ export default function AdminCompletedOffersPage() {
                 </tr>
               ) : (
                 tasks.map((item, index) => {
-                  const sl = (paginationInfo.from || 1) + index;
-                  const uid = item.userId;
-                  const txId = item.transactionId;
-                  const coins = item.reward;
-                  const offerVal = item.payout;
-                  const siteRev = item.revenue;
-                  const dateTimeStr = String(item.createdAt || '');
+                  const sl = (Number(paginationInfo?.from) || 1) + index;
+                  const uid = item?.userId ?? '—';
+                  const txId = item?.transactionId ?? '—';
+                  const coins = Number(item?.reward ?? 0);
+                  const offerVal = Number(item?.payout ?? 0);
+                  const siteRev = Number(item?.revenue ?? 0);
+                  const dateTimeStr = String(item?.createdAt || '');
                   const cleanDT = dateTimeStr.replace('T', ' ').replace('Z', '').split('.')[0];
                   const parts = cleanDT.split(' ');
                   const dateVal = parts[0] || '—';
@@ -551,9 +555,9 @@ export default function AdminCompletedOffersPage() {
       {/* Pagination Controls Footer */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 rounded-2xl glass-card border border-white/10 text-xs">
         <div className="flex items-center gap-2 text-slate-400">
-          <span>Total Completed Offers: <strong className="text-white">{paginationInfo.total.toLocaleString()}</strong></span>
+          <span>Total Completed Offers: <strong className="text-white">{(Number(paginationInfo?.total) || 0).toLocaleString()}</strong></span>
           {rowsPerPage !== 'all' && (
-            <span>• Showing {paginationInfo.from || 0} to {paginationInfo.to || 0}</span>
+            <span>• Showing {paginationInfo?.from ?? 0} to {paginationInfo?.to ?? 0}</span>
           )}
         </div>
 
@@ -568,10 +572,10 @@ export default function AdminCompletedOffersPage() {
               <ChevronLeft className="w-4 h-4" />
             </button>
             <span className="text-slate-300 font-mono text-xs">
-              Page <strong className="text-white">{currentPage}</strong> of <strong className="text-white">{paginationInfo.lastPage || 1}</strong>
+              Page <strong className="text-white">{currentPage}</strong> of <strong className="text-white">{paginationInfo?.lastPage || 1}</strong>
             </span>
             <button
-              disabled={currentPage >= (paginationInfo.lastPage || 1) || loading}
+              disabled={currentPage >= (paginationInfo?.lastPage || 1) || loading}
               onClick={() => setCurrentPage((p) => p + 1)}
               className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed border border-white/10 transition-colors"
               title="Next Page"
@@ -622,11 +626,11 @@ export default function AdminCompletedOffersPage() {
               </div>
               <div className="flex justify-between py-1 border-b border-white/5">
                 <span className="text-slate-400 font-sans">User Coins Awarded:</span>
-                <span className="text-brand-400 font-bold">{selectedTask.reward.toFixed(2)} Coins</span>
+                <span className="text-brand-400 font-bold">{Number(selectedTask.reward || 0).toFixed(2)} Coins</span>
               </div>
               <div className="flex justify-between py-1 border-b border-white/5">
                 <span className="text-slate-400 font-sans">Site Revenue:</span>
-                <span className="text-purple-400 font-bold">${selectedTask.revenue.toFixed(2)} USD</span>
+                <span className="text-purple-400 font-bold">${Number(selectedTask.revenue || 0).toFixed(2)} USD</span>
               </div>
               <div className="flex justify-between py-1 border-b border-white/5">
                 <span className="text-slate-400 font-sans">IP / Country:</span>

@@ -6,7 +6,8 @@ function escapeXml(str) {
 }
 
 function formatRows(list) {
-  return list.map((item, idx) => {
+  const safeList = Array.isArray(list) ? list : [];
+  return safeList.map((item, idx) => {
     const rawBal = Number(item.reward || item.coins || item.points || 0);
     const coins = Math.round(rawBal >= 100 ? rawBal : rawBal * 1000);
     const offerVal = Number(item.offer_value ?? item.value ?? item.payout ?? (coins ? coins / 1000 : 0));
