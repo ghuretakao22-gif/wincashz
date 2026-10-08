@@ -81,33 +81,38 @@ export default function LiveDropTicker() {
               Live offer activity stream active. Completed rewards will appear here instantly!
             </span>
           ) : (
-            <div className="animate-ticker flex items-center gap-3 whitespace-nowrap">
+            <div className="animate-ticker flex items-center gap-3.5 whitespace-nowrap">
               {items.map((drop, idx) => {
-                // Subtle visual variation based on reward size / index
                 const isHighlight = drop.coins >= 100;
                 return (
                   <div
                     key={`${drop.id}-${idx}`}
-                    className={`inline-flex items-center gap-2 text-xs py-1 px-3 rounded-full shrink-0 transition-all hover:scale-105 duration-200 border cursor-default ${
+                    className={`relative overflow-hidden inline-flex items-center gap-2.5 text-xs py-1.5 pl-3.5 pr-3 rounded-full shrink-0 transition-all hover:scale-105 duration-200 border cursor-default select-none ${
                       isHighlight
-                        ? 'bg-gradient-to-r from-brand-500/15 to-cyan-500/10 border-brand-500/30 text-white shadow-[0_0_12px_rgba(0,229,153,0.12)]'
-                        : 'bg-[#101722]/90 border-white/10 text-slate-200 hover:border-brand-500/30 hover:bg-[#131b28]'
+                        ? 'bg-[#101722]/95 border-brand-500/30 text-white shadow-[0_0_12px_rgba(0,229,153,0.1)]'
+                        : 'bg-[#101722]/95 border-white/10 text-slate-200 hover:border-brand-500/30 hover:bg-[#131b28]'
                     }`}
                   >
+                    {/* Thin animated side light rail on the left edge */}
+                    <div 
+                      className="side-light-rail" 
+                      style={{ animationDelay: `${(idx % 6) * 0.45}s` }} 
+                    />
+
                     {/* User initial avatar */}
-                    <div className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center text-[9px] font-bold text-slate-300">
+                    <div className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center text-[9px] font-bold text-slate-300 shrink-0">
                       {drop.user.charAt(0).toUpperCase()}
                     </div>
                     
                     {/* Username */}
-                    <span className="font-semibold text-slate-100 tracking-wide">
+                    <span className="font-semibold text-slate-100 tracking-wide text-xs">
                       {drop.user}
                     </span>
 
-                    {/* Coins Badge */}
-                    <span className="inline-flex items-center gap-1 font-extrabold text-brand-400 font-mono tracking-tight bg-brand-500/10 px-1.5 py-0.5 rounded-md border border-brand-500/20 text-[11px]">
-                      <Coins className="w-3 h-3 text-amber-400 shrink-0" />
-                      {drop.coinsDisplay}
+                    {/* Clear, High-Contrast Coins Badge */}
+                    <span className="inline-flex items-center gap-1 font-black text-brand-400 font-mono tracking-tight bg-brand-500/10 px-2 py-0.5 rounded-md border border-brand-500/25 text-xs shadow-sm">
+                      <Coins className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span className="text-brand-300 font-bold">{drop.coinsDisplay}</span>
                     </span>
                   </div>
                 );
