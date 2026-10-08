@@ -139,6 +139,7 @@ export const api = {
 
   // Admin Endpoints
   getAdminDashboard: () => apiRequest('/admin/dashboard'),
+  getAdminSummary: () => apiRequest('/admin/summary'),
   getAdminOffers: () => apiRequest('/admin/offers'),
   getAdminUsers: async (params = {}) => {
     const q = new URLSearchParams(params).toString();

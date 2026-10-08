@@ -195,6 +195,27 @@ class AdminDashboardRevenueTest extends TestCase
         $response->assertJsonPath('revenue.2.value', '2.75');
         $response->assertJsonPath('revenue.3.value', '4.00');
 
+        // Verify summary and stats objects
+        $response->assertJsonPath('summary.totalUsers', 1);
+        $response->assertJsonPath('summary.totalCompletedOffers', 2);
+        $response->assertJsonPath('summary.totalRevenueUsd', 15.75);
+        $response->assertJsonPath('summary.totalChargebackUsd', 4);
+        $response->assertJsonPath('summary.netRevenueUsd', 11.75);
+        $response->assertJsonPath('stats.totalUsers', 1);
+        $response->assertJsonPath('stats.totalCompletedOffers', 2);
+        $response->assertJsonPath('stats.totalRevenueUsd', 15.75);
+        $response->assertJsonPath('stats.totalChargebackUsd', 4);
+        $response->assertJsonPath('stats.netRevenueUsd', 11.75);
+
+        // Verify /api/admin/summary endpoint
+        $summaryResponse = $this->withoutMiddleware()->getJson('/api/admin/summary');
+        $summaryResponse->assertOk();
+        $summaryResponse->assertJsonPath('summary.totalUsers', 1);
+        $summaryResponse->assertJsonPath('summary.totalCompletedOffers', 2);
+        $summaryResponse->assertJsonPath('summary.totalRevenueUsd', 15.75);
+        $summaryResponse->assertJsonPath('summary.totalChargebackUsd', 4);
+        $summaryResponse->assertJsonPath('summary.netRevenueUsd', 11.75);
+
         Carbon::setTestNow();
     }
 }

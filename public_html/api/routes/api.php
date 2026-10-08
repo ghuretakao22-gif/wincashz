@@ -40,6 +40,7 @@ Route::prefix('admin')
     ->middleware(['auth:api', 'active', 'admin'])
     ->group(function () {
     Route::get('/dashboard', [AdminController::class, 'dashboard']);
+    Route::get('/summary', [AdminController::class, 'summary']);
     Route::get('/offers', [AdminController::class, 'adminOffers']);
     Route::post('/offers', [AdminController::class, 'storeOffer']);
     Route::patch('/offers/{offer}', [AdminController::class, 'updateOffer']);

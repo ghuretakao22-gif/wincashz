@@ -61,50 +61,100 @@ class AdminController extends Controller
         $startOfDay = $today->copy()->startOfDay();
         $endOfDay = $today->copy()->endOfDay();
 
+        $totalUsers = User::count();
+        $totalCompletedTasks = CompletedTask::count();
+        $todayCompletedTasks = CompletedTask::whereBetween('created_at', [$startOfDay, $endOfDay])->count();
+        $totalChargebacks = Chargeback::count();
+        $todayChargebacks = Chargeback::whereBetween('created_at', [$startOfDay, $endOfDay])->count();
+
+        $pendingWithdrawalsQuery = Transaction::query()
+            ->where('type', 'like', 'withdrawal%')
+            ->where('status', 'pending');
+        $pendingWithdrawalsCount = (int) $pendingWithdrawalsQuery->count();
+        $pendingWithdrawalsAmount = (float) $pendingWithdrawalsQuery->sum('amount');
+
+        $allWithdrawalsCount = Transaction::query()
+            ->where('type', 'like', 'withdrawal%')
+            ->count();
+        $allWithdrawalsAmount = (float) Transaction::query()
+            ->where('type', 'like', 'withdrawal%')
+            ->where('status', 'completed')
+            ->sum('amount');
+
+        $totalRevenue = (float) CompletedTask::sum('revenue');
+        $todayRevenue = (float) CompletedTask::whereBetween('created_at', [$startOfDay, $endOfDay])->sum('revenue');
+        $totalChargebackRevenue = (float) Chargeback::sum('revenue');
+        $todayChargebackRevenue = (float) Chargeback::whereBetween('created_at', [$startOfDay, $endOfDay])->sum('revenue');
+        $netRevenue = round($totalRevenue - $totalChargebackRevenue, 2);
+
+        $activeOfferwalls = 0;
+        if (Schema::hasTable('offerwalls')) {
+            $activeOfferwalls = DB::table('offerwalls')->where('status', '!=', 0)->count();
+        }
+
+        $summaryData = [
+            'totalUsers' => $totalUsers,
+            'totalCompletedOffers' => $totalCompletedTasks,
+            'todayCompletedOffers' => $todayCompletedTasks,
+            'totalRevenueUsd' => round($totalRevenue, 2),
+            'todayRevenueUsd' => round($todayRevenue, 2),
+            'totalChargebackUsd' => round($totalChargebackRevenue, 2),
+            'todayChargebackUsd' => round($todayChargebackRevenue, 2),
+            'totalChargebacks' => $totalChargebacks,
+            'todayChargebacks' => $todayChargebacks,
+            'netRevenueUsd' => $netRevenue,
+            'pendingWithdrawalsCount' => $pendingWithdrawalsCount,
+            'pendingWithdrawalsAmount' => round($pendingWithdrawalsAmount, 2),
+            'allWithdrawalsCount' => $allWithdrawalsCount,
+            'allWithdrawalsAmount' => round($allWithdrawalsAmount, 2),
+            'activeOfferwalls' => $activeOfferwalls,
+        ];
+
         return response()->json([
+            'summary' => $summaryData,
+            'stats' => $summaryData,
             'metrics' => [
                 [
                     'label' => 'All Users',
-                    'value' => User::count(),
+                    'value' => $totalUsers,
                 ],
                 [
                     'label' => 'Completed Tasks',
-                    'value' => CompletedTask::count(),
+                    'value' => $totalCompletedTasks,
                 ],
                 [
                     'label' => 'All Chargebacks',
-                    'value' => Chargeback::count(),
+                    'value' => $totalChargebacks,
                 ],
                 [
                     'label' => 'Pending Withdrawals',
-                    'value' => Transaction::query()
-                        ->where('type', 'like', 'withdrawal%')
-                        ->where('status', 'pending')
-                        ->count(),
+                    'value' => $pendingWithdrawalsCount,
                 ],
                 [
                     'label' => 'All Withdrawals',
-                    'value' => Transaction::query()
-                        ->where('type', 'like', 'withdrawal%')
-                        ->count(),
+                    'value' => $allWithdrawalsCount,
                 ],
             ],
             'revenue' => [
                 [
                     'label' => 'Today Revenue',
-                    'value' => $this->sumCompletedTaskRevenue($startOfDay, $endOfDay),
+                    'value' => number_format($todayRevenue, 2, '.', ''),
                 ],
                 [
                     'label' => 'Total Revenue',
-                    'value' => $this->sumCompletedTaskRevenue(),
+                    'value' => number_format($totalRevenue, 2, '.', ''),
                 ],
                 [
                     'label' => 'Today Chargeback',
-                    'value' => $this->sumChargebackRevenue($startOfDay, $endOfDay),
+                    'value' => number_format($todayChargebackRevenue, 2, '.', ''),
                 ],
                 [
                     'label' => 'Total Chargeback',
-                    'value' => $this->sumChargebackRevenue(),
+                    'value' => number_format($totalChargebackRevenue, 2, '.', ''),
+                ],
+                [
+                    'label' => 'Net Revenue',
+                    'value' => number_format($netRevenue, 2, '.', ''),
                 ],
             ],
             'activity' => [
@@ -121,6 +171,11 @@ class AdminController extends Controller
                 'googleAuthenticationEnabled' => GoogleAuthentication::isEnabled(),
             ],
         ]);
+    }
+
+    public function summary(): JsonResponse
+    {
+        return $this->dashboard();
     }
 
     public function publicSettings(): JsonResponse
