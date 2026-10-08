@@ -29,17 +29,42 @@ export default function AdminCompletedOffersPage() {
   const [toDate, setToDate] = useState('');
   const [copiedId, setCopiedId] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState('all'); // 25, 50, 100, 250, 500, 'all'
+  const [rowsPerPage, setRowsPerPage] = useState(25); // 25, 50, 100, 250, 500, 1000, 'all'
+  const [paginationInfo, setPaginationInfo] = useState({ currentPage: 1, lastPage: 1, perPage: 25, total: 0, from: 0, to: 0 });
   const [actionError, setActionError] = useState(null);
   const [apiError, setApiError] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
+  const [availableOfferwalls, setAvailableOfferwalls] = useState([]);
+
+  useEffect(() => {
+    api.getOfferwalls().then((res) => {
+      const list = res.offerwalls || [];
+      const names = list.map((w) => w.name || w.postback_slug).filter(Boolean);
+      setAvailableOfferwalls(names);
+    }).catch(() => {});
+  }, []);
 
   const fetchTasks = async (isBackground = false) => {
     if (!isBackground) setLoading(true);
     setActionError(null);
     setApiError(null);
     try {
-      const res = await api.getAdminCompletedTasks();
+      const params = {
+        page: currentPage,
+        per_page: rowsPerPage,
+      };
+      if (search.trim()) params.search = search.trim();
+      if (wallFilter && wallFilter !== 'all') params.wall = wallFilter;
+      if (selectedDay && selectedDay !== 'all') {
+        params.from_date = selectedDay;
+        params.to_date = selectedDay;
+      } else if (selectedMonth && selectedMonth !== 'all') {
+        params.month = selectedMonth;
+      }
+      if (fromDate) params.from_date = fromDate;
+      if (toDate) params.to_date = toDate;
+
+      const res = await api.getAdminCompletedTasks(params);
       const list = res.rows || res.tasks || res.completed_tasks || res.data || (Array.isArray(res) ? res : []);
       const normalized = (Array.isArray(list) ? list : []).map((item) => {
         const reward = Number(item.currencyReward ?? item.reward ?? item.points ?? 0);
@@ -65,6 +90,18 @@ export default function AdminCompletedOffersPage() {
         };
       });
       setTasks(normalized);
+      if (res.pagination) {
+        setPaginationInfo(res.pagination);
+      } else {
+        setPaginationInfo({
+          currentPage: 1,
+          lastPage: 1,
+          perPage: normalized.length || 25,
+          total: normalized.length || 0,
+          from: normalized.length ? 1 : 0,
+          to: normalized.length,
+        });
+      }
     } catch (err) {
       console.error('Failed to load completed tasks from backend:', err);
       if (!isBackground) setApiError(err.message || 'Failed to connect to backend completed tasks API.');
@@ -80,7 +117,7 @@ export default function AdminCompletedOffersPage() {
       fetchTasks(true);
     }, 20000);
     return () => clearInterval(interval);
-  }, []);
+  }, [currentPage, rowsPerPage, search, wallFilter, selectedMonth, selectedDay, fromDate, toDate]);
 
   const handleCopy = (text, id) => {
     navigator.clipboard.writeText(text);
@@ -98,9 +135,15 @@ export default function AdminCompletedOffersPage() {
     }
   };
 
-  // Month options derived from data
+  // Month options derived from current date & data
   const monthOptions = useMemo(() => {
     const set = new Set();
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      set.add(mStr);
+    }
     tasks.forEach(t => {
       const dt = String(t.createdAt || '');
       if (dt.length >= 7 && dt.startsWith('202')) {
@@ -131,36 +174,15 @@ export default function AdminCompletedOffersPage() {
     return days;
   }, [selectedMonth, tasks]);
 
-  // Multi-tier Filtering
-  const filtered = useMemo(() => {
-    return tasks.filter((t) => {
-      const dtStr = String(t.createdAt || '');
-      const dateKey = dtStr.substring(0, 10);
-      const monthKey = dtStr.substring(0, 7);
-
-      const matchesSearch = !search.trim() || 
-        String(t.userName || '').toLowerCase().includes(search.toLowerCase()) ||
-        String(t.userEmail || '').toLowerCase().includes(search.toLowerCase()) ||
-        String(t.offerName || '').toLowerCase().includes(search.toLowerCase()) ||
-        String(t.transactionId || '').toLowerCase().includes(search.toLowerCase()) ||
-        String(t.userId || '').includes(search);
-      
-      const matchesWall = wallFilter === 'all' || String(t.offerWall || '').toLowerCase() === wallFilter.toLowerCase();
-      const matchesMonth = selectedMonth === 'all' || monthKey === selectedMonth;
-      const matchesDay = selectedDay === 'all' || dateKey === selectedDay;
-      const matchesFrom = !fromDate || dateKey >= fromDate;
-      const matchesTo = !toDate || dateKey <= toDate;
-
-      return matchesSearch && matchesWall && matchesMonth && matchesDay && matchesFrom && matchesTo;
+  const offerwallNames = useMemo(() => {
+    const set = new Set(availableOfferwalls);
+    tasks.forEach((t) => {
+      if (t.offerWall && t.offerWall !== '—' && t.offerWall !== '-') {
+        set.add(t.offerWall);
+      }
     });
-  }, [tasks, search, wallFilter, selectedMonth, selectedDay, fromDate, toDate]);
-
-  // Page Size & Pagination
-  const limit = rowsPerPage === 'all' ? (filtered.length || 1) : Number(rowsPerPage);
-  const totalPages = rowsPerPage === 'all' ? 1 : Math.ceil(filtered.length / limit) || 1;
-  const paginated = rowsPerPage === 'all' ? filtered : filtered.slice((currentPage - 1) * limit, currentPage * limit);
-
-  const offerwallNames = Array.from(new Set(tasks.map((t) => t.offerWall).filter(Boolean)));
+    return Array.from(set);
+  }, [availableOfferwalls, tasks]);
 
   // Active Filter Summary label
   const filterSummary = useMemo(() => {
@@ -173,8 +195,8 @@ export default function AdminCompletedOffersPage() {
       } catch (e) {}
     }
     const dLabel = selectedDay !== 'all' ? selectedDay : 'All Days';
-    return `${mLabel} • ${dLabel} • ${filtered.length.toLocaleString()} Offers`;
-  }, [selectedMonth, selectedDay, filtered.length]);
+    return `${mLabel} • ${dLabel} • ${paginationInfo.total.toLocaleString()} Total Offers`;
+  }, [selectedMonth, selectedDay, paginationInfo.total]);
 
   return (
     <div className="space-y-5">
@@ -192,7 +214,7 @@ export default function AdminCompletedOffersPage() {
 
         <div className="flex items-center gap-3">
           <TableExport 
-            data={filtered} 
+            data={tasks} 
             allData={tasks} 
             selectedMonth={selectedMonth} 
             selectedDay={selectedDay} 
@@ -421,15 +443,15 @@ export default function AdminCompletedOffersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 font-mono text-[11px]">
-              {paginated.length === 0 ? (
+              {tasks.length === 0 ? (
                 <tr>
                   <td colSpan={15} className="py-8 text-center text-slate-500 font-sans">
                     {loading ? 'Loading completed offers...' : 'No completed offers found.'}
                   </td>
                 </tr>
               ) : (
-                paginated.map((item, index) => {
-                  const sl = rowsPerPage === 'all' ? index + 1 : (currentPage - 1) * limit + index + 1;
+                tasks.map((item, index) => {
+                  const sl = (paginationInfo.from || 1) + index;
                   const uid = item.userId;
                   const txId = item.transactionId;
                   const coins = item.reward;
@@ -524,6 +546,40 @@ export default function AdminCompletedOffersPage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Pagination Controls Footer */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 rounded-2xl glass-card border border-white/10 text-xs">
+        <div className="flex items-center gap-2 text-slate-400">
+          <span>Total Completed Offers: <strong className="text-white">{paginationInfo.total.toLocaleString()}</strong></span>
+          {rowsPerPage !== 'all' && (
+            <span>• Showing {paginationInfo.from || 0} to {paginationInfo.to || 0}</span>
+          )}
+        </div>
+
+        {rowsPerPage !== 'all' && (
+          <div className="flex items-center gap-3">
+            <button
+              disabled={currentPage <= 1 || loading}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed border border-white/10 transition-colors"
+              title="Previous Page"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-slate-300 font-mono text-xs">
+              Page <strong className="text-white">{currentPage}</strong> of <strong className="text-white">{paginationInfo.lastPage || 1}</strong>
+            </span>
+            <button
+              disabled={currentPage >= (paginationInfo.lastPage || 1) || loading}
+              onClick={() => setCurrentPage((p) => p + 1)}
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed border border-white/10 transition-colors"
+              title="Next Page"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Task Details Modal */}

@@ -755,8 +755,12 @@ class AdminController extends Controller
     {
         $page = max(1, (int) $request->query('page', 1));
         $search = trim((string) $request->query('search', ''));
+        $wall = trim((string) ($request->query('wall', $request->query('offerwall', ''))));
+        $month = trim((string) $request->query('month', ''));
+        $fromDate = trim((string) ($request->query('from_date', $request->query('from', ''))));
+        $toDate = trim((string) ($request->query('to_date', $request->query('to', ''))));
 
-        $requestedPerPage = strtolower(trim((string) $request->query('per_page', '10')));
+        $requestedPerPage = strtolower(trim((string) $request->query('per_page', '25')));
         $hasUserUsernameColumn = Schema::hasTable('users') && Schema::hasColumn('users', 'username');
         $query = CompletedTask::query()
             ->leftJoin('users as task_users_by_id', 'task_users_by_id.id', '=', 'completed_tasks.user_id');
@@ -765,17 +769,36 @@ class AdminController extends Controller
             $query->leftJoin('users as task_users_by_name', 'task_users_by_name.username', '=', 'completed_tasks.user_name');
         }
 
+        if ($wall !== '' && strtolower($wall) !== 'all') {
+            $query->where(function ($builder) use ($wall): void {
+                $builder->where('completed_tasks.offer_wall_name', $wall)
+                    ->orWhere('completed_tasks.offer_wall_name', 'like', '%' . $wall . '%');
+            });
+        }
+
+        if ($month !== '' && strtolower($month) !== 'all') {
+            $query->where('completed_tasks.created_at', 'like', $month . '%');
+        }
+
+        if ($fromDate !== '') {
+            $query->whereDate('completed_tasks.created_at', '>=', $fromDate);
+        }
+
+        if ($toDate !== '') {
+            $query->whereDate('completed_tasks.created_at', '<=', $toDate);
+        }
+
         if ($search !== '') {
             $escapedSearch = addcslashes($search, '%_\\');
             $query->where(function ($builder) use ($escapedSearch, $search, $hasUserUsernameColumn): void {
                 $like = '%'.$escapedSearch.'%';
 
                 $builder
-                    ->where('offer_wall_name', 'like', $like)
-                    ->orWhere('user_name', 'like', $like)
-                    ->orWhere('transaction_id', 'like', $like)
-                    ->orWhere('offer_name', 'like', $like)
-                    ->orWhere('offer_id', 'like', $like)
+                    ->where('completed_tasks.offer_wall_name', 'like', $like)
+                    ->orWhere('completed_tasks.user_name', 'like', $like)
+                    ->orWhere('completed_tasks.transaction_id', 'like', $like)
+                    ->orWhere('completed_tasks.offer_name', 'like', $like)
+                    ->orWhere('completed_tasks.offer_id', 'like', $like)
                     ->orWhere('task_users_by_id.email', 'like', $like)
                     ->orWhere('completed_tasks.ip', 'like', $like)
                     ->orWhere('completed_tasks.country', 'like', $like);
@@ -804,6 +827,7 @@ class AdminController extends Controller
 
         $paginator = $query
             ->orderByDesc('completed_tasks.created_at')
+            ->orderByDesc('completed_tasks.id')
             ->paginate(
                 $perPage,
                 [
