@@ -9,21 +9,29 @@ import {
   CheckCircle2, 
   Clock, 
   Lock, 
-  Camera, 
-  AlertCircle 
+  AlertCircle,
+  Award
 } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function ProfilePage() {
   const { user } = useAuth();
-  const [profileData, setProfileData] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
+  const [completedTasks, setCompletedTasks] = useState([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
 
   useEffect(() => {
-    api.getProfileTabs()
-      .then((res) => setProfileData(res))
-      .catch(() => {});
-  }, []);
+    if (activeTab === 'completed') {
+      setLoadingTasks(true);
+      api.getProfileTabs('completed')
+        .then((res) => {
+          const rows = res.rows || res.data || [];
+          setCompletedTasks(rows);
+        })
+        .catch((err) => console.error('Failed to load completed offers:', err))
+        .finally(() => setLoadingTasks(false));
+    }
+  }, [activeTab]);
 
   const points = user?.balance ?? user?.points ?? 0;
   const dollarValue = (points / 1000).toFixed(2);
@@ -81,17 +89,21 @@ export default function ProfilePage() {
 
         {/* Tab Selection */}
         <div className="flex items-center gap-2 border-b border-white/10 pb-2">
-          {['overview', 'security'].map((tab) => (
+          {[
+            { id: 'overview', label: 'Overview' },
+            { id: 'completed', label: 'Completed Offers' },
+            { id: 'security', label: 'Security' },
+          ].map((tab) => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
               className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold capitalize transition-all ${
-                activeTab === tab
+                activeTab === tab.id
                   ? 'bg-white/10 text-white shadow-sm'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              {tab}
+              {tab.label}
             </button>
           ))}
         </div>
@@ -115,7 +127,7 @@ export default function ProfilePage() {
                 </div>
                 <div className="pt-3 flex justify-between">
                   <span className="text-slate-400">Registration IP</span>
-                  <span className="font-mono text-slate-300">{user?.ip || '127.0.0.1'}</span>
+                  <span className="font-mono text-slate-300">{user?.ip || '—'}</span>
                 </div>
                 <div className="pt-3 flex justify-between">
                   <span className="text-slate-400">Account Status</span>
@@ -138,6 +150,76 @@ export default function ProfilePage() {
                 DiceBear avatar is automatically generated based on your user ID.
               </div>
             </div>
+          </div>
+        )}
+
+        {activeTab === 'completed' && (
+          <div className="rounded-3xl glass-card p-6 border border-white/10 space-y-4">
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <Award className="w-4 h-4 text-brand-400" />
+              Completed Offers History
+            </h3>
+            <p className="text-xs text-slate-400">
+              Verified records of your completed partner offers and task completions.
+            </p>
+
+            {loadingTasks ? (
+              <div className="py-8 text-center text-xs text-slate-500 animate-pulse">
+                Loading completed offers...
+              </div>
+            ) : completedTasks.length === 0 ? (
+              <div className="py-8 text-center text-xs text-slate-500">
+                No completed offers found.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="text-slate-400 border-b border-white/10 font-semibold">
+                      <th className="pb-3 font-semibold">Offer Name</th>
+                      <th className="pb-3 font-semibold">Provider / Wall</th>
+                      <th className="pb-3 font-semibold text-right">Reward</th>
+                      <th className="pb-3 font-semibold text-center">Status</th>
+                      <th className="pb-3 font-semibold text-right">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 font-mono">
+                    {completedTasks.map((item, idx) => {
+                      const offerName = item.offer || item.offerName || item.title || 'Offer Task';
+                      const wall = item.wall || item.offerWall || item.offerWallName || item.offerwall_name || 'Offerwall';
+                      const rewardVal = Number(item.amount || item.currencyReward || item.reward || 0);
+                      const statusVal = item.status || 'completed';
+                      const dateVal = item.date || item.createdAt || item.created_at || '—';
+
+                      return (
+                        <tr key={item.id || idx} className="hover:bg-white/[0.02]">
+                          <td className="py-3 font-sans font-medium text-white">
+                            {offerName}
+                          </td>
+                          <td className="py-3 font-sans text-slate-400">
+                            <span className="px-2 py-0.5 rounded bg-white/5 border border-white/5">
+                              {wall}
+                            </span>
+                          </td>
+                          <td className="py-3 font-bold text-right text-brand-400">
+                            {rewardVal.toFixed(2)} Coins
+                          </td>
+                          <td className="py-3 text-center">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full text-emerald-400 bg-emerald-500/10">
+                              <CheckCircle2 className="w-3 h-3" />
+                              {statusVal}
+                            </span>
+                          </td>
+                          <td className="py-3 text-slate-400 text-right font-sans">
+                            {typeof dateVal === 'string' ? dateVal.replace('T', ' ').substring(0, 19) : dateVal}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 

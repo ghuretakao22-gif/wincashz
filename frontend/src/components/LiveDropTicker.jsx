@@ -10,13 +10,18 @@ export default function LiveDropTicker() {
       const list = res.timeline || res.rows || res.data || [];
       if (Array.isArray(list) && list.length > 0) {
         const formatted = list.slice(0, 15).map((item, idx) => {
-          const rawReward = Number(item.reward || item.points || ((item.amount || 0.1) * 1000));
-          const coins = Math.round(rawReward >= 1 ? rawReward : rawReward * 1000);
-          const name = item.username || item.user_name || item.user || `User_${item.user_id || (idx + 101)}`;
+          const user = item.userName || item.username || item.user_name || 'User';
+          const coinsRaw = Number(item.currencyReward ?? item.reward ?? item.points ?? item.amount ?? 0);
+          const coins = Math.round(coinsRaw >= 1 ? coinsRaw : coinsRaw * 1000);
+          const offerName = item.offerName || item.offer_name || 'Offer Task';
+          const provider = item.offerWallName || item.offerWall || item.offerwall_name || '';
+
           return {
             id: item.id || idx,
-            user: name,
-            coins: coins > 0 ? coins : 100,
+            user,
+            coins,
+            offerName,
+            provider,
           };
         });
         setDrops(formatted);
@@ -34,6 +39,8 @@ export default function LiveDropTicker() {
           id: Date.now(),
           user: e.detail.user_name,
           coins: Math.round(Number(e.detail.reward)),
+          offerName: e.detail.offer_name || 'Offer Task',
+          provider: e.detail.offer_wall_name || '',
         };
         setDrops(prev => [newDrop, ...prev.slice(0, 14)]);
       } else {
@@ -79,6 +86,13 @@ export default function LiveDropTicker() {
                   <span className="font-semibold text-white">{drop.user}</span>
                   <span className="text-slate-400">earned</span>
                   <span className="font-bold text-brand-400">{drop.coins.toLocaleString()} coins</span>
+                  <span className="text-slate-400">from</span>
+                  <span className="font-medium text-slate-200">{drop.offerName}</span>
+                  {drop.provider && (
+                    <span className="text-[10px] font-semibold text-slate-400 bg-white/5 border border-white/5 px-1.5 py-0.5 rounded">
+                      {drop.provider}
+                    </span>
+                  )}
                   <span className="text-slate-600 text-xs ml-3">•</span>
                 </div>
               ))}

@@ -23,7 +23,7 @@ export default function AdminCompletedOffersPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [wallFilter, setWallFilter] = useState('all');
-  const [selectedMonth, setSelectedMonth] = useState('2026-10'); // YYYY-MM or 'all'
+  const [selectedMonth, setSelectedMonth] = useState('all'); // YYYY-MM or 'all'
   const [selectedDay, setSelectedDay] = useState('all'); // YYYY-MM-DD or 'all'
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -32,6 +32,7 @@ export default function AdminCompletedOffersPage() {
   const [rowsPerPage, setRowsPerPage] = useState('all'); // 25, 50, 100, 250, 500, 'all'
   const [actionError, setActionError] = useState(null);
   const [apiError, setApiError] = useState(null);
+  const [selectedTask, setSelectedTask] = useState(null);
 
   const fetchTasks = async () => {
     setLoading(true);
@@ -39,8 +40,31 @@ export default function AdminCompletedOffersPage() {
     setApiError(null);
     try {
       const res = await api.getAdminCompletedTasks();
-      const list = res.tasks || res.completed_tasks || res.data || (Array.isArray(res) ? res : []);
-      setTasks(Array.isArray(list) ? list : []);
+      const list = res.rows || res.tasks || res.completed_tasks || res.data || (Array.isArray(res) ? res : []);
+      const normalized = (Array.isArray(list) ? list : []).map((item) => {
+        const reward = Number(item.currencyReward ?? item.reward ?? item.points ?? 0);
+        const revenue = Number(item.revenue ?? item.site_revenue ?? 0);
+        const payout = Number(item.payout ?? item.offer_value ?? item.value ?? revenue);
+        const createdAt = item.createdAt ?? item.created_at ?? item.date ?? '—';
+
+        return {
+          id: item.id,
+          userId: item.userId ?? item.user_id ?? '—',
+          userName: item.userName ?? item.user_name ?? item.username ?? '—',
+          userEmail: item.userEmail ?? item.email ?? item.user_email ?? '—',
+          offerWall: item.offerWall ?? item.offerwall_name ?? item.offer_wall_name ?? '—',
+          offerName: item.offerName ?? item.offer_name ?? '—',
+          reward,
+          revenue,
+          payout,
+          transactionId: item.transactionId ?? item.transaction_id ?? `TX-${item.id}`,
+          ip: item.ip ?? '—',
+          country: item.country ?? '—',
+          createdAt,
+          raw: item,
+        };
+      });
+      setTasks(normalized);
     } catch (err) {
       console.error('Failed to load completed tasks from backend:', err);
       setApiError(err.message || 'Failed to connect to backend completed tasks API.');
@@ -70,11 +94,11 @@ export default function AdminCompletedOffersPage() {
     }
   };
 
-  // Month options derived from data + defaults
+  // Month options derived from data
   const monthOptions = useMemo(() => {
-    const set = new Set(['2026-10', '2026-09', '2026-08']);
+    const set = new Set();
     tasks.forEach(t => {
-      const dt = t.created_at || t.date || '';
+      const dt = String(t.createdAt || '');
       if (dt.length >= 7 && dt.startsWith('202')) {
         set.add(dt.substring(0, 7));
       }
@@ -95,7 +119,7 @@ export default function AdminCompletedOffersPage() {
     for (let d = 1; d <= totalDays; d++) {
       const dayKey = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const count = tasks.filter(t => {
-        const dt = t.created_at || t.date || '';
+        const dt = String(t.createdAt || '');
         return dt.startsWith(dayKey);
       }).length;
       days.push({ day: d, dateKey: dayKey, count });
@@ -106,18 +130,18 @@ export default function AdminCompletedOffersPage() {
   // Multi-tier Filtering
   const filtered = useMemo(() => {
     return tasks.filter((t) => {
-      const dtStr = t.created_at || t.date || '';
+      const dtStr = String(t.createdAt || '');
       const dateKey = dtStr.substring(0, 10);
       const monthKey = dtStr.substring(0, 7);
 
       const matchesSearch = !search.trim() || 
-        (t.user_name || '').toLowerCase().includes(search.toLowerCase()) ||
-        (t.email || '').toLowerCase().includes(search.toLowerCase()) ||
-        (t.offer_name || '').toLowerCase().includes(search.toLowerCase()) ||
-        (t.transaction_id || '').toLowerCase().includes(search.toLowerCase()) ||
-        String(t.user_id || '').includes(search);
+        String(t.userName || '').toLowerCase().includes(search.toLowerCase()) ||
+        String(t.userEmail || '').toLowerCase().includes(search.toLowerCase()) ||
+        String(t.offerName || '').toLowerCase().includes(search.toLowerCase()) ||
+        String(t.transactionId || '').toLowerCase().includes(search.toLowerCase()) ||
+        String(t.userId || '').includes(search);
       
-      const matchesWall = wallFilter === 'all' || (t.offerwall_name || '').toLowerCase() === wallFilter.toLowerCase();
+      const matchesWall = wallFilter === 'all' || String(t.offerWall || '').toLowerCase() === wallFilter.toLowerCase();
       const matchesMonth = selectedMonth === 'all' || monthKey === selectedMonth;
       const matchesDay = selectedDay === 'all' || dateKey === selectedDay;
       const matchesFrom = !fromDate || dateKey >= fromDate;
@@ -132,8 +156,7 @@ export default function AdminCompletedOffersPage() {
   const totalPages = rowsPerPage === 'all' ? 1 : Math.ceil(filtered.length / limit) || 1;
   const paginated = rowsPerPage === 'all' ? filtered : filtered.slice((currentPage - 1) * limit, currentPage * limit);
 
-  const offerwallNames = Array.from(new Set(tasks.map((t) => t.offerwall_name).filter(Boolean)));
-  const [selectedTask, setSelectedTask] = useState(null);
+  const offerwallNames = Array.from(new Set(tasks.map((t) => t.offerWall).filter(Boolean)));
 
   // Active Filter Summary label
   const filterSummary = useMemo(() => {
@@ -401,14 +424,15 @@ export default function AdminCompletedOffersPage() {
                 </tr>
               ) : (
                 paginated.map((item, index) => {
-                  const sl = (currentPage - 1) * rowsPerPage + index + 1;
-                  const uid = item.user_id ? (Number(item.user_id) >= 101 ? item.user_id : 100 + Number(item.user_id)) : '101';
-                  const txId = item.transaction_id || `TX-${item.id}`;
-                  const coins = Number(item.reward || item.points || 0);
-                  const offerVal = Number(item.offer_value ?? item.value ?? item.payout ?? (coins ? coins / 1000 : 0));
-                  const siteRev = Number(item.site_revenue ?? item.revenue ?? (offerVal * 0.7));
-                  const dateTimeStr = item.created_at || '2026-10-02 22:50:00';
-                  const parts = dateTimeStr.split(' ');
+                  const sl = rowsPerPage === 'all' ? index + 1 : (currentPage - 1) * limit + index + 1;
+                  const uid = item.userId;
+                  const txId = item.transactionId;
+                  const coins = item.reward;
+                  const offerVal = item.payout;
+                  const siteRev = item.revenue;
+                  const dateTimeStr = String(item.createdAt || '');
+                  const cleanDT = dateTimeStr.replace('T', ' ').replace('Z', '').split('.')[0];
+                  const parts = cleanDT.split(' ');
                   const dateVal = parts[0] || '—';
                   const timeVal = parts[1] || '—';
 
@@ -421,21 +445,21 @@ export default function AdminCompletedOffersPage() {
                         {sl}
                       </td>
                       <td className="py-2 px-3 border-r border-white/5 font-bold text-brand-400 font-mono">
-                        {uid}
+                        #{uid}
                       </td>
                       <td className="py-2 px-3 border-r border-white/5 font-sans font-medium text-white">
-                        {item.user_name || item.name || item.username || 'Member'}
+                        {item.userName}
                       </td>
                       <td className="py-2 px-3 border-r border-white/5 font-sans text-slate-400">
-                        {item.email || '—'}
+                        {item.userEmail}
                       </td>
                       <td className="py-2 px-3 border-r border-white/5 font-sans">
                         <span className="px-2 py-0.5 rounded bg-white/5 text-slate-200 font-medium">
-                          {item.offerwall_name || 'System'}
+                          {item.offerWall}
                         </span>
                       </td>
-                      <td className="py-2 px-3 border-r border-white/5 font-sans font-medium text-slate-100 max-w-[180px] truncate" title={item.offer_name}>
-                        {item.offer_name || 'Offer Task'}
+                      <td className="py-2 px-3 border-r border-white/5 font-sans font-medium text-slate-100 max-w-[180px] truncate" title={item.offerName}>
+                        {item.offerName}
                       </td>
                       <td className="py-2 px-3 border-r border-white/5 text-right font-bold text-brand-400">
                         {coins.toLocaleString()} Coins
@@ -448,40 +472,40 @@ export default function AdminCompletedOffersPage() {
                       </td>
                       <td className="py-2 px-3 border-r border-white/5 font-mono text-slate-400 max-w-[140px]">
                         <div className="flex items-center gap-1.5">
-                          <span className="truncate" title={txId}>{txId}</span>
+                          <span className="truncate">{txId}</span>
                           <button
-                            onClick={() => handleCopy(txId, `tx-${item.id}`)}
-                            className="p-1 hover:text-white shrink-0"
+                            onClick={() => handleCopy(txId, item.id)}
+                            className="text-slate-500 hover:text-white transition-colors shrink-0"
                             title="Copy Transaction ID"
                           >
-                            {copiedId === `tx-${item.id}` ? <Check className="w-3 h-3 text-brand-400" /> : <Copy className="w-3 h-3" />}
+                            {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                           </button>
                         </div>
                       </td>
-                      <td className="py-2 px-3 border-r border-white/5 text-center text-slate-400">
-                        {item.ip || '—'}
+                      <td className="py-2 px-3 border-r border-white/5 text-center font-mono text-slate-400">
+                        {item.ip}
                       </td>
-                      <td className="py-2 px-3 border-r border-white/5 text-center font-sans font-semibold text-slate-300">
-                        {item.country || '—'}
+                      <td className="py-2 px-3 border-r border-white/5 text-center font-sans">
+                        {item.country}
                       </td>
-                      <td className="py-2 px-3 border-r border-white/5 text-slate-400 font-sans">
+                      <td className="py-2 px-3 border-r border-white/5 font-mono text-slate-400">
                         {dateVal}
                       </td>
-                      <td className="py-2 px-3 border-r border-white/5 text-slate-400 font-sans">
+                      <td className="py-2 px-3 border-r border-white/5 font-mono text-slate-400">
                         {timeVal}
                       </td>
-                      <td className="py-2 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
+                      <td className="py-2 px-3 text-center font-sans">
+                        <div className="flex items-center justify-center gap-1.5">
                           <button
                             onClick={() => setSelectedTask(item)}
-                            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-brand-400 transition-colors"
-                            title="View Full Transaction Details"
+                            className="p-1 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
+                            title="View Full Details"
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => handleDelete(item.id)}
-                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors"
+                            className="p-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors"
                             title="Delete Entry"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -495,109 +519,75 @@ export default function AdminCompletedOffersPage() {
             </tbody>
           </table>
         </div>
-
-        {/* Pagination Bottom Bar */}
-        <div className="flex items-center justify-between px-4 py-3 bg-white/[0.02] border-t border-white/5 text-xs text-slate-400">
-          <div>
-            Showing {filtered.length > 0 ? (currentPage - 1) * rowsPerPage + 1 : 0} to {Math.min(currentPage * rowsPerPage, filtered.length)} of {filtered.length} entries
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-              disabled={currentPage === 1}
-              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="font-semibold text-white">
-              {currentPage} / {totalPages}
-            </span>
-            <button
-              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage === totalPages}
-              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
       </div>
 
-      {/* FULL TRANSACTION DETAILS MODAL */}
-      {selectedTask && (() => {
-        const uid = selectedTask.user_id ? (Number(selectedTask.user_id) >= 101 ? selectedTask.user_id : 100 + Number(selectedTask.user_id)) : '101';
-        const txId = selectedTask.transaction_id || `TX-${selectedTask.id}`;
-        const coins = Number(selectedTask.reward || selectedTask.points || 0);
-        const offerVal = Number(selectedTask.offer_value ?? selectedTask.value ?? selectedTask.payout ?? (coins ? coins / 1000 : 0));
-        const siteRev = Number(selectedTask.site_revenue ?? selectedTask.revenue ?? (offerVal * 0.7));
+      {/* Task Details Modal */}
+      {selectedTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#0b0e14] border border-white/10 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4 text-brand-400" />
+                Task Completion Details
+              </h3>
+              <button
+                onClick={() => setSelectedTask(null)}
+                className="text-slate-400 hover:text-white text-xs font-bold px-2 py-1 rounded-lg bg-white/5"
+              >
+                Close
+              </button>
+            </div>
 
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
-            <div className="relative w-full max-w-2xl rounded-3xl glass-panel border border-white/10 shadow-2xl p-6 sm:p-8 space-y-5">
-              <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 flex items-center justify-center font-bold text-sm">
-                    <ShieldCheck className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-white">Transaction Log Details</h3>
-                    <p className="text-xs text-slate-400 font-mono">TX: {txId}</p>
-                  </div>
-                </div>
-                <button onClick={() => setSelectedTask(null)} className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/5">
-                  ✕
-                </button>
+            <div className="space-y-2.5 text-xs font-mono">
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-slate-400 font-sans">Transaction ID:</span>
+                <span className="text-brand-400 font-bold">{selectedTask.transactionId}</span>
               </div>
-
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
-                  <span className="text-slate-400 text-[11px] block">Provider User ID</span>
-                  <span className="font-mono font-bold text-brand-400 text-sm">{uid}</span>
-                </div>
-                <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
-                  <span className="text-slate-400 text-[11px] block">Member Account</span>
-                  <span className="font-bold text-white">{selectedTask.user_name || selectedTask.name || 'Member'} ({selectedTask.email || '—'})</span>
-                </div>
-                <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
-                  <span className="text-slate-400 text-[11px] block">Offerwall Provider</span>
-                  <span className="font-bold text-slate-200">{selectedTask.offerwall_name || 'Torox'}</span>
-                </div>
-                <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
-                  <span className="text-slate-400 text-[11px] block">Offer Task Title</span>
-                  <span className="font-bold text-slate-100">{selectedTask.offer_name || 'Task Completion'}</span>
-                </div>
-                <div className="p-3 rounded-2xl bg-brand-500/10 border border-brand-500/20">
-                  <span className="text-slate-400 text-[11px] block">Reward Credited</span>
-                  <span className="font-extrabold text-brand-400 text-sm">+{coins.toLocaleString()} Coins</span>
-                </div>
-                <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20">
-                  <span className="text-slate-400 text-[11px] block">Offer Value (USD)</span>
-                  <span className="font-extrabold text-amber-400 text-sm">${offerVal.toFixed(2)} USD</span>
-                </div>
-                <div className="p-3 rounded-2xl bg-purple-500/10 border border-purple-500/20">
-                  <span className="text-slate-400 text-[11px] block">Site Revenue</span>
-                  <span className="font-extrabold text-purple-400 text-sm">${siteRev.toFixed(2)} USD</span>
-                </div>
-                <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
-                  <span className="text-slate-400 text-[11px] block">Recorded IP & Country</span>
-                  <span className="font-mono text-slate-300">{selectedTask.ip || '—'} ({selectedTask.country || '—'})</span>
-                </div>
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-slate-400 font-sans">User ID / Username:</span>
+                <span className="text-white">#{selectedTask.userId} ({selectedTask.userName})</span>
               </div>
-
-              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs text-slate-400">
-                <div>Date & Time: <span className="text-white font-mono">{selectedTask.created_at || '—'}</span></div>
-                <button
-                  onClick={() => setSelectedTask(null)}
-                  className="px-4 py-2 rounded-xl bg-white/10 text-white font-bold hover:bg-white/20 transition-all"
-                >
-                  Close Details
-                </button>
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-slate-400 font-sans">User Email:</span>
+                <span className="text-slate-300 font-sans">{selectedTask.userEmail}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-slate-400 font-sans">Offerwall Provider:</span>
+                <span className="text-white font-sans">{selectedTask.offerWall}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-slate-400 font-sans">Offer Name:</span>
+                <span className="text-slate-200 font-sans">{selectedTask.offerName}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-slate-400 font-sans">User Coins Awarded:</span>
+                <span className="text-brand-400 font-bold">{selectedTask.reward.toFixed(2)} Coins</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-slate-400 font-sans">Site Revenue:</span>
+                <span className="text-purple-400 font-bold">${selectedTask.revenue.toFixed(2)} USD</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-slate-400 font-sans">IP / Country:</span>
+                <span className="text-slate-300">{selectedTask.ip} ({selectedTask.country})</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-slate-400 font-sans">Timestamp:</span>
+                <span className="text-slate-300">{selectedTask.createdAt}</span>
               </div>
             </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setSelectedTask(null)}
+                className="px-4 py-2 rounded-xl bg-brand-500 text-slate-950 font-bold text-xs hover:brightness-110"
+              >
+                Done
+              </button>
+            </div>
           </div>
-        );
-      })()}
+        </div>
+      )}
     </div>
   );
 }
