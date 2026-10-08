@@ -85,10 +85,17 @@ class AdminDashboardRevenueTest extends TestCase
             $table->timestamps();
             $table->unique(['reference_type', 'reference_id']);
         });
+        Schema::create('offerwalls', function (Blueprint $table): void {
+            $table->id();
+            $table->string('name');
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+        });
     }
 
     protected function tearDown(): void
     {
+        Schema::dropIfExists('offerwalls');
         Schema::dropIfExists('transactions');
         Schema::dropIfExists('chargebacks');
         Schema::dropIfExists('completed_tasks');
@@ -185,6 +192,12 @@ class AdminDashboardRevenueTest extends TestCase
             ],
         ]);
 
+        DB::table('offerwalls')->insert([
+            ['name' => 'CPALead', 'is_active' => true],
+            ['name' => 'AdGate', 'is_active' => true],
+            ['name' => 'DisabledWall', 'is_active' => false],
+        ]);
+
         $response = $this->withoutMiddleware()->getJson('/api/admin/dashboard');
 
         $response->assertOk();
@@ -201,11 +214,13 @@ class AdminDashboardRevenueTest extends TestCase
         $response->assertJsonPath('summary.totalRevenueUsd', 15.75);
         $response->assertJsonPath('summary.totalChargebackUsd', 4);
         $response->assertJsonPath('summary.netRevenueUsd', 11.75);
+        $response->assertJsonPath('summary.activeOfferwalls', 2);
         $response->assertJsonPath('stats.totalUsers', 1);
         $response->assertJsonPath('stats.totalCompletedOffers', 2);
         $response->assertJsonPath('stats.totalRevenueUsd', 15.75);
         $response->assertJsonPath('stats.totalChargebackUsd', 4);
         $response->assertJsonPath('stats.netRevenueUsd', 11.75);
+        $response->assertJsonPath('stats.activeOfferwalls', 2);
 
         // Verify /api/admin/summary endpoint
         $summaryResponse = $this->withoutMiddleware()->getJson('/api/admin/summary');
@@ -215,6 +230,7 @@ class AdminDashboardRevenueTest extends TestCase
         $summaryResponse->assertJsonPath('summary.totalRevenueUsd', 15.75);
         $summaryResponse->assertJsonPath('summary.totalChargebackUsd', 4);
         $summaryResponse->assertJsonPath('summary.netRevenueUsd', 11.75);
+        $summaryResponse->assertJsonPath('summary.activeOfferwalls', 2);
 
         Carbon::setTestNow();
     }

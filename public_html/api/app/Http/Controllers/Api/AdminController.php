@@ -105,7 +105,15 @@ class AdminController extends Controller
 
             $activeOfferwalls = 0;
             if (Schema::hasTable('offerwalls')) {
-                $activeOfferwalls = DB::table('offerwalls')->where('status', '!=', 0)->count();
+                $statusCol = $this->offerwallStatusColumn();
+                if ($statusCol !== null) {
+                    $activeOfferwalls = DB::table('offerwalls')
+                        ->where($statusCol, '!=', 0)
+                        ->where($statusCol, '!=', false)
+                        ->count();
+                } else {
+                    $activeOfferwalls = DB::table('offerwalls')->count();
+                }
             }
 
             $summaryData = [
@@ -1503,7 +1511,10 @@ class AdminController extends Controller
         $query = $this->orderedOfferwallQuery();
 
         if ($request->boolean('active_only')) {
-            $query->where('is_active', true);
+            $statusColumn = $this->offerwallStatusColumn();
+            if ($statusColumn !== null) {
+                $query->where($statusColumn, true);
+            }
         }
 
         $rows = $query->get()
@@ -2744,7 +2755,7 @@ class AdminController extends Controller
 
     private function offerwallStatusColumn(): ?string
     {
-        return $this->firstOfferwallColumn(['is_active', 'offerwall_status']);
+        return $this->firstOfferwallColumn(['is_active', 'offerwall_status', 'status', 'active', 'is_enabled', 'enabled']);
     }
 
     private function firstOfferwallColumn(array $columns): ?string
