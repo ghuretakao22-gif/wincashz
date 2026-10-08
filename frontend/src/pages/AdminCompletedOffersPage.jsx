@@ -34,8 +34,8 @@ export default function AdminCompletedOffersPage() {
   const [apiError, setApiError] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
 
-  const fetchTasks = async () => {
-    setLoading(true);
+  const fetchTasks = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     setActionError(null);
     setApiError(null);
     try {
@@ -67,15 +67,19 @@ export default function AdminCompletedOffersPage() {
       setTasks(normalized);
     } catch (err) {
       console.error('Failed to load completed tasks from backend:', err);
-      setApiError(err.message || 'Failed to connect to backend completed tasks API.');
-      setTasks([]);
+      if (!isBackground) setApiError(err.message || 'Failed to connect to backend completed tasks API.');
+      if (!isBackground) setTasks([]);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchTasks();
+    const interval = setInterval(() => {
+      fetchTasks(true);
+    }, 20000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleCopy = (text, id) => {
@@ -386,6 +390,7 @@ export default function AdminCompletedOffersPage() {
               <option value={100}>100 / page</option>
               <option value={250}>250 / page</option>
               <option value={500}>500 / page</option>
+              <option value={1000}>1000 / page</option>
               <option value="all">All ({filtered.length.toLocaleString()})</option>
             </select>
           </div>

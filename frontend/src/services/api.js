@@ -144,7 +144,14 @@ export const api = {
     const q = new URLSearchParams(params).toString();
     const res = await apiRequest(`/admin/users${q ? `?${q}` : ''}`);
     const list = parseUsersResponse(res);
-    return { success: true, users: list, data: list };
+    return {
+      success: true,
+      users: list,
+      data: list,
+      rows: list,
+      pagination: res.pagination || null,
+      raw: res,
+    };
   },
   getAdminCompletedTasks: (params = {}) => {
     const q = new URLSearchParams(params).toString();

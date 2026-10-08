@@ -49,7 +49,7 @@ export default function LiveDropTicker() {
     };
 
     window.addEventListener('wincashz-task-completed', handleTaskCompleted);
-    const pollInterval = setInterval(fetchTimeline, 8000);
+    const pollInterval = setInterval(fetchTimeline, 18000);
 
     return () => {
       window.removeEventListener('wincashz-task-completed', handleTaskCompleted);
@@ -77,23 +77,15 @@ export default function LiveDropTicker() {
               No recent activity recorded yet. Launch an offerwall below to earn coins!
             </span>
           ) : (
-            <div className="animate-ticker flex items-center gap-6 whitespace-nowrap">
+            <div className="animate-ticker flex items-center gap-4 whitespace-nowrap">
               {items.map((drop, idx) => (
                 <div
                   key={`${drop.id}-${idx}`}
-                  className="inline-flex items-center gap-1.5 text-xs text-slate-300"
+                  className="inline-flex items-center gap-2 text-xs text-slate-300 bg-white/[0.04] border border-white/5 px-3 py-1 rounded-full shrink-0"
                 >
-                  <span className="font-semibold text-white">{drop.user}</span>
-                  <span className="text-slate-400">earned</span>
-                  <span className="font-bold text-brand-400">{drop.coins.toLocaleString()} coins</span>
-                  <span className="text-slate-400">from</span>
-                  <span className="font-medium text-slate-200">{drop.offerName}</span>
-                  {drop.provider && (
-                    <span className="text-[10px] font-semibold text-slate-400 bg-white/5 border border-white/5 px-1.5 py-0.5 rounded">
-                      {drop.provider}
-                    </span>
-                  )}
-                  <span className="text-slate-600 text-xs ml-3">•</span>
+                  <span className="font-semibold text-white tracking-wide">{drop.user}</span>
+                  <span className="font-extrabold text-brand-400">{drop.coins.toLocaleString()} coins</span>
+                  <span className="text-slate-600 text-xs ml-1">•</span>
                 </div>
               ))}
             </div>

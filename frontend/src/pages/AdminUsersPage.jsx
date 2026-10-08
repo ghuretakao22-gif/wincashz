@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, ShieldCheck, Ban, CheckCircle2, User, RefreshCw, AlertCircle, Copy, Check, Eye, X, Coins, FileSpreadsheet, Wallet, RotateCcw, Clock } from 'lucide-react';
+import { Search, ShieldCheck, Ban, CheckCircle2, User, RefreshCw, AlertCircle, Copy, Check, Eye, X, Coins, FileSpreadsheet, Wallet, RotateCcw, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import TableExport from '../components/TableExport';
 import { api, parseUsersResponse, getProviderUserId } from '../services/api';
 
@@ -7,6 +7,9 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [paginationInfo, setPaginationInfo] = useState({ currentPage: 1, lastPage: 1, perPage: 25, total: 0, from: 0, to: 0 });
   const [copiedId, setCopiedId] = useState(null);
   const [apiError, setApiError] = useState(null);
   const [parseError, setParseError] = useState(null);
@@ -19,30 +22,52 @@ export default function AdminUsersPage() {
   const [modalLoading, setModalLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('tasks'); // 'tasks' | 'withdrawals' | 'chargebacks'
 
-  const fetchUsers = useCallback(async () => {
-    setLoading(true);
+  const fetchUsers = useCallback(async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     setApiError(null);
     setParseError(null);
     try {
-      const res = await api.getAdminUsers();
+      const params = {
+        page: currentPage,
+        per_page: rowsPerPage,
+      };
+      if (search.trim()) {
+        params.search = search.trim();
+      }
+      const res = await api.getAdminUsers(params);
       const list = parseUsersResponse(res);
       if (list === null) {
         setParseError('Users API response structure could not be parsed into a valid list format.');
         setUsers([]);
       } else {
         setUsers(list);
+        if (res.pagination) {
+          setPaginationInfo(res.pagination);
+        } else {
+          setPaginationInfo({
+            currentPage: 1,
+            lastPage: 1,
+            perPage: list.length || 25,
+            total: list.length || 0,
+            from: list.length ? 1 : 0,
+            to: list.length,
+          });
+        }
       }
     } catch (err) {
       console.error('Failed to load users from backend:', err);
-      setApiError(err.message || 'Failed to connect to backend users API.');
-      setUsers([]);
+      if (!isBackground) setApiError(err.message || 'Failed to connect to backend users API.');
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
-  }, []);
+  }, [currentPage, rowsPerPage, search]);
 
   useEffect(() => {
     fetchUsers();
+
+    const interval = setInterval(() => {
+      fetchUsers(true);
+    }, 20000);
 
     const handleSync = (e) => {
       if (e.detail && Array.isArray(e.detail)) {
@@ -50,7 +75,10 @@ export default function AdminUsersPage() {
       }
     };
     window.addEventListener('wincashz-users-sync', handleSync);
-    return () => window.removeEventListener('wincashz-users-sync', handleSync);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('wincashz-users-sync', handleSync);
+    };
   }, [fetchUsers]);
 
   const handleCopy = (text, id) => {
@@ -335,15 +363,43 @@ export default function AdminUsersPage() {
         </div>
       )}
 
-      <div className="p-3 rounded-2xl glass-card border border-white/10 flex items-center gap-2">
-        <Search className="w-4 h-4 text-slate-500 shrink-0" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by User ID, Username, Email, IP, Country..."
-          className="w-full bg-transparent border-0 text-xs text-white placeholder-slate-500 focus:outline-none"
-        />
+      <div className="p-3 rounded-2xl glass-card border border-white/10 flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+        <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+          <Search className="w-4 h-4 text-slate-500 shrink-0" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setCurrentPage(1);
+            }}
+            placeholder="Search by User ID, Username, Email, IP, Country..."
+            className="w-full bg-transparent border-0 text-xs text-white placeholder-slate-500 focus:outline-none"
+          />
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-400 text-xs font-semibold">Page Size:</span>
+            <select
+              value={rowsPerPage}
+              onChange={(e) => {
+                const val = e.target.value === 'all' ? 'all' : Number(e.target.value);
+                setRowsPerPage(val);
+                setCurrentPage(1);
+              }}
+              className="bg-[#0c1015] border border-white/10 text-xs font-bold text-brand-400 rounded-lg px-2.5 py-1.5 focus:outline-none cursor-pointer"
+            >
+              <option value={25}>25 / page</option>
+              <option value={50}>50 / page</option>
+              <option value={100}>100 / page</option>
+              <option value={250}>250 / page</option>
+              <option value={500}>500 / page</option>
+              <option value={1000}>1000 / page</option>
+              <option value="all">All ({paginationInfo.total.toLocaleString()})</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <div className="rounded-2xl glass-card border border-white/10 overflow-hidden shadow-2xl">
@@ -367,22 +423,23 @@ export default function AdminUsersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 font-mono text-[11px]">
-              {filtered.length === 0 ? (
+              {users.length === 0 ? (
                 <tr>
                   <td colSpan={13} className="py-8 text-center text-slate-500 font-sans">
                     {loading ? 'Loading users from database...' : (parseError || 'No registered user accounts found.')}
                   </td>
                 </tr>
               ) : (
-                filtered.map((u, index) => {
+                users.map((u, index) => {
                   const uid = getProviderUserId(u);
                   const rawBalance = Number(u.balance || 0);
                   const coins = Math.round(rawBalance >= 100 ? rawBalance : rawBalance * 1000);
                   const usd = (coins / 1000).toFixed(2);
+                  const sl = (paginationInfo.from || 1) + index;
                   return (
                     <tr key={u.id || index} className="hover:bg-white/[0.03] text-slate-300 whitespace-nowrap">
                       <td className="py-2 px-3 border-r border-white/5 text-center text-slate-500 font-sans">
-                        {index + 1}
+                        {sl}
                       </td>
                       <td className="py-2.5 px-3 border-r border-white/5 font-bold text-white">
                         <div className="flex items-center gap-1.5">
@@ -452,6 +509,40 @@ export default function AdminUsersPage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Pagination Controls Footer */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 rounded-2xl glass-card border border-white/10 text-xs">
+        <div className="flex items-center gap-2 text-slate-400">
+          <span>Total Registered Users: <strong className="text-white">{paginationInfo.total.toLocaleString()}</strong></span>
+          {rowsPerPage !== 'all' && (
+            <span>• Showing {paginationInfo.from || 0} to {paginationInfo.to || 0}</span>
+          )}
+        </div>
+
+        {rowsPerPage !== 'all' && (
+          <div className="flex items-center gap-3">
+            <button
+              disabled={currentPage <= 1 || loading}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed border border-white/10 transition-colors"
+              title="Previous Page"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-slate-300 font-mono text-xs">
+              Page <strong className="text-white">{currentPage}</strong> of <strong className="text-white">{paginationInfo.lastPage || 1}</strong>
+            </span>
+            <button
+              disabled={currentPage >= (paginationInfo.lastPage || 1) || loading}
+              onClick={() => setCurrentPage((p) => p + 1)}
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed border border-white/10 transition-colors"
+              title="Next Page"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* USER DETAILS & REAL HISTORY DRAWER / MODAL */}

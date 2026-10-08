@@ -19,7 +19,7 @@ class ProfileController extends Controller
         $user = $request->user('api');
         $tab = (string) $request->query('tab', 'completed');
         $page = max(1, (int) $request->query('page', 1));
-        $perPage = max(1, min(50, (int) $request->query('per_page', 5)));
+        $perPage = max(1, min(100, (int) $request->query('per_page', 25)));
 
         return response()->json([
             'user' => $this->profileUserPayload($user),

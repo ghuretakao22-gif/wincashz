@@ -251,9 +251,9 @@ class AdminController extends Controller
 
     public function users(Request $request): JsonResponse
     {
-        $perPage = 10;
         $page = max(1, (int) $request->query('page', 1));
         $search = trim((string) $request->query('search', ''));
+        $requestedPerPage = strtolower(trim((string) $request->query('per_page', '25')));
 
         $query = User::query();
 
@@ -274,6 +274,17 @@ class AdminController extends Controller
                     $builder->orWhere('id', (int) $search);
                 }
             });
+        }
+
+        $allowedPerPageOptions = [25, 50, 100, 250, 500, 1000];
+
+        if ($requestedPerPage === 'all') {
+            $perPage = max(1, (clone $query)->count());
+        } else {
+            $requestedPerPageInt = (int) $requestedPerPage;
+            $perPage = in_array($requestedPerPageInt, $allowedPerPageOptions, true)
+                ? $requestedPerPageInt
+                : 25;
         }
 
         $paginator = $query
@@ -780,7 +791,7 @@ class AdminController extends Controller
             });
         }
 
-        $allowedPerPageOptions = [10, 20, 30, 50, 100, 500];
+        $allowedPerPageOptions = [25, 50, 100, 250, 500, 1000];
 
         if ($requestedPerPage === 'all') {
             $perPage = max(1, (clone $query)->count());
@@ -788,7 +799,7 @@ class AdminController extends Controller
             $requestedPerPageInt = (int) $requestedPerPage;
             $perPage = in_array($requestedPerPageInt, $allowedPerPageOptions, true)
                 ? $requestedPerPageInt
-                : 10;
+                : 25;
         }
 
         $paginator = $query
@@ -1943,12 +1954,12 @@ class AdminController extends Controller
         }
 
         $fallbacks = [
-            'userId' => ['userId', 'user_id', 'identity_id', 'subId', 'sub_id', 'subid', 'userid', 'userID', 'player_id', 'member', 'uid'],
-            'transactionId' => ['transId', 'trans_id', 'txid', 'transactionId', 'transaction_id', 'transactionid', 'transactionID', 'conversion', 'conv_id', 'offerwall_transaction_id'],
-            'revenue' => ['payout', 'payout_usd', 'amount', 'revenue', 'user_amount'],
-            'reward' => ['reward', 'reward_value', 'rewardValue', 'points', 'amount', 'user_amount', 'currencyReward', 'currency_reward', 'currencyAmount', 'currency_amount', 'virtual_amount'],
-            'offerName' => ['offer_name', 'offername', 'title', 'offer_title', 'campaign_name', 'campaign_title', 'task_name', 'task_title', 'name', 'offerName', 'offerTitle', 'campaignName', 'campaignTitle', 'taskName', 'taskTitle', 'program_name', 'program_title', 'event_name', 'eventName', 'OFFER_NAME', 'OFFERNAME', 'TITLE', 'OFFER_TITLE', 'CAMPAIGN_NAME', 'CAMPAIGN_TITLE', 'TASK_NAME', 'TASK_TITLE', 'NAME'],
-            'offerId' => ['offerId', 'campaign_id', 'offer_id', 'program_id'],
+            'userId' => ['userId', 'user_id', 'identity_id', 'subId', 'sub_id', 'subid', 'sub_id1', 'subid1', 'userid', 'userID', 'player_id', 'member', 'uid', 'user', 'usr', 'USER_ID', 'SUBID', 'SUB_ID'],
+            'transactionId' => ['transId', 'trans_id', 'transid', 'txid', 'tx_id', 'txn_id', 'txId', 'txnId', 'transactionId', 'transaction_id', 'transactionid', 'transactionID', 'conversion', 'conv_id', 'offerwall_transaction_id', 'order_id', 'orderId', 'id', 'claim_id', 'TXID', 'TRANS_ID', 'TRANSACTION_ID'],
+            'revenue' => ['payout', 'payout_usd', 'amount', 'revenue', 'site_revenue', 'user_amount', 'commission', 'PAYOUT', 'REVENUE'],
+            'reward' => ['reward', 'reward_value', 'rewardValue', 'coins', 'points', 'amount', 'user_amount', 'currencyReward', 'currency_reward', 'currencyAmount', 'currency_amount', 'virtual_amount', 'payout', 'payout_usd', 'credited_amount', 'REWARD', 'POINTS', 'COINS'],
+            'offerName' => ['offer_name', 'offername', 'title', 'offer_title', 'campaign_name', 'campaign_title', 'task_name', 'task_title', 'name', 'offerName', 'offerTitle', 'campaignName', 'campaignTitle', 'taskName', 'taskTitle', 'program_name', 'program_title', 'event_name', 'eventName', 'subid4', 'sub_id4', 'subid3', 'sub_id3', 'subid2', 'sub_id2', 'subid_4', 'OFFER_NAME', 'OFFERNAME', 'TITLE', 'OFFER_TITLE', 'CAMPAIGN_NAME', 'CAMPAIGN_TITLE', 'TASK_NAME', 'TASK_TITLE', 'NAME'],
+            'offerId' => ['offerId', 'campaign_id', 'offer_id', 'program_id', 'id', 'offerID', 'campaignID'],
             'status' => ['status', 'result', 'type', 'STATUS', 'state'],
             'ip' => ['userIp', 'user_ip', 'userip', 'ip_address', 'ip', 'ipaddr', 'USER_IP'],
             'country' => ['country', 'geo', 'country_name', 'countryName', 'countryCode', 'country_code', 'COUNTRY'],
