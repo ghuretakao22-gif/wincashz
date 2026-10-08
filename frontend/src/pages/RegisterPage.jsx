@@ -19,7 +19,7 @@ export default function RegisterPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/dashboard', { replace: true });
+      navigate('/earn', { replace: true });
     }
     // Check Google Auth
     api.getGoogleConfig()
@@ -62,7 +62,11 @@ export default function RegisterPage() {
         password,
       });
       if (res.success) {
-        navigate('/dashboard', { replace: true });
+        if (res.user?.role === 'admin') {
+          navigate('/admin', { replace: true });
+        } else {
+          navigate('/earn', { replace: true });
+        }
       }
     } catch (err) {
       const validationMsgs = err.errors ? Object.values(err.errors).flat().join(' ') : null;

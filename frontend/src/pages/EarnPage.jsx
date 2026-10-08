@@ -14,6 +14,7 @@ import {
   Lock
 } from 'lucide-react';
 import OfferwallModal from '../components/OfferwallModal';
+import ProviderCard from '../components/ProviderCard';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 
@@ -133,61 +134,12 @@ export default function EarnPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {featuredWalls.map((wall, idx) => (
-                <div
+                <ProviderCard
                   key={`featured-${wall.id || idx}`}
-                  onClick={() => handleOpen(wall)}
-                  className="rounded-3xl glass-card p-6 border-2 border-amber-500/30 hover:border-amber-400/70 hover:shadow-glow-emerald cursor-pointer transition-all flex flex-col justify-between group shadow-xl relative overflow-hidden bg-gradient-to-br from-[#121820] to-[#151c27]"
-                >
-                  <div className="absolute -top-12 -right-12 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none group-hover:bg-amber-500/20 transition-all" />
-                  
-                  <div className="relative z-10 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/25 p-2.5 flex items-center justify-center text-2xl font-bold text-amber-400 group-hover:scale-105 group-hover:border-amber-400/50 transition-all shadow-inner">
-                        {wall.logo_url || wall.offerWallLogo || wall.image_url ? (
-                          <img src={wall.logo_url || wall.offerWallLogo || wall.image_url} alt={wall.name} className="w-full h-full object-contain" />
-                        ) : (
-                          wall.icon || wall.name?.charAt(0) || '⭐'
-                        )}
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5">
-                        <span className="text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
-                          <Star className="w-3 h-3 fill-amber-300" /> TOP PICK
-                        </span>
-                        {wall.bonus_multiplier && Number(wall.bonus_multiplier) > 0 && (
-                          <span className="text-xs font-black bg-gradient-to-r from-brand-400 to-cyan-400 text-slate-950 px-2.5 py-0.5 rounded-full shadow-glow-emerald">
-                            +{wall.bonus_multiplier}% BONUS
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <h3 className="text-xl font-bold text-white group-hover:text-brand-300 transition-colors">
-                        {wall.display_name || wall.name}
-                      </h3>
-                      <p className="text-xs text-slate-400 line-clamp-2 mt-1.5">
-                        {wall.description || wall.desc || 'High-payout verified offerwall partner.'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="pt-4 mt-4 border-t border-white/5 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-300 capitalize bg-white/5 px-2.5 py-1 rounded-lg">
-                        {wall.category || 'games'}
-                      </span>
-                      {wall.min_level > 1 && (
-                        <span className="text-xs font-bold text-purple-400 bg-purple-500/10 px-2 py-1 rounded-lg">
-                          Lvl {wall.min_level}
-                        </span>
-                      )}
-                    </div>
-                    <button className="px-4 py-2 rounded-xl bg-gradient-to-r from-brand-400 to-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 group-hover:brightness-110 shadow-glow-emerald transition-all">
-                      <span>Launch</span>
-                      <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                    </button>
-                  </div>
-                </div>
+                  wall={wall}
+                  onOpen={handleOpen}
+                  isFeatured={true}
+                />
               ))}
             </div>
           </div>
@@ -252,58 +204,12 @@ export default function EarnPage() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredWalls.map((wall, idx) => (
-                <div
+                <ProviderCard
                   key={wall.id || idx}
-                  onClick={() => handleOpen(wall)}
-                  className="rounded-3xl glass-card p-6 border border-white/10 hover:border-brand-500/50 hover:shadow-glow-emerald cursor-pointer transition-all flex flex-col justify-between group"
-                >
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 p-2 flex items-center justify-center text-xl font-bold text-brand-400 group-hover:scale-105 transition-transform">
-                        {wall.logo_url || wall.offerWallLogo || wall.image_url ? (
-                          <img src={wall.logo_url || wall.offerWallLogo || wall.image_url} alt={wall.name} className="w-full h-full object-contain" />
-                        ) : (
-                          wall.icon || wall.name?.charAt(0) || '🎮'
-                        )}
-                      </div>
-                      {wall.bonus_multiplier && Number(wall.bonus_multiplier) > 0 ? (
-                        <span className="text-xs font-bold text-brand-400 bg-brand-500/10 border border-brand-500/30 px-2.5 py-0.5 rounded-full">
-                          +{wall.bonus_multiplier}% Bonus
-                        </span>
-                      ) : (
-                        <span className="text-[11px] font-semibold text-slate-400 capitalize bg-white/5 px-2 py-0.5 rounded-md">
-                          {wall.category || 'games'}
-                        </span>
-                      )}
-                    </div>
-
-                    <div>
-                      <h3 className="font-bold text-lg text-white group-hover:text-brand-300 transition-colors">
-                        {wall.display_name || wall.name}
-                      </h3>
-                      <p className="text-xs text-slate-400 line-clamp-2 mt-1">
-                        {wall.description || wall.desc || 'Complete offers and surveys for verified instant cash rewards.'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="pt-4 mt-4 border-t border-white/5 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-slate-400 flex items-center gap-1">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                        Verified
-                      </span>
-                      {wall.min_level > 1 && (
-                        <span className="text-[11px] font-bold text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded">
-                          Lvl {wall.min_level}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-xs font-bold text-brand-400 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                      Open <ArrowRight className="w-3.5 h-3.5" />
-                    </span>
-                  </div>
-                </div>
+                  wall={wall}
+                  onOpen={handleOpen}
+                  isFeatured={false}
+                />
               ))}
             </div>
           )}
