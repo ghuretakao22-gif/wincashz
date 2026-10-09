@@ -10,12 +10,33 @@ export default function OfferwallModal({ offerwall, isOpen, onClose }) {
   // Build the live iframe URL injecting user_id
   let iframeUrl = offerwall.iframe_url || offerwall.url || '';
   if (user && iframeUrl) {
+    const encodedId = encodeURIComponent(user.id);
+    const encodedUser = encodeURIComponent(user.username || user.name || user.id);
     iframeUrl = iframeUrl
-      .replace(/\{user_id\}/gi, encodeURIComponent(user.id))
-      .replace(/\{subId\}/gi, encodeURIComponent(user.id))
-      .replace(/\{userId\}/gi, encodeURIComponent(user.id))
-      .replace(/\[USER_ID\]/gi, encodeURIComponent(user.id))
-      .replace(/\[USERID\]/gi, encodeURIComponent(user.id));
+      .replace(/\{user_id\}/gi, encodedId)
+      .replace(/\{sub_id\}/gi, encodedId)
+      .replace(/\{subid\}/gi, encodedId)
+      .replace(/\{subId\}/gi, encodedId)
+      .replace(/\{userId\}/gi, encodedId)
+      .replace(/\{sub_id1\}/gi, encodedId)
+      .replace(/\{sub1\}/gi, encodedId)
+      .replace(/\{uid\}/gi, encodedId)
+      .replace(/\{id\}/gi, encodedId)
+      .replace(/\{username\}/gi, encodedUser)
+      .replace(/\{user_name\}/gi, encodedUser)
+      .replace(/\[USER_ID\]/gi, encodedId)
+      .replace(/\[USERID\]/gi, encodedId)
+      .replace(/\[SUB_ID\]/gi, encodedId)
+      .replace(/\[SUBID\]/gi, encodedId)
+      .replace(/\[SUB1\]/gi, encodedId)
+      .replace(/\[UID\]/gi, encodedId)
+      .replace(/\[ID\]/gi, encodedId)
+      .replace(/\[USERNAME\]/gi, encodedUser)
+      .replace(/\[USER_NAME\]/gi, encodedUser)
+      .replace(/%USER_ID%/gi, encodedId)
+      .replace(/%SUB_ID%/gi, encodedId)
+      .replace(/%USERID%/gi, encodedId)
+      .replace(/%SUBID%/gi, encodedId);
   }
 
   return (

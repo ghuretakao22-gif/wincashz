@@ -490,4 +490,65 @@ class OfferwallPostbackTest extends TestCase
         $this->assertNotNull($transaction);
         $this->assertSame(470.0, (float) $transaction->amount);
     }
+
+    public function test_vortex_postback_with_alias_slug_and_dynamic_parameters(): void
+    {
+        DB::table('offerwalls')->insert([
+            'name' => 'Vortex',
+            'logo_url' => 'https://example.com/vortex.png',
+            'category' => 'offerwall',
+            'iframe_url' => 'https://vortexwall.com/ow/123/{user_id}',
+            'rating' => 5,
+            'is_active' => true,
+            'sort_order' => 1,
+            'unlock_level' => 1,
+            'postback_slug' => 'vortex',
+            'postback_parameters' => json_encode([]),
+            'postback_url' => 'https://example.com/api/offerwall-postback/vortex',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $userId = DB::table('users')->insertGetId([
+            'name' => 'Vortex Player',
+            'username' => 'vortexplayer',
+            'email' => 'vortex@example.com',
+            'role' => 'user',
+            'balance' => 0,
+            'level' => 1,
+            'referral_code' => 'VOR123',
+            'password' => bcrypt('secret123'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // 1. Postback to vortexwall alias with sub_id, event_id, status=1
+        $response = $this->get('/api/offerwall-postback/vortexwall?sub_id='.$userId.'&event_id=vortex-tx-555&payout=0.35&reward=350&status=1&campaign_name=Prime+Video');
+        $response->assertOk()->assertContent('Ok');
+
+        $completedTask = DB::table('completed_tasks')->where('transaction_id', 'vortex-tx-555')->first();
+        $this->assertNotNull($completedTask);
+        $this->assertSame('vortex', $completedTask->offer_wall_name);
+        $this->assertSame(350.0, (float) $completedTask->currency_reward);
+        $this->assertSame(350.0, (float) DB::table('users')->where('id', $userId)->value('balance'));
+
+        // 2. Postback to unseeded provider (e.g. clickwall)
+        $response2 = $this->get('/api/offerwall-postback/clickwall?user_id='.$userId.'&txid=click-tx-777&payout=0.20&reward=200&status=approved&offer_name=App+Install');
+        $response2->assertOk()->assertContent('Ok');
+
+        $completedTask2 = DB::table('completed_tasks')->where('transaction_id', 'click-tx-777')->first();
+        $this->assertNotNull($completedTask2);
+        $this->assertSame('clickwall', $completedTask2->offer_wall_name);
+        $this->assertSame(200.0, (float) $completedTask2->currency_reward);
+        $this->assertSame(550.0, (float) DB::table('users')->where('id', $userId)->value('balance'));
+
+        // 3. User resolution by username
+        $response3 = $this->get('/api/offerwall-postback/vortex?user_id=vortexplayer&txid=vortex-tx-888&payout=0.15&reward=150&status=approved&offer_name=Survey');
+        $response3->assertOk()->assertContent('Ok');
+
+        $completedTask3 = DB::table('completed_tasks')->where('transaction_id', 'vortex-tx-888')->first();
+        $this->assertNotNull($completedTask3);
+        $this->assertSame($userId, (int) $completedTask3->user_id);
+        $this->assertSame(700.0, (float) DB::table('users')->where('id', $userId)->value('balance'));
+    }
 }

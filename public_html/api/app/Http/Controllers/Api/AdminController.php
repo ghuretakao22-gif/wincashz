@@ -1676,17 +1676,25 @@ class AdminController extends Controller
 
     public function offerwallPostback(Request $request, string $slug): Response|JsonResponse
     {
-        $offerwall = $this->resolveOfferwallForPostback($slug);
-        $providerFound = $offerwall instanceof Offerwall && (bool) ($offerwall->is_active ?? true);
+        $requestIp = trim((string) (app(IpCountryResolver::class)->resolveClientIp($request) ?? ''));
+        Log::info("Incoming offerwall postback [{$slug}]", [
+            'method' => $request->method(),
+            'url' => $request->fullUrl(),
+            'inputs' => $request->all(),
+            'ip' => $requestIp,
+        ]);
 
-        if (!$providerFound) {
-            Log::warning("Postback drop: PROVIDER_NOT_FOUND or INACTIVE for slug: {$slug}");
+        $offerwall = $this->resolveOfferwallForPostback($slug);
+        $providerExplicitlyInactive = $offerwall instanceof Offerwall && isset($offerwall->is_active) && $offerwall->is_active === false;
+
+        if ($providerExplicitlyInactive) {
+            Log::warning("Postback drop: PROVIDER_EXPLICITLY_INACTIVE for slug: {$slug}");
             if ($request->boolean('is_test') || $request->query('is_test') === '1' || $request->input('is_test') === '1' || $request->query('test') === '1' || $request->query('dry_run') === '1') {
                 return response()->json([
                     'success' => false,
                     'status' => 'FAIL',
                     'result' => 'FAIL',
-                    'message' => "Incoming Postback Test FAIL: Offerwall provider '{$slug}' not found or inactive.",
+                    'message' => "Incoming Postback Test FAIL: Offerwall provider '{$slug}' is disabled in settings.",
                     'is_test' => true,
                     'checks' => [
                         'callback_reached_server' => 'YES',
@@ -1704,13 +1712,22 @@ class AdminController extends Controller
             return $this->postbackAcknowledgementResponse();
         }
 
-        $parameterMap = $this->normalizePostbackParameters($offerwall->postback_parameters ?? []);
-        $offerwallName = $this->firstNonEmptyString(
-            $offerwall->name ?? null,
-            $offerwall->offer_wall_name ?? null,
-            $slug,
-        );
-        $offerwallSlug = $this->sanitizeOfferwallSlug((string) ($offerwall->postback_slug ?? $offerwallName));
+        $providerFound = true;
+        $parameterMap = $offerwall instanceof Offerwall
+            ? $this->normalizePostbackParameters($offerwall->postback_parameters ?? [])
+            : [];
+
+        $offerwallName = $offerwall instanceof Offerwall
+            ? $this->firstNonEmptyString(
+                $offerwall->name ?? null,
+                $offerwall->offer_wall_name ?? null,
+                $slug,
+            )
+            : ucfirst(str_replace(['-', '_'], ' ', $slug));
+
+        $offerwallSlug = $offerwall instanceof Offerwall
+            ? $this->sanitizeOfferwallSlug((string) ($offerwall->postback_slug ?? $offerwallName))
+            : $this->sanitizeOfferwallSlug($slug);
 
         $userIdValue = $this->resolvePostbackValue($request, 'userId', $parameterMap, null);
         $userId = $userIdValue === null || trim((string) $userIdValue) === '' ? 0 : (int) $userIdValue;
@@ -2103,6 +2120,7 @@ class AdminController extends Controller
             return null;
         }
 
+        // 1. Direct postback_slug match
         $offerwall = Offerwall::query()
             ->where('postback_slug', $normalizedSlug)
             ->first();
@@ -2111,12 +2129,66 @@ class AdminController extends Controller
             return $offerwall;
         }
 
-        return Offerwall::query()
-            ->get()
-            ->first(function (Offerwall $candidate) use ($normalizedSlug): bool {
-                return $this->sanitizeOfferwallSlug((string) ($candidate->postback_slug ?? '')) === $normalizedSlug
-                    || $this->sanitizeOfferwallSlug((string) ($candidate->name ?? $candidate->offer_wall_name ?? '')) === $normalizedSlug;
+        // 2. Exact or sanitized match on name or postback_slug
+        $allWalls = Offerwall::query()->get();
+        $matched = $allWalls->first(function (Offerwall $candidate) use ($normalizedSlug): bool {
+            return $this->sanitizeOfferwallSlug((string) ($candidate->postback_slug ?? '')) === $normalizedSlug
+                || $this->sanitizeOfferwallSlug((string) ($candidate->name ?? $candidate->offer_wall_name ?? '')) === $normalizedSlug;
+        });
+
+        if ($matched) {
+            return $matched;
+        }
+
+        // 3. Known network aliases mapping
+        $aliasMap = [
+            'vortexwall' => ['vortex', 'mobivortex', 'vortex-wall'],
+            'mobivortex' => ['vortex', 'vortexwall'],
+            'vortex' => ['vortexwall', 'mobivortex'],
+            'cpalead' => ['cpa_lead', 'cpa-lead', 'cpaleads'],
+            'cpa-lead' => ['cpalead', 'cpa_lead'],
+            'gemiad' => ['gemiwall', 'gemi-ad', 'gemi'],
+            'gemiwall' => ['gemiad', 'gemi-ad'],
+            'lootably' => ['lootable', 'loot'],
+            'torox' => ['offertoro', 'toro'],
+            'offertoro' => ['torox'],
+            'clickwall' => ['click-wall', 'click'],
+            'offery' => ['offerywall', 'offery-wall'],
+            'notik' => ['notikme', 'notik-me'],
+            'adtowall' => ['ad-to-wall'],
+            'mmwall' => ['mm-wall'],
+            'upwall' => ['up-wall'],
+            'revtoo' => ['rev-too'],
+            'taskwall' => ['task-wall'],
+            'pubscale' => ['pub-scale'],
+            'revu' => ['revenue-universe'],
+            'radientwall' => ['radient-wall'],
+        ];
+
+        $possibleAliases = $aliasMap[$normalizedSlug] ?? [];
+        foreach ($possibleAliases as $alias) {
+            $aliasMatch = $allWalls->first(function (Offerwall $candidate) use ($alias): bool {
+                return $this->sanitizeOfferwallSlug((string) ($candidate->postback_slug ?? '')) === $alias
+                    || $this->sanitizeOfferwallSlug((string) ($candidate->name ?? $candidate->offer_wall_name ?? '')) === $alias;
             });
+            if ($aliasMatch) {
+                return $aliasMatch;
+            }
+        }
+
+        // 4. Substring / strip suffix 'wall' match
+        $slugWithoutWall = preg_replace('/wall$/i', '', $normalizedSlug);
+        if ($slugWithoutWall !== '' && $slugWithoutWall !== $normalizedSlug) {
+            $suffixMatch = $allWalls->first(function (Offerwall $candidate) use ($slugWithoutWall): bool {
+                $candSlug = $this->sanitizeOfferwallSlug((string) ($candidate->postback_slug ?? $candidate->name ?? ''));
+                return $candSlug === $slugWithoutWall || preg_replace('/wall$/i', '', $candSlug) === $slugWithoutWall;
+            });
+            if ($suffixMatch) {
+                return $suffixMatch;
+            }
+        }
+
+        return null;
     }
 
     private function resolvePostbackValue(Request $request, string $field, array $parameterMap = [], mixed $default = null): mixed
@@ -2133,13 +2205,13 @@ class AdminController extends Controller
         }
 
         $fallbacks = [
-            'userId' => ['userId', 'user_id', 'identity_id', 'subId', 'sub_id', 'subid', 'sub_id1', 'subid1', 'userid', 'userID', 'player_id', 'member', 'uid', 'user', 'usr', 'USER_ID', 'SUBID', 'SUB_ID'],
-            'transactionId' => ['transId', 'trans_id', 'transid', 'txid', 'tx_id', 'txn_id', 'txId', 'txnId', 'transactionId', 'transaction_id', 'transactionid', 'transactionID', 'conversion', 'conv_id', 'offerwall_transaction_id', 'order_id', 'orderId', 'id', 'claim_id', 'TXID', 'TRANS_ID', 'TRANSACTION_ID'],
-            'revenue' => ['payout', 'payout_usd', 'amount', 'revenue', 'site_revenue', 'user_amount', 'commission', 'PAYOUT', 'REVENUE'],
-            'reward' => ['reward', 'reward_value', 'rewardValue', 'coins', 'points', 'amount', 'user_amount', 'currencyReward', 'currency_reward', 'currencyAmount', 'currency_amount', 'virtual_amount', 'credited_amount', 'REWARD', 'POINTS', 'COINS'],
-            'offerName' => ['offer_name', 'offername', 'title', 'offer_title', 'campaign_name', 'campaign_title', 'task_name', 'task_title', 'name', 'offerName', 'offerTitle', 'campaignName', 'campaignTitle', 'taskName', 'taskTitle', 'program_name', 'program_title', 'event_name', 'eventName', 'subid4', 'sub_id4', 'subid3', 'sub_id3', 'subid2', 'sub_id2', 'subid_4', 'OFFER_NAME', 'OFFERNAME', 'TITLE', 'OFFER_TITLE', 'CAMPAIGN_NAME', 'CAMPAIGN_TITLE', 'TASK_NAME', 'TASK_TITLE', 'NAME'],
-            'offerId' => ['offerId', 'campaign_id', 'offer_id', 'program_id', 'id', 'offerID', 'campaignID'],
-            'status' => ['status', 'result', 'type', 'STATUS', 'state'],
+            'userId' => ['userId', 'user_id', 'identity_id', 'subId', 'sub_id', 'subid', 'sub_id1', 'subid1', 'sub1', 'sub2', 'sub_1', 'sub_2', 's1', 's2', 'userid', 'userID', 'player_id', 'member', 'uid', 'user', 'usr', 'USER_ID', 'SUBID', 'SUB_ID', 'external_user_id', 'external_id', 'custom_id', 'aff_sub', 'aff_sub1', 'click_id', 'clickid'],
+            'transactionId' => ['transId', 'trans_id', 'transid', 'txid', 'tx_id', 'txn_id', 'txId', 'txnId', 'transactionId', 'transaction_id', 'transactionid', 'transactionID', 'conversion', 'conv_id', 'conversion_id', 'offerwall_transaction_id', 'order_id', 'orderId', 'id', 'claim_id', 'event_id', 'eventId', 'session_id', 'sessionId', 'lead_id', 'leadId', 'click_id', 'clickId', 'TXID', 'TRANS_ID', 'TRANSACTION_ID', 'EVENT_ID', 'CONVERSION_ID', 'subid2', 'sub2'],
+            'revenue' => ['payout', 'payout_usd', 'payout_amount', 'amount', 'revenue', 'site_revenue', 'user_amount', 'commission', 'payout_currency', 'usd', 'PAYOUT', 'REVENUE'],
+            'reward' => ['reward', 'reward_value', 'rewardValue', 'coins', 'points', 'amount', 'user_amount', 'currencyReward', 'currency_reward', 'currencyAmount', 'currency_amount', 'virtual_amount', 'virtual_currency', 'credited_amount', 'credits', 'credit', 'REWARD', 'POINTS', 'COINS'],
+            'offerName' => ['offer_name', 'offername', 'title', 'offer_title', 'campaign_name', 'campaign_title', 'task_name', 'task_title', 'name', 'offerName', 'offerTitle', 'campaignName', 'campaignTitle', 'taskName', 'taskTitle', 'program_name', 'program_title', 'event_name', 'eventName', 'goal_name', 'goalName', 'app_name', 'appName', 'subid4', 'sub_id4', 'subid3', 'sub_id3', 'subid2', 'sub_id2', 'subid_4', 'OFFER_NAME', 'OFFERNAME', 'TITLE', 'OFFER_TITLE', 'CAMPAIGN_NAME', 'CAMPAIGN_TITLE', 'TASK_NAME', 'TASK_TITLE', 'NAME'],
+            'offerId' => ['offerId', 'campaign_id', 'offer_id', 'program_id', 'id', 'offerID', 'campaignID', 'ad_id', 'adId', 'goal_id', 'goalId', 'app_id', 'appId'],
+            'status' => ['status', 'result', 'type', 'state', 'STATUS', 'RESULT', 'TYPE', 'STATE', 'event', 'action'],
             'ip' => ['userIp', 'user_ip', 'userip', 'ip_address', 'ip', 'ipaddr', 'USER_IP'],
             'country' => ['country', 'geo', 'country_name', 'countryName', 'countryCode', 'country_code', 'COUNTRY'],
         ];
@@ -2156,6 +2228,16 @@ class AdminController extends Controller
                 $norm = trim((string) $value);
                 if (is_numeric($norm) && (int) $norm > 0) {
                     return (int) $norm;
+                }
+
+                if (preg_match('/^(?:user_|usr[-_]|id[=:]?|uid[-_]?|#)?(\d+)$/i', $norm, $matches)) {
+                    $extractedId = (int) $matches[1];
+                    if ($extractedId > 0) {
+                        $foundById = User::query()->where('id', $extractedId)->first();
+                        if ($foundById instanceof User) {
+                            return $foundById->id;
+                        }
+                    }
                 }
 
                 $foundUser = User::query()->where('username', $norm)->orWhere('name', $norm)->first();
