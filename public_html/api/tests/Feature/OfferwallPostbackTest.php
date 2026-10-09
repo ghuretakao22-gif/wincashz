@@ -222,7 +222,7 @@ class OfferwallPostbackTest extends TestCase
         $this->assertNotNull($rewardNotification);
         $this->assertSame('task_completed', $rewardNotification->type);
         $this->assertSame('You have received 250 coins from surveywall for Survey Complete', $rewardNotification->title);
-        $this->assertNull($rewardNotification->message);
+        $this->assertSame('You have received 250 coins from surveywall for Survey Complete.', $rewardNotification->message);
 
         $chargeback = $this->get('/api/offerwall-postback/surveywall?player_id='.$userId.'&txid=tx-1001&payout=1.25&points=250&offer_name=Survey+Complete&offer_id=SV-1&status=2&ip_address=127.0.0.1&country=BD');
         $chargeback->assertOk()->assertContent('Ok');

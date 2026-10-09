@@ -2029,14 +2029,16 @@ class AdminController extends Controller
                     TimelineEntry::query()->create($timelineData);
                 }
 
-                $notificationTitle = 'You have received '.$this->normalizeMoney($reward).' coins from '.$offerwallSlug.' for '.$offerName;
+                $safeOfferName = $offerName !== '' && strcasecmp($offerName, 'Offer') !== 0 ? $offerName : 'an offer';
+                $notificationTitle = 'You have received '.$this->normalizeMoney($reward).' coins from '.$offerwallSlug.' for '.$safeOfferName;
+                $notificationMessage = 'You have received '.$this->normalizeMoney($reward).' coins from '.$offerwallSlug.' for '.$safeOfferName.'.';
 
                 UserNotification::create([
                     'user_id' => $lockedUser->id,
                     'type' => 'task_completed',
                     'icon' => 'coins',
                     'title' => $notificationTitle,
-                    'message' => null,
+                    'message' => $notificationMessage,
                 ]);
             }
         });
