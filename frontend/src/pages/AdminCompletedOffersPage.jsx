@@ -55,6 +55,16 @@ export default function AdminCompletedOffersPage() {
     return false;
   }, [selectedDay, fromDate, toDate]);
 
+  // Check if a whole month is actively selected (AUTO-ALL for month)
+  const isMonthAutoAll = useMemo(() => {
+    return Boolean(selectedMonth && selectedMonth !== 'all' && (!selectedDay || selectedDay === 'all') && !fromDate && !toDate);
+  }, [selectedMonth, selectedDay, fromDate, toDate]);
+
+  // Auto-all applies to either a specific date or a whole month
+  const isAutoAll = useMemo(() => {
+    return isSingleDate || isMonthAutoAll;
+  }, [isSingleDate, isMonthAutoAll]);
+
   useEffect(() => {
     api.getOfferwalls().then((res) => {
       const list = res.offerwalls || [];
@@ -71,7 +81,7 @@ export default function AdminCompletedOffersPage() {
     try {
       const params = {
         page: currentPage,
-        per_page: isSingleDate ? 'all' : rowsPerPage,
+        per_page: isAutoAll ? 'all' : rowsPerPage,
       };
       if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
       if (wallFilter && wallFilter !== 'all') params.wall = wallFilter;
@@ -133,7 +143,7 @@ export default function AdminCompletedOffersPage() {
     } finally {
       if (!isBackground && currentRequestId === requestIdRef.current) setLoading(false);
     }
-  }, [currentPage, rowsPerPage, debouncedSearch, wallFilter, selectedMonth, selectedDay, fromDate, toDate, isSingleDate]);
+  }, [currentPage, rowsPerPage, debouncedSearch, wallFilter, selectedMonth, selectedDay, fromDate, toDate, isAutoAll]);
 
   useEffect(() => {
     fetchTasks();
@@ -435,10 +445,10 @@ export default function AdminCompletedOffersPage() {
             ))}
           </select>
 
-          {isSingleDate ? (
+          {isAutoAll ? (
             <div className="px-3 py-1.5 rounded-xl bg-brand-500/10 border border-brand-500/25 text-brand-300 text-xs font-semibold whitespace-nowrap flex items-center gap-1.5">
               <CalendarDays className="w-3.5 h-3.5 text-brand-400" />
-              <span>Showing all {(Number(paginationInfo?.total) || (Array.isArray(tasks) ? tasks.length : 0)).toLocaleString()} matching offers on this date</span>
+              <span>Showing all {(Number(paginationInfo?.total) || (Array.isArray(tasks) ? tasks.length : 0)).toLocaleString()} matching offers {isSingleDate ? 'on this date' : 'in this month'}</span>
             </div>
           ) : (
             <div className="flex items-center gap-1.5">
@@ -598,15 +608,15 @@ export default function AdminCompletedOffersPage() {
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 rounded-2xl glass-card border border-white/10 text-xs">
         <div className="flex items-center gap-2 text-slate-400">
           <span>Total Completed Offers: <strong className="text-white">{(Number(paginationInfo?.total) || 0).toLocaleString()}</strong></span>
-          {!isSingleDate && rowsPerPage !== 'all' && (
+          {!isAutoAll && rowsPerPage !== 'all' && (
             <span>• Showing {paginationInfo?.from ?? 0} to {paginationInfo?.to ?? 0}</span>
           )}
-          {isSingleDate && (
-            <span className="text-brand-400 font-semibold">• Showing all {(Number(paginationInfo?.total) || 0).toLocaleString()} records for this date</span>
+          {isAutoAll && (
+            <span className="text-brand-400 font-semibold">• Showing all {(Number(paginationInfo?.total) || 0).toLocaleString()} records {isSingleDate ? 'for this date' : 'for this month'}</span>
           )}
         </div>
 
-        {!isSingleDate && rowsPerPage !== 'all' && paginationInfo?.lastPage > 1 && (
+        {!isAutoAll && rowsPerPage !== 'all' && paginationInfo?.lastPage > 1 && (
           <div className="flex items-center gap-3">
             <button
               disabled={currentPage <= 1 || loading}

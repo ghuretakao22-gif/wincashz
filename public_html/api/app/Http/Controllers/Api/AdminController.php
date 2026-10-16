@@ -917,11 +917,12 @@ class AdminController extends Controller
         if ($search !== '') {
             $escapedSearch = addcslashes($search, '%_\\');
             $prefixLike = $escapedSearch . '%';
+            $containsLike = '%' . $escapedSearch . '%';
             $isNumeric = is_numeric($search);
             $numericId = $isNumeric ? (int) $search : -1;
 
-            $query->where(function ($builder) use ($prefixLike, $isNumeric, $numericId, $hasUserUsernameColumn, $hasUserNameColumn, $hasUserEmailColumn): void {
-                // Prefix-first / prefix-only for username and display name
+            $query->where(function ($builder) use ($prefixLike, $containsLike, $isNumeric, $numericId, $hasUserUsernameColumn, $hasUserNameColumn, $hasUserEmailColumn): void {
+                // User-related fields: prefix-only matching
                 $builder->where('completed_tasks.user_name', 'like', $prefixLike);
 
                 if ($hasUserUsernameColumn) {
@@ -943,13 +944,13 @@ class AdminController extends Controller
                     }
                 }
 
-                // Transaction ID, offer wall, offer ID, offer name, IP, country (prefix)
-                $builder->orWhere('completed_tasks.transaction_id', 'like', $prefixLike)
-                    ->orWhere('completed_tasks.offer_wall_name', 'like', $prefixLike)
-                    ->orWhere('completed_tasks.offer_name', 'like', $prefixLike)
-                    ->orWhere('completed_tasks.offer_id', 'like', $prefixLike)
-                    ->orWhere('completed_tasks.ip', 'like', $prefixLike)
-                    ->orWhere('completed_tasks.country', 'like', $prefixLike);
+                // Provider, offer name, offer ID, transaction ID, IP, country: substring/keyword matching
+                $builder->orWhere('completed_tasks.offer_wall_name', 'like', $containsLike)
+                    ->orWhere('completed_tasks.offer_name', 'like', $containsLike)
+                    ->orWhere('completed_tasks.offer_id', 'like', $containsLike)
+                    ->orWhere('completed_tasks.transaction_id', 'like', $containsLike)
+                    ->orWhere('completed_tasks.ip', 'like', $containsLike)
+                    ->orWhere('completed_tasks.country', 'like', $containsLike);
 
                 if ($isNumeric) {
                     $builder->orWhere('completed_tasks.id', $numericId)
@@ -957,18 +958,24 @@ class AdminController extends Controller
                 }
             });
 
-            // Exact match priority ordering
+            // Exact match and prefix priority ordering
             $query->orderByRaw('
                 CASE
                     WHEN LOWER(completed_tasks.user_name) = LOWER(?) THEN 1
                     WHEN completed_tasks.user_id = ? THEN 2
                     WHEN LOWER(completed_tasks.user_name) LIKE LOWER(?) THEN 3
-                    ELSE 4
+                    WHEN LOWER(completed_tasks.transaction_id) = LOWER(?) THEN 4
+                    WHEN LOWER(completed_tasks.offer_wall_name) = LOWER(?) THEN 5
+                    WHEN LOWER(completed_tasks.offer_name) = LOWER(?) THEN 6
+                    ELSE 7
                 END ASC, completed_tasks.created_at DESC, completed_tasks.id DESC
             ', [
                 $search,
                 $numericId,
                 $prefixLike,
+                $search,
+                $search,
+                $search,
             ]);
         } else {
             $query->orderByDesc('completed_tasks.created_at')
@@ -977,10 +984,11 @@ class AdminController extends Controller
 
         $allowedPerPageOptions = [10, 20, 25, 30, 50, 100, 250, 500, 1000];
 
-        // Specific single date selection or requested 'all' automatically shows all matching offers
+        // Specific single date selection, month auto-all, or requested 'all' automatically shows all matching offers
         $isSpecificSingleDate = ($fromDate !== '' && $fromDate === $toDate);
+        $isMonthAutoAll = ($month !== '' && strtolower($month) !== 'all' && $fromDate === '' && $toDate === '');
 
-        if ($requestedPerPage === 'all' || $isSpecificSingleDate) {
+        if ($requestedPerPage === 'all' || $isSpecificSingleDate || $isMonthAutoAll) {
             $perPage = max(1, (clone $query)->count());
         } else {
             $requestedPerPageInt = (int) $requestedPerPage;
