@@ -15,9 +15,13 @@ class ModeratorController extends Controller
     /**
      * Get platform statistics and available months for moderator panel.
      */
-    public function stats(): JsonResponse
+    public function stats(Request $request): JsonResponse
     {
         $months = [];
+        $dailyCounts = [];
+        $dateCount = 0;
+        $selectedMonth = trim((string) $request->input('month', ''));
+        $selectedDate = trim((string) $request->input('date', ''));
 
         if (Schema::hasTable('completed_tasks')) {
             $months = DB::table('completed_tasks')
@@ -29,6 +33,21 @@ class ModeratorController extends Controller
                 ->filter()
                 ->values()
                 ->all();
+
+            $targetMonth = ($selectedMonth !== '' && $selectedMonth !== 'all')
+                ? $selectedMonth
+                : ($months[0] ?? Carbon::now()->format('Y-m'));
+
+            $dailyCounts = DB::table('completed_tasks')
+                ->selectRaw("SUBSTRING(created_at, 1, 10) as day_date, COUNT(*) as count")
+                ->where('created_at', 'like', $targetMonth . '%')
+                ->groupBy('day_date')
+                ->pluck('count', 'day_date')
+                ->all();
+
+            if ($selectedDate !== '' && strtolower($selectedDate) !== 'all') {
+                $dateCount = DB::table('completed_tasks')->whereDate('created_at', $selectedDate)->count();
+            }
         }
 
         return response()->json([
@@ -36,36 +55,153 @@ class ModeratorController extends Controller
             'data' => [
                 'total_users' => User::count(),
                 'months' => $months,
+                'daily_counts' => $dailyCounts,
+                'date_count' => $dateCount,
             ],
         ]);
     }
 
     /**
-     * Get paginated user list with wall credit activity, search ranking, and date/month filters.
+     * Get paginated user list or coin credit activity with search ranking, view mode, and date/month filters.
      * Zero N+1 queries.
      */
     public function users(Request $request): JsonResponse
     {
-        $allowedPerPage = [25, 50, 100];
-        $perPage = (int) $request->input('per_page', 25);
-        if (! in_array($perPage, $allowedPerPage, true)) {
-            $perPage = 25;
-        }
-
-        $query = User::query()->select(['id', 'username', 'name', 'balance']);
-
+        $view = strtolower(trim((string) $request->input('view', 'all')));
         $search = trim((string) $request->input('search', ''));
         $date = trim((string) ($request->input('date', $request->input('from_date', ''))));
         $month = trim((string) $request->input('month', ''));
+        $isSpecificSingleDate = ($date !== '' && strtolower($date) !== 'all');
+        $hasCompletedTasks = Schema::hasTable('completed_tasks');
 
-        // 1. Search filter across full DB
+        // =========================================================================
+        // VIEW: COINS (All credited coin transactions / completed offers)
+        // =========================================================================
+        if ($view === 'coins') {
+            if (! $hasCompletedTasks) {
+                return response()->json([
+                    'status' => 'success',
+                    'data' => [],
+                    'pagination' => ['currentPage' => 1, 'lastPage' => 1, 'perPage' => 25, 'total' => 0, 'from' => 0, 'to' => 0],
+                ]);
+            }
+
+            $query = DB::table('completed_tasks')
+                ->leftJoin('users', 'users.id', '=', 'completed_tasks.user_id')
+                ->select([
+                    'completed_tasks.id as task_id',
+                    'completed_tasks.user_id as user_id',
+                    DB::raw('COALESCE(users.username, completed_tasks.user_name) as username'),
+                    'users.name as name',
+                    'users.balance as balance',
+                    'completed_tasks.offer_wall_name as wall_name',
+                    'completed_tasks.offer_name as offer_name',
+                    'completed_tasks.currency_reward as credited_coins',
+                    'completed_tasks.created_at as created_at',
+                ]);
+
+            // 1. Date / Month filter
+            if ($isSpecificSingleDate) {
+                $query->whereDate('completed_tasks.created_at', $date);
+            } elseif ($month !== '' && strtolower($month) !== 'all') {
+                $query->where('completed_tasks.created_at', 'like', $month . '%');
+            }
+
+            // 2. Prefix-only search filter & ranking
+            if ($search !== '') {
+                $escapedSearch = addcslashes($search, '%_\\');
+                $prefixLike = $escapedSearch . '%';
+                $isNumeric = is_numeric($search);
+                $numericId = $isNumeric ? (int) $search : -1;
+
+                $query->where(function ($q) use ($prefixLike, $isNumeric, $numericId) {
+                    $q->where('completed_tasks.user_name', 'like', $prefixLike)
+                      ->orWhere('users.username', 'like', $prefixLike)
+                      ->orWhere('users.name', 'like', $prefixLike);
+
+                    if ($isNumeric) {
+                        $q->orWhere('completed_tasks.user_id', $numericId)
+                          ->orWhere('completed_tasks.id', $numericId);
+                    }
+                });
+
+                $query->orderByRaw('
+                    CASE
+                        WHEN LOWER(COALESCE(users.username, completed_tasks.user_name)) = LOWER(?) THEN 1
+                        WHEN completed_tasks.user_id = ? THEN 2
+                        WHEN LOWER(COALESCE(users.username, completed_tasks.user_name)) LIKE LOWER(?) THEN 3
+                        ELSE 4
+                    END ASC, completed_tasks.created_at DESC, completed_tasks.id DESC
+                ', [
+                    $search,
+                    $numericId,
+                    $prefixLike,
+                ]);
+            } else {
+                $query->orderByDesc('completed_tasks.created_at')
+                      ->orderByDesc('completed_tasks.id');
+            }
+
+            // 3. Pagination (Auto-all for specific dates or requested all)
+            if ($request->input('per_page') === 'all' || $isSpecificSingleDate) {
+                $perPage = max(1, (clone $query)->count());
+            } else {
+                $allowedPerPage = [25, 50, 100];
+                $perPage = (int) $request->input('per_page', 25);
+                if (! in_array($perPage, $allowedPerPage, true)) {
+                    $perPage = 25;
+                }
+            }
+
+            $paginator = $query->paginate($perPage);
+
+            $data = collect($paginator->items())->map(function ($item) {
+                $createdAt = $item->created_at ? Carbon::parse($item->created_at) : null;
+
+                return [
+                    'id' => (int) $item->task_id,
+                    'user_id' => (int) ($item->user_id ?? 0),
+                    'username' => (string) ($item->username ?? '—'),
+                    'name' => (string) ($item->name ?? '—'),
+                    'balance' => (float) ($item->balance ?? 0),
+                    'wall_name' => (string) ($item->wall_name ?? '—'),
+                    'offer_name' => (string) ($item->offer_name ?? '—'),
+                    'credited_coins' => (float) ($item->credited_coins ?? 0),
+                    'created_at' => $item->created_at,
+                    'credit_date' => $createdAt ? $createdAt->format('d M Y') : '—',
+                    'credit_time' => $createdAt ? $createdAt->format('h:i A') : '—',
+                ];
+            })->values()->all();
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $data,
+                'pagination' => [
+                    'currentPage' => $paginator->currentPage(),
+                    'lastPage' => $paginator->lastPage(),
+                    'perPage' => $paginator->perPage(),
+                    'total' => $paginator->total(),
+                    'from' => $paginator->firstItem() ?? 0,
+                    'to' => $paginator->lastItem() ?? 0,
+                ],
+            ]);
+        }
+
+        // =========================================================================
+        // VIEW: ALL (Standard registered users directory with wall monitoring)
+        // =========================================================================
+        $query = User::query()->select(['id', 'username', 'name', 'balance']);
+
+        // 1. Prefix-only search filter across full DB
         if ($search !== '') {
+            $escapedSearch = addcslashes($search, '%_\\');
+            $prefixLike = $escapedSearch . '%';
             $isNumeric = is_numeric($search);
             $numericId = $isNumeric ? (int) $search : -1;
 
-            $query->where(function ($q) use ($search, $isNumeric, $numericId) {
-                $q->where('username', 'like', "%{$search}%")
-                  ->orWhere('name', 'like', "%{$search}%");
+            $query->where(function ($q) use ($prefixLike, $isNumeric, $numericId) {
+                $q->where('username', 'like', $prefixLike)
+                  ->orWhere('name', 'like', $prefixLike);
 
                 if ($isNumeric) {
                     $q->orWhere('id', $numericId);
@@ -74,10 +210,8 @@ class ModeratorController extends Controller
         }
 
         // 2. Date / Month filter scoped to completed tasks
-        $hasCompletedTasks = Schema::hasTable('completed_tasks');
-
         if ($hasCompletedTasks) {
-            if ($date !== '' && strtolower($date) !== 'all') {
+            if ($isSpecificSingleDate) {
                 $query->whereExists(function ($sub) use ($date) {
                     $sub->select(DB::raw(1))
                         ->from('completed_tasks')
@@ -94,8 +228,10 @@ class ModeratorController extends Controller
             }
         }
 
-        // 3. Search Ranking Order (Exact username -> Exact user ID -> Username prefix -> Display name prefix -> Contains -> Alphabetical)
+        // 3. Search Ranking Order (Exact username -> Exact user ID -> Username prefix -> Display name prefix -> ID ASC)
         if ($search !== '') {
+            $escapedSearch = addcslashes($search, '%_\\');
+            $prefixLike = $escapedSearch . '%';
             $isNumeric = is_numeric($search);
             $numericId = $isNumeric ? (int) $search : -1;
 
@@ -106,18 +242,29 @@ class ModeratorController extends Controller
                     WHEN LOWER(username) LIKE LOWER(?) THEN 3
                     WHEN LOWER(name) LIKE LOWER(?) THEN 4
                     ELSE 5
-                END ASC, username ASC
+                END ASC, username ASC, id ASC
             ', [
                 $search,
                 $numericId,
-                "{$search}%",
-                "{$search}%",
+                $prefixLike,
+                $prefixLike,
             ]);
         } else {
+            // Default ordering: oldest accounts first (ID 1, 2, 3...)
             $query->orderBy('id', 'asc');
         }
 
-        // 4. Server-side pagination
+        // 4. Server-side pagination (Auto-all for specific date or requested all)
+        if ($request->input('per_page') === 'all' || $isSpecificSingleDate) {
+            $perPage = max(1, (clone $query)->count());
+        } else {
+            $allowedPerPage = [25, 50, 100];
+            $perPage = (int) $request->input('per_page', 25);
+            if (! in_array($perPage, $allowedPerPage, true)) {
+                $perPage = 25;
+            }
+        }
+
         $users = $query->paginate($perPage);
 
         // 5. Fetch latest completed task for ONLY the users on the current page (Zero N+1!)
@@ -131,7 +278,7 @@ class ModeratorController extends Controller
                 ->orderByDesc('created_at')
                 ->orderByDesc('id');
 
-            if ($date !== '' && strtolower($date) !== 'all') {
+            if ($isSpecificSingleDate) {
                 $taskQuery->whereDate('created_at', $date);
             } elseif ($month !== '' && strtolower($month) !== 'all') {
                 $taskQuery->where('created_at', 'like', $month . '%');

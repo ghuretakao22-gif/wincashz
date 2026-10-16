@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   Search, 
   Filter, 
@@ -13,7 +13,8 @@ import {
   AlertCircle,
   Calendar,
   CalendarDays,
-  FileSpreadsheet
+  FileSpreadsheet,
+  X
 } from 'lucide-react';
 import TableExport from '../components/TableExport';
 import { api } from '../services/api';
@@ -22,6 +23,7 @@ export default function AdminCompletedOffersPage() {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [wallFilter, setWallFilter] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState('all'); // YYYY-MM or 'all'
   const [selectedDay, setSelectedDay] = useState('all'); // YYYY-MM-DD or 'all'
@@ -35,6 +37,23 @@ export default function AdminCompletedOffersPage() {
   const [apiError, setApiError] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
   const [availableOfferwalls, setAvailableOfferwalls] = useState([]);
+  const requestIdRef = useRef(0);
+
+  // 150ms Instant Search Debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setCurrentPage(1);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Check if a single specific date is actively selected
+  const isSingleDate = useMemo(() => {
+    if (selectedDay && selectedDay !== 'all') return true;
+    if (fromDate && toDate && fromDate === toDate) return true;
+    return false;
+  }, [selectedDay, fromDate, toDate]);
 
   useEffect(() => {
     api.getOfferwalls().then((res) => {
@@ -44,16 +63,17 @@ export default function AdminCompletedOffersPage() {
     }).catch(() => {});
   }, []);
 
-  const fetchTasks = async (isBackground = false) => {
+  const fetchTasks = useCallback(async (isBackground = false) => {
+    const currentRequestId = ++requestIdRef.current;
     if (!isBackground) setLoading(true);
     setActionError(null);
     setApiError(null);
     try {
       const params = {
         page: currentPage,
-        per_page: rowsPerPage,
+        per_page: isSingleDate ? 'all' : rowsPerPage,
       };
-      if (search.trim()) params.search = search.trim();
+      if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
       if (wallFilter && wallFilter !== 'all') params.wall = wallFilter;
       if (selectedDay && selectedDay !== 'all') {
         params.from_date = selectedDay;
@@ -65,6 +85,9 @@ export default function AdminCompletedOffersPage() {
       if (toDate) params.to_date = toDate;
 
       const res = await api.getAdminCompletedTasks(params);
+      // Stale response protection
+      if (currentRequestId !== requestIdRef.current) return;
+
       const list = res.rows || res.tasks || res.completed_tasks || res.data || (Array.isArray(res) ? res : []);
       const normalized = (Array.isArray(list) ? list : []).map((item) => {
         const reward = Number(item.currencyReward ?? item.reward ?? item.points ?? 0);
@@ -103,13 +126,14 @@ export default function AdminCompletedOffersPage() {
         });
       }
     } catch (err) {
+      if (currentRequestId !== requestIdRef.current) return;
       console.error('Failed to load completed tasks from backend:', err);
       if (!isBackground) setApiError(err.message || 'Failed to connect to backend completed tasks API.');
       if (!isBackground) setTasks([]);
     } finally {
-      if (!isBackground) setLoading(false);
+      if (!isBackground && currentRequestId === requestIdRef.current) setLoading(false);
     }
-  };
+  }, [currentPage, rowsPerPage, debouncedSearch, wallFilter, selectedMonth, selectedDay, fromDate, toDate, isSingleDate]);
 
   useEffect(() => {
     fetchTasks();
@@ -117,7 +141,7 @@ export default function AdminCompletedOffersPage() {
       fetchTasks(true);
     }, 20000);
     return () => clearInterval(interval);
-  }, [currentPage, rowsPerPage, search, wallFilter, selectedMonth, selectedDay, fromDate, toDate]);
+  }, [fetchTasks]);
 
   const handleCopy = (text, id) => {
     navigator.clipboard.writeText(text);
@@ -371,18 +395,29 @@ export default function AdminCompletedOffersPage() {
 
       {/* Main Filter & Page Size Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl glass-card border border-white/10 text-xs">
-        <div className="flex items-center gap-2 flex-1 min-w-[240px]">
-          <Search className="w-4 h-4 text-slate-500 shrink-0" />
+        <div className="flex items-center gap-2 flex-1 min-w-[240px] relative">
+          <Search className="w-4 h-4 text-slate-500 shrink-0 pointer-events-none" />
           <input
             type="text"
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setCurrentPage(1);
-            }}
+            onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by User ID, Name, Email, Offer, TX ID..."
-            className="w-full bg-transparent border-0 text-xs text-white placeholder-slate-500 focus:outline-none"
+            className="w-full bg-transparent border-0 text-xs text-white placeholder-slate-500 focus:outline-none pr-6"
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('');
+                setDebouncedSearch('');
+                setCurrentPage(1);
+              }}
+              className="absolute right-1 text-slate-400 hover:text-white transition-colors"
+              title="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -400,26 +435,33 @@ export default function AdminCompletedOffersPage() {
             ))}
           </select>
 
-          <div className="flex items-center gap-1.5">
-            <span className="text-slate-400 text-xs font-semibold">Page Size:</span>
-            <select
-              value={rowsPerPage}
-              onChange={(e) => {
-                const val = e.target.value === 'all' ? 'all' : Number(e.target.value);
-                setRowsPerPage(val);
-                setCurrentPage(1);
-              }}
-              className="bg-[#0c1015] border border-white/10 text-xs font-bold text-brand-400 rounded-lg px-2.5 py-1.5 focus:outline-none cursor-pointer"
-            >
-              <option value={25}>25 / page</option>
-              <option value={50}>50 / page</option>
-              <option value={100}>100 / page</option>
-              <option value={250}>250 / page</option>
-              <option value={500}>500 / page</option>
-              <option value={1000}>1000 / page</option>
-              <option value="all">All ({(Number(paginationInfo?.total) || (Array.isArray(tasks) ? tasks.length : 0)).toLocaleString()})</option>
-            </select>
-          </div>
+          {isSingleDate ? (
+            <div className="px-3 py-1.5 rounded-xl bg-brand-500/10 border border-brand-500/25 text-brand-300 text-xs font-semibold whitespace-nowrap flex items-center gap-1.5">
+              <CalendarDays className="w-3.5 h-3.5 text-brand-400" />
+              <span>Showing all {(Number(paginationInfo?.total) || (Array.isArray(tasks) ? tasks.length : 0)).toLocaleString()} matching offers on this date</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 text-xs font-semibold">Page Size:</span>
+              <select
+                value={rowsPerPage}
+                onChange={(e) => {
+                  const val = e.target.value === 'all' ? 'all' : Number(e.target.value);
+                  setRowsPerPage(val);
+                  setCurrentPage(1);
+                }}
+                className="bg-[#0c1015] border border-white/10 text-xs font-bold text-brand-400 rounded-lg px-2.5 py-1.5 focus:outline-none cursor-pointer"
+              >
+                <option value={25}>25 / page</option>
+                <option value={50}>50 / page</option>
+                <option value={100}>100 / page</option>
+                <option value={250}>250 / page</option>
+                <option value={500}>500 / page</option>
+                <option value={1000}>1000 / page</option>
+                <option value="all">All ({(Number(paginationInfo?.total) || (Array.isArray(tasks) ? tasks.length : 0)).toLocaleString()})</option>
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
@@ -556,12 +598,15 @@ export default function AdminCompletedOffersPage() {
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 rounded-2xl glass-card border border-white/10 text-xs">
         <div className="flex items-center gap-2 text-slate-400">
           <span>Total Completed Offers: <strong className="text-white">{(Number(paginationInfo?.total) || 0).toLocaleString()}</strong></span>
-          {rowsPerPage !== 'all' && (
+          {!isSingleDate && rowsPerPage !== 'all' && (
             <span>• Showing {paginationInfo?.from ?? 0} to {paginationInfo?.to ?? 0}</span>
+          )}
+          {isSingleDate && (
+            <span className="text-brand-400 font-semibold">• Showing all {(Number(paginationInfo?.total) || 0).toLocaleString()} records for this date</span>
           )}
         </div>
 
-        {rowsPerPage !== 'all' && (
+        {!isSingleDate && rowsPerPage !== 'all' && paginationInfo?.lastPage > 1 && (
           <div className="flex items-center gap-3">
             <button
               disabled={currentPage <= 1 || loading}

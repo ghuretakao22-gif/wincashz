@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   Search, 
   Users, 
@@ -18,15 +18,17 @@ import {
 import { api } from '../services/api';
 
 export default function ModeratorUsersPage() {
+  const [viewMode, setViewMode] = useState('all'); // 'all' | 'coins'
   const [users, setUsers] = useState([]);
   const [totalRegisteredUsers, setTotalRegisteredUsers] = useState(0);
   const [availableMonths, setAvailableMonths] = useState([]);
+  const [dateCount, setDateCount] = useState(null);
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
 
   // Filters State
   const [searchInput, setSearchInput] = useState('');
-  const [activeSearch, setActiveSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('all'); // 'YYYY-MM' or 'all'
   const [selectedDate, setSelectedDate] = useState(''); // 'YYYY-MM-DD' or ''
 
@@ -48,12 +50,31 @@ export default function ModeratorUsersPage() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [userActivity, setUserActivity] = useState([]);
   const [modalLoading, setModalLoading] = useState(false);
+  const requestIdRef = useRef(0);
 
-  // Fetch Total Users and dynamic months from /api/moderator/stats
+  // 150ms Instant Search Debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput);
+      setCurrentPage(1);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  // Check if a single specific date is actively selected
+  const isSingleDate = useMemo(() => {
+    return Boolean(selectedDate && selectedDate.trim() && selectedDate !== 'all');
+  }, [selectedDate]);
+
+  // Fetch Total Users, dynamic months, and date counts from /api/moderator/stats
   const fetchStats = useCallback(async () => {
     setStatsLoading(true);
     try {
-      const res = await api.getModeratorStats();
+      const params = {};
+      if (selectedMonth && selectedMonth !== 'all') params.month = selectedMonth;
+      if (selectedDate) params.date = selectedDate;
+
+      const res = await api.getModeratorStats(params);
       if (res && res.data) {
         if (typeof res.data.total_users === 'number') {
           setTotalRegisteredUsers(res.data.total_users);
@@ -61,26 +82,31 @@ export default function ModeratorUsersPage() {
         if (Array.isArray(res.data.months) && res.data.months.length > 0) {
           setAvailableMonths(res.data.months);
         }
+        if (typeof res.data.date_count === 'number') {
+          setDateCount(res.data.date_count);
+        }
       }
     } catch (err) {
       console.error('Failed to load moderator stats:', err);
     } finally {
       setStatsLoading(false);
     }
-  }, []);
+  }, [selectedMonth, selectedDate]);
 
-  // Fetch Paginated User Directory with Wall/Coin Activity
+  // Fetch Paginated User Directory or Coin Activity (with Stale Request Protection)
   const fetchUsers = useCallback(async (isBackground = false) => {
+    const currentRequestId = ++requestIdRef.current;
     if (!isBackground) setLoading(true);
     setApiError(null);
     try {
       const params = {
         page: currentPage,
-        per_page: rowsPerPage,
+        per_page: isSingleDate ? 'all' : rowsPerPage,
+        view: viewMode,
       };
 
-      if (activeSearch.trim()) {
-        params.search = activeSearch.trim();
+      if (debouncedSearch.trim()) {
+        params.search = debouncedSearch.trim();
       }
 
       if (selectedDate.trim()) {
@@ -90,6 +116,9 @@ export default function ModeratorUsersPage() {
       }
 
       const res = await api.getModeratorUsers(params);
+      // Stale response protection
+      if (currentRequestId !== requestIdRef.current) return;
+
       if (res && res.data) {
         setUsers(res.data);
         if (res.pagination) {
@@ -99,15 +128,16 @@ export default function ModeratorUsersPage() {
         setUsers([]);
       }
     } catch (err) {
+      if (currentRequestId !== requestIdRef.current) return;
       console.error('Failed to load moderator users directory:', err);
       if (!isBackground) {
         setApiError(err.message || 'Failed to connect to backend users API.');
         setUsers([]);
       }
     } finally {
-      if (!isBackground) setLoading(false);
+      if (!isBackground && currentRequestId === requestIdRef.current) setLoading(false);
     }
-  }, [currentPage, rowsPerPage, activeSearch, selectedDate, selectedMonth]);
+  }, [currentPage, rowsPerPage, debouncedSearch, selectedDate, selectedMonth, isSingleDate, viewMode]);
 
   useEffect(() => {
     fetchStats();
@@ -117,16 +147,9 @@ export default function ModeratorUsersPage() {
     fetchUsers();
   }, [fetchUsers]);
 
-  // Handle Search Submission (Explicit Button + Enter Key)
-  const handleSearchSubmit = (e) => {
-    if (e) e.preventDefault();
-    setActiveSearch(searchInput.trim());
-    setCurrentPage(1);
-  };
-
   const handleClearSearch = () => {
     setSearchInput('');
-    setActiveSearch('');
+    setDebouncedSearch('');
     setCurrentPage(1);
   };
 
@@ -174,7 +197,9 @@ export default function ModeratorUsersPage() {
     if (selectedDate) {
       try {
         const d = new Date(selectedDate + 'T00:00:00');
-        return `Date: ${d.toLocaleDateString('default', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+        const formattedDate = d.toLocaleDateString('default', { day: 'numeric', month: 'short', year: 'numeric' });
+        const count = dateCount !== null ? dateCount : paginationInfo.total;
+        return `${formattedDate} — ${count.toLocaleString()} ${viewMode === 'coins' ? 'coin credits' : 'records'}`;
       } catch (e) {
         return `Date: ${selectedDate}`;
       }
@@ -188,8 +213,8 @@ export default function ModeratorUsersPage() {
         return `Month: ${selectedMonth}`;
       }
     }
-    return 'All-Time Activity';
-  }, [selectedDate, selectedMonth]);
+    return viewMode === 'coins' ? 'All-Time Coin Credits' : 'All-Time Directory';
+  }, [selectedDate, selectedMonth, dateCount, paginationInfo.total, viewMode]);
 
   return (
     <div className="space-y-6">
@@ -256,7 +281,42 @@ export default function ModeratorUsersPage() {
         </div>
       )}
 
-      {/* Month & Date Filter Bar (Matching Admin Completed Offers Pattern) */}
+      {/* View Mode Toggle Tabs (All Users vs Coin Credits Activity) */}
+      <div className="flex items-center gap-2 p-1.5 rounded-2xl glass-card border border-white/10 w-fit">
+        <button
+          type="button"
+          onClick={() => {
+            setViewMode('all');
+            setCurrentPage(1);
+          }}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            viewMode === 'all'
+              ? 'bg-brand-500 text-slate-950 shadow-md shadow-brand-500/20'
+              : 'text-slate-400 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>All Users</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setViewMode('coins');
+            setCurrentPage(1);
+          }}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            viewMode === 'coins'
+              ? 'bg-amber-400 text-slate-950 shadow-md shadow-amber-400/20'
+              : 'text-slate-400 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <Coins className="w-4 h-4" />
+          <span>Coin Credits Activity</span>
+        </button>
+      </div>
+
+      {/* Month & Date Filter Bar */}
       <div className="p-4 rounded-3xl glass-card border border-white/10 space-y-3 shadow-lg">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
@@ -322,15 +382,15 @@ export default function ModeratorUsersPage() {
 
       {/* Main Search & Page Size Bar */}
       <div className="p-3.5 rounded-2xl glass-card border border-white/10 flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap shadow-lg">
-        {/* Search Form */}
-        <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 flex-1 min-w-[280px]">
+        {/* Instant Search Input (150ms debounce) */}
+        <div className="flex items-center gap-2 flex-1 min-w-[280px]">
           <div className="relative flex-1 flex items-center">
             <Search className="w-4 h-4 text-slate-500 absolute left-3 pointer-events-none" />
             <input
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search by User ID, Username, or Name"
+              placeholder={viewMode === 'coins' ? "Search coin credits by User ID, Username, or Name..." : "Search by User ID, Username, or Name..."}
               className="w-full bg-[#0c1015]/80 border border-white/10 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500/50 transition-colors"
             />
             {searchInput && (
@@ -344,41 +404,40 @@ export default function ModeratorUsersPage() {
               </button>
             )}
           </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs shadow-md shadow-brand-500/20 transition-all active:scale-95 disabled:opacity-50"
-          >
-            Search
-          </button>
-        </form>
-
-        {/* Page Size Selector */}
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-slate-400 text-xs font-semibold">Page Size:</span>
-          <select
-            value={rowsPerPage}
-            onChange={(e) => {
-              setRowsPerPage(Number(e.target.value));
-              setCurrentPage(1);
-            }}
-            className="bg-[#0c1015] border border-white/10 text-xs font-bold text-brand-400 rounded-lg px-2.5 py-2 focus:outline-none cursor-pointer"
-          >
-            <option value={25}>25 / page</option>
-            <option value={50}>50 / page</option>
-            <option value={100}>100 / page</option>
-          </select>
         </div>
+
+        {/* Page Size Selector or Auto-All Date Indicator */}
+        {isSingleDate ? (
+          <div className="px-3 py-1.5 rounded-xl bg-brand-500/10 border border-brand-500/25 text-brand-300 text-xs font-semibold whitespace-nowrap flex items-center gap-1.5">
+            <CalendarDays className="w-3.5 h-3.5 text-brand-400" />
+            <span>Showing all {paginationInfo.total.toLocaleString()} {viewMode === 'coins' ? 'coin credits' : 'matching users'} on this date</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-slate-400 text-xs font-semibold">Page Size:</span>
+            <select
+              value={rowsPerPage}
+              onChange={(e) => {
+                setRowsPerPage(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="bg-[#0c1015] border border-white/10 text-xs font-bold text-brand-400 rounded-lg px-2.5 py-2 focus:outline-none cursor-pointer"
+            >
+              <option value={25}>25 / page</option>
+              <option value={50}>50 / page</option>
+              <option value={100}>100 / page</option>
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Active Search & Filter Indicator */}
-      {(activeSearch || selectedDate || (selectedMonth && selectedMonth !== 'all')) && (
+      {(debouncedSearch || selectedDate || (selectedMonth && selectedMonth !== 'all')) && (
         <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
           <span>Active filter:</span>
-          {activeSearch && (
+          {debouncedSearch && (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-brand-500/10 text-brand-300 border border-brand-500/20 font-mono">
-              "{activeSearch}"
+              "{debouncedSearch}"
               <button onClick={handleClearSearch} className="hover:text-white">
                 <X className="w-3 h-3" />
               </button>
@@ -406,136 +465,239 @@ export default function ModeratorUsersPage() {
         </div>
       )}
 
-      {/* Wall User Monitoring Table (9 Authoritative Columns + Read-Only Action) */}
+      {/* DATA TABLE */}
       <div className="rounded-2xl glass-card border border-white/10 overflow-hidden shadow-2xl">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-white/[0.04] text-slate-300 font-semibold border-b border-white/10 whitespace-nowrap">
-                <th className="py-3 px-3 border-r border-white/5 text-center w-12">1. S.L</th>
-                <th className="py-3 px-3 border-r border-white/5 w-20">2. User ID</th>
-                <th className="py-3 px-3 border-r border-white/5">3. Username</th>
-                <th className="py-3 px-3 border-r border-white/5">4. Display Name</th>
-                <th className="py-3 px-3 border-r border-white/5 text-right">5. Current Balance</th>
-                <th className="py-3 px-3 border-r border-white/5">6. Latest Wall / Provider</th>
-                <th className="py-3 px-3 border-r border-white/5 text-right">7. Latest Coins</th>
-                <th className="py-3 px-3 border-r border-white/5">8. Latest Credit Date</th>
-                <th className="py-3 px-3 border-r border-white/5">9. Latest Credit Time</th>
-                <th className="py-3 px-3 text-center w-16">10. Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5 font-mono text-[11px]">
-              {loading ? (
-                <tr>
-                  <td colSpan={10} className="py-12 text-center text-slate-400 font-sans">
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <RefreshCw className="w-5 h-5 animate-spin text-brand-400" />
-                      <span>Loading user and wall activity directory...</span>
-                    </div>
-                  </td>
+          {viewMode === 'coins' ? (
+            /* =========================================================================
+               COINS VIEW MODE: Every credited coin transaction
+               ========================================================================= */
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-white/[0.04] text-slate-300 font-semibold border-b border-white/10 whitespace-nowrap">
+                  <th className="py-3 px-3 border-r border-white/5 text-center w-12">1. S.L</th>
+                  <th className="py-3 px-3 border-r border-white/5 w-20">2. User ID</th>
+                  <th className="py-3 px-3 border-r border-white/5">3. Username</th>
+                  <th className="py-3 px-3 border-r border-white/5">4. Display Name</th>
+                  <th className="py-3 px-3 border-r border-white/5">5. Wall / Provider</th>
+                  <th className="py-3 px-3 border-r border-white/5 text-right">6. Credited Coins</th>
+                  <th className="py-3 px-3 border-r border-white/5">7. Credit Date</th>
+                  <th className="py-3 px-3 border-r border-white/5">8. Credit Time</th>
+                  <th className="py-3 px-3 text-right">9. Current Balance</th>
                 </tr>
-              ) : users.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="py-12 text-center text-slate-400 font-sans">
-                    {activeSearch || selectedDate || selectedMonth !== 'all' ? (
+              </thead>
+              <tbody className="divide-y divide-white/5 font-mono text-[11px]">
+                {loading ? (
+                  <tr>
+                    <td colSpan={9} className="py-12 text-center text-slate-400 font-sans">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <RefreshCw className="w-5 h-5 animate-spin text-amber-400" />
+                        <span>Loading coin credits activity...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : users.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="py-12 text-center text-slate-400 font-sans">
+                      <div className="space-y-1">
+                        <p className="font-semibold text-slate-300">No coin credit activity found matching filter criteria.</p>
+                        <p className="text-xs text-slate-500">Try adjusting your search query or selected date/month.</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  users.map((item, index) => {
+                    const sl = isSingleDate ? index + 1 : (rowsPerPage * (currentPage - 1)) + index + 1;
+
+                    return (
+                      <tr
+                        key={item.id || index}
+                        className="hover:bg-white/[0.03] text-slate-300 whitespace-nowrap transition-colors"
+                      >
+                        {/* 1. S.L */}
+                        <td className="py-3 px-3 border-r border-white/5 text-center text-slate-500 font-mono">
+                          {sl}
+                        </td>
+
+                        {/* 2. User ID */}
+                        <td className="py-3 px-3 border-r border-white/5 font-bold text-brand-400">
+                          #{item.user_id}
+                        </td>
+
+                        {/* 3. Username */}
+                        <td className="py-3 px-3 border-r border-white/5 font-sans font-semibold text-white">
+                          {item.username}
+                        </td>
+
+                        {/* 4. Display Name */}
+                        <td className="py-3 px-3 border-r border-white/5 font-sans text-slate-300">
+                          {item.name || '—'}
+                        </td>
+
+                        {/* 5. Wall / Provider */}
+                        <td className="py-3 px-3 border-r border-white/5 font-sans">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold text-xs">
+                            <Layers className="w-3 h-3 text-emerald-400" />
+                            <span>{item.wall_name || '—'}</span>
+                          </span>
+                        </td>
+
+                        {/* 6. Credited Coins */}
+                        <td className="py-3 px-3 border-r border-white/5 text-right font-mono font-bold text-amber-400">
+                          +{formatCoins(item.credited_coins)}
+                        </td>
+
+                        {/* 7. Credit Date */}
+                        <td className="py-3 px-3 border-r border-white/5 font-mono text-slate-300">
+                          {item.credit_date || '—'}
+                        </td>
+
+                        {/* 8. Credit Time */}
+                        <td className="py-3 px-3 border-r border-white/5 font-mono text-slate-400">
+                          {item.credit_time || '—'}
+                        </td>
+
+                        {/* 9. Current Balance */}
+                        <td className="py-3 px-3 text-right font-mono font-bold text-slate-300">
+                          <span className="inline-flex items-center gap-1.5 justify-end">
+                            <Coins className="w-3.5 h-3.5 text-amber-400/80" />
+                            <span>{formatCoins(item.balance)}</span>
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          ) : (
+            /* =========================================================================
+               ALL VIEW MODE: Full registered user directory with latest activity
+               ========================================================================= */
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-white/[0.04] text-slate-300 font-semibold border-b border-white/10 whitespace-nowrap">
+                  <th className="py-3 px-3 border-r border-white/5 text-center w-12">1. S.L</th>
+                  <th className="py-3 px-3 border-r border-white/5 w-20">2. User ID</th>
+                  <th className="py-3 px-3 border-r border-white/5">3. Username</th>
+                  <th className="py-3 px-3 border-r border-white/5">4. Display Name</th>
+                  <th className="py-3 px-3 border-r border-white/5 text-right">5. Current Balance</th>
+                  <th className="py-3 px-3 border-r border-white/5">6. Latest Wall / Provider</th>
+                  <th className="py-3 px-3 border-r border-white/5 text-right">7. Latest Coins</th>
+                  <th className="py-3 px-3 border-r border-white/5">8. Latest Credit Date</th>
+                  <th className="py-3 px-3 border-r border-white/5">9. Latest Credit Time</th>
+                  <th className="py-3 px-3 text-center w-16">10. Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5 font-mono text-[11px]">
+                {loading ? (
+                  <tr>
+                    <td colSpan={10} className="py-12 text-center text-slate-400 font-sans">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <RefreshCw className="w-5 h-5 animate-spin text-brand-400" />
+                        <span>Loading user and wall activity directory...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : users.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="py-12 text-center text-slate-400 font-sans">
                       <div className="space-y-1">
                         <p className="font-semibold text-slate-300">No users found matching current filter criteria.</p>
                         <p className="text-xs text-slate-500">Try adjusting your search query or selected date/month.</p>
                       </div>
-                    ) : (
-                      'No registered user accounts found.'
-                    )}
-                  </td>
-                </tr>
-              ) : (
-                users.map((u, index) => {
-                  const sl = (rowsPerPage * (currentPage - 1)) + index + 1;
-                  const hasWallActivity = u.latest_wall && u.latest_wall !== '—';
+                    </td>
+                  </tr>
+                ) : (
+                  users.map((u, index) => {
+                    const sl = isSingleDate ? index + 1 : (rowsPerPage * (currentPage - 1)) + index + 1;
+                    const hasWallActivity = u.latest_wall && u.latest_wall !== '—';
 
-                  return (
-                    <tr
-                      key={u.id || index}
-                      className="hover:bg-white/[0.03] text-slate-300 whitespace-nowrap transition-colors"
-                    >
-                      {/* 1. S.L */}
-                      <td className="py-3 px-3 border-r border-white/5 text-center text-slate-500 font-mono">
-                        {sl}
-                      </td>
+                    return (
+                      <tr
+                        key={u.id || index}
+                        className="hover:bg-white/[0.03] text-slate-300 whitespace-nowrap transition-colors"
+                      >
+                        {/* 1. S.L */}
+                        <td className="py-3 px-3 border-r border-white/5 text-center text-slate-500 font-mono">
+                          {sl}
+                        </td>
 
-                      {/* 2. User ID */}
-                      <td className="py-3 px-3 border-r border-white/5 font-bold text-brand-400">
-                        #{u.id}
-                      </td>
+                        {/* 2. User ID */}
+                        <td className="py-3 px-3 border-r border-white/5 font-bold text-brand-400">
+                          #{u.id}
+                        </td>
 
-                      {/* 3. Username */}
-                      <td className="py-3 px-3 border-r border-white/5 font-sans font-semibold text-white">
-                        {u.username}
-                      </td>
+                        {/* 3. Username */}
+                        <td className="py-3 px-3 border-r border-white/5 font-sans font-semibold text-white">
+                          {u.username}
+                        </td>
 
-                      {/* 4. Display Name */}
-                      <td className="py-3 px-3 border-r border-white/5 font-sans text-slate-300">
-                        {u.name || '—'}
-                      </td>
+                        {/* 4. Display Name */}
+                        <td className="py-3 px-3 border-r border-white/5 font-sans text-slate-300">
+                          {u.name || '—'}
+                        </td>
 
-                      {/* 5. Current Coin Balance (ONLY COINS, NO USD) */}
-                      <td className="py-3 px-3 border-r border-white/5 text-right font-mono font-bold text-amber-400">
-                        <span className="inline-flex items-center gap-1.5 justify-end">
-                          <Coins className="w-3.5 h-3.5 text-amber-400/80" />
-                          <span>{formatCoins(u.balance)}</span>
-                        </span>
-                      </td>
-
-                      {/* 6. Latest Wall / Provider */}
-                      <td className="py-3 px-3 border-r border-white/5 font-sans">
-                        {hasWallActivity ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold text-xs">
-                            <Layers className="w-3 h-3 text-emerald-400" />
-                            <span>{u.latest_wall}</span>
+                        {/* 5. Current Coin Balance (ONLY COINS, NO USD) */}
+                        <td className="py-3 px-3 border-r border-white/5 text-right font-mono font-bold text-amber-400">
+                          <span className="inline-flex items-center gap-1.5 justify-end">
+                            <Coins className="w-3.5 h-3.5 text-amber-400/80" />
+                            <span>{formatCoins(u.balance)}</span>
                           </span>
-                        ) : (
-                          <span className="text-slate-500">No activity</span>
-                        )}
-                      </td>
+                        </td>
 
-                      {/* 7. Latest Credited Coins (ONLY COINS, NO USD) */}
-                      <td className="py-3 px-3 border-r border-white/5 text-right font-mono font-bold">
-                        {u.latest_coins !== null ? (
-                          <span className="text-brand-400">
-                            +{formatCoins(u.latest_coins)}
-                          </span>
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
-                      </td>
+                        {/* 6. Latest Wall / Provider */}
+                        <td className="py-3 px-3 border-r border-white/5 font-sans">
+                          {hasWallActivity ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold text-xs">
+                              <Layers className="w-3 h-3 text-emerald-400" />
+                              <span>{u.latest_wall}</span>
+                            </span>
+                          ) : (
+                            <span className="text-slate-500">No activity</span>
+                          )}
+                        </td>
 
-                      {/* 8. Latest Credit Date */}
-                      <td className="py-3 px-3 border-r border-white/5 font-mono text-slate-300">
-                        {u.latest_credit_date || '—'}
-                      </td>
+                        {/* 7. Latest Credited Coins (ONLY COINS, NO USD) */}
+                        <td className="py-3 px-3 border-r border-white/5 text-right font-mono font-bold">
+                          {u.latest_coins !== null ? (
+                            <span className="text-brand-400">
+                              +{formatCoins(u.latest_coins)}
+                            </span>
+                          ) : (
+                            <span className="text-slate-500">—</span>
+                          )}
+                        </td>
 
-                      {/* 9. Latest Credit Time */}
-                      <td className="py-3 px-3 border-r border-white/5 font-mono text-slate-400">
-                        {u.latest_credit_time || '—'}
-                      </td>
+                        {/* 8. Latest Credit Date */}
+                        <td className="py-3 px-3 border-r border-white/5 font-mono text-slate-300">
+                          {u.latest_credit_date || '—'}
+                        </td>
 
-                      {/* 10. Action: Read-Only Detail View */}
-                      <td className="py-3 px-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleViewUserActivity(u)}
-                          className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-[11px] font-semibold flex items-center gap-1 mx-auto transition-colors active:scale-95"
-                          title="View Recent Wall Activity"
-                        >
-                          <Eye className="w-3.5 h-3.5 text-brand-400" />
-                          <span>View</span>
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                        {/* 9. Latest Credit Time */}
+                        <td className="py-3 px-3 border-r border-white/5 font-mono text-slate-400">
+                          {u.latest_credit_time || '—'}
+                        </td>
+
+                        {/* 10. Action: Read-Only Detail View */}
+                        <td className="py-3 px-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleViewUserActivity(u)}
+                            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-[11px] font-semibold flex items-center gap-1 mx-auto transition-colors active:scale-95"
+                            title="View Recent Wall Activity"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-brand-400" />
+                            <span>View</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
 
         {/* Server-Side Pagination Footer */}
@@ -543,42 +705,47 @@ export default function ModeratorUsersPage() {
           <div>
             Showing{' '}
             <span className="text-white font-mono font-semibold">
-              {paginationInfo.total > 0 ? (rowsPerPage * (currentPage - 1)) + 1 : 0}
+              {paginationInfo.total > 0 ? (isSingleDate ? 1 : (rowsPerPage * (currentPage - 1)) + 1) : 0}
             </span>{' '}
             to{' '}
             <span className="text-white font-mono font-semibold">
-              {Math.min(rowsPerPage * currentPage, paginationInfo.total)}
+              {isSingleDate ? paginationInfo.total : Math.min(rowsPerPage * currentPage, paginationInfo.total)}
             </span>{' '}
             of{' '}
             <span className="text-white font-mono font-semibold">
               {paginationInfo.total.toLocaleString()}
             </span>{' '}
-            users
+            {viewMode === 'coins' ? 'coin credits' : 'users'}
+            {isSingleDate && (
+              <span className="text-brand-400 font-semibold ml-2">• Showing all records for this date</span>
+            )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage <= 1 || loading}
-              className="px-3 py-1.5 rounded-xl border border-white/10 glass-card hover:bg-white/5 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 text-xs font-semibold transition-all"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              <span>Previous</span>
-            </button>
+          {!isSingleDate && paginationInfo.lastPage > 1 && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage <= 1 || loading}
+                className="px-3 py-1.5 rounded-xl border border-white/10 glass-card hover:bg-white/5 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 text-xs font-semibold transition-all"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Previous</span>
+              </button>
 
-            <span className="px-2 text-xs font-mono text-slate-300">
-              Page {currentPage} of {paginationInfo.lastPage || 1}
-            </span>
+              <span className="px-2 text-xs font-mono text-slate-300">
+                Page {currentPage} of {paginationInfo.lastPage || 1}
+              </span>
 
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(paginationInfo.lastPage || 1, p + 1))}
-              disabled={currentPage >= (paginationInfo.lastPage || 1) || loading}
-              className="px-3 py-1.5 rounded-xl border border-white/10 glass-card hover:bg-white/5 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 text-xs font-semibold transition-all"
-            >
-              <span>Next</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(paginationInfo.lastPage || 1, p + 1))}
+                disabled={currentPage >= (paginationInfo.lastPage || 1) || loading}
+                className="px-3 py-1.5 rounded-xl border border-white/10 glass-card hover:bg-white/5 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 text-xs font-semibold transition-all"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

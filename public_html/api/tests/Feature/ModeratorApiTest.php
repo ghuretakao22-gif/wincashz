@@ -238,9 +238,9 @@ class ModeratorApiTest extends TestCase
      * Expected order:
      * 1. ra (Exact match)
      * 2-4. rahim, rakib, rasel (Starts with, alphabetical)
-     * 5-6. imran, sohelrahman (Contains, alphabetical)
+     * Excluded: imran, sohelrahman (Contains substring, strictly excluded in prefix-only search)
      */
-    public function test_search_ranking_prioritizes_exact_prefix_then_contains(): void
+    public function test_search_ranking_prioritizes_exact_prefix_and_excludes_middle_substrings(): void
     {
         $moderator = $this->createUser(['role' => 'moderator', 'username' => 'mod_x']);
 
@@ -264,9 +264,30 @@ class ModeratorApiTest extends TestCase
         $this->assertEquals('rakib', $usernames[2]);
         $this->assertEquals('rasel', $usernames[3]);
 
-        // 5-6. Contains matches sorted alphabetically
-        $this->assertEquals('imran', $usernames[4]);
-        $this->assertEquals('sohelrahman', $usernames[5]);
+        // Strictly prefix-only: middle substring matches must NOT be returned
+        $this->assertNotContains('imran', $usernames);
+        $this->assertNotContains('sohelrahman', $usernames);
+    }
+
+    /**
+     * Test: PREFIX-ONLY SEARCH FOR "za" (matches zahidul, zaman; strictly rejects rezaul)
+     */
+    public function test_prefix_only_search_for_za_matches_start_and_rejects_middle_match(): void
+    {
+        $moderator = $this->createUser(['role' => 'moderator']);
+
+        $this->createUser(['username' => 'zahidul', 'name' => 'Zahidul Islam']);
+        $this->createUser(['username' => 'zaman', 'name' => 'Zaman Ali']);
+        $this->createUser(['username' => 'rezaul', 'name' => 'Rezaul Karim']);
+
+        $res = $this->actingAs($moderator, 'api')->getJson('/api/moderator/users?search=za');
+        $res->assertStatus(200);
+
+        $usernames = collect($res->json('data'))->pluck('username')->all();
+
+        $this->assertContains('zahidul', $usernames);
+        $this->assertContains('zaman', $usernames);
+        $this->assertNotContains('rezaul', $usernames);
     }
 
     /**
@@ -461,5 +482,97 @@ class ModeratorApiTest extends TestCase
 
         $resDelete = $this->actingAs($moderator, 'api')->deleteJson('/api/moderator/users/1');
         $this->assertTrue(in_array($resDelete->status(), [404, 405], true));
+    }
+
+    /**
+     * Test: COINS VIEW MODE returns individual coin credit rows with safe fields
+     */
+    public function test_coins_view_mode_returns_credited_coins_and_safe_fields(): void
+    {
+        $moderator = $this->createUser(['role' => 'moderator']);
+        $user = $this->createUser(['username' => 'coins_player', 'name' => 'Coins Player', 'balance' => 999.00]);
+
+        $this->createCompletedTask([
+            'user_id' => $user->id,
+            'user_name' => 'coins_player',
+            'offer_wall_name' => 'Torox',
+            'offer_name' => 'Play Game 1',
+            'currency_reward' => 350.00,
+            'created_at' => '2026-10-16 10:00:00',
+        ]);
+
+        $this->createCompletedTask([
+            'user_id' => $user->id,
+            'user_name' => 'coins_player',
+            'offer_wall_name' => 'CPALead',
+            'offer_name' => 'Download App',
+            'currency_reward' => 150.00,
+            'created_at' => '2026-10-16 12:00:00',
+        ]);
+
+        $res = $this->actingAs($moderator, 'api')->getJson('/api/moderator/users?view=coins');
+        $res->assertStatus(200)
+            ->assertJsonStructure([
+                'status',
+                'data' => [
+                    '*' => [
+                        'id',
+                        'user_id',
+                        'username',
+                        'name',
+                        'balance',
+                        'wall_name',
+                        'credited_coins',
+                        'created_at',
+                        'credit_date',
+                        'credit_time',
+                    ],
+                ],
+                'pagination',
+            ]);
+
+        $data = $res->json('data');
+        $this->assertCount(2, $data);
+        $this->assertEquals('CPALead', $data[0]['wall_name']);
+        $this->assertEquals(150.00, $data[0]['credited_coins']);
+        $this->assertEquals('Torox', $data[1]['wall_name']);
+        $this->assertEquals(350.00, $data[1]['credited_coins']);
+
+        // Sensitive fields check
+        foreach ($data as $row) {
+            $this->assertArrayNotHasKey('email', $row);
+            $this->assertArrayNotHasKey('ip', $row);
+            $this->assertArrayNotHasKey('country', $row);
+            $this->assertArrayNotHasKey('revenue', $row);
+            $this->assertArrayNotHasKey('payout', $row);
+        }
+    }
+
+    /**
+     * Test: AUTO ALL RESULTS ON SPECIFIC SINGLE DATE
+     */
+    public function test_single_date_auto_shows_all_records_ignoring_per_page_cap(): void
+    {
+        $moderator = $this->createUser(['role' => 'moderator']);
+        $user = $this->createUser(['username' => 'daily_grinder']);
+
+        // Insert 30 completions on a single specific date
+        for ($i = 1; $i <= 30; $i++) {
+            $this->createCompletedTask([
+                'user_id' => $user->id,
+                'user_name' => 'daily_grinder',
+                'transaction_id' => 'batch-tx-'.$i,
+                'currency_reward' => 10.00 * $i,
+                'created_at' => '2026-10-16 14:00:00',
+            ]);
+        }
+
+        $res = $this->actingAs($moderator, 'api')->getJson('/api/moderator/users?view=coins&date=2026-10-16&per_page=25');
+        $res->assertStatus(200);
+
+        // When specific date is picked, all 30 matching records are loaded automatically
+        $data = $res->json('data');
+        $this->assertCount(30, $data);
+        $this->assertEquals(30, $res->json('pagination.total'));
     }
 }

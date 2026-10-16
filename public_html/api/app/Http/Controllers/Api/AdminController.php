@@ -883,8 +883,11 @@ class AdminController extends Controller
         $fromDate = trim((string) ($request->query('from_date', $request->query('from', ''))));
         $toDate = trim((string) ($request->query('to_date', $request->query('to', ''))));
 
-        $requestedPerPage = strtolower(trim((string) $request->query('per_page', '25')));
+        $requestedPerPage = strtolower(trim((string) $request->query('per_page', '10')));
         $hasUserUsernameColumn = Schema::hasTable('users') && Schema::hasColumn('users', 'username');
+        $hasUserNameColumn = Schema::hasTable('users') && Schema::hasColumn('users', 'name');
+        $hasUserEmailColumn = Schema::hasTable('users') && Schema::hasColumn('users', 'email');
+
         $query = CompletedTask::query()
             ->leftJoin('users as task_users_by_id', 'task_users_by_id.id', '=', 'completed_tasks.user_id');
 
@@ -913,45 +916,80 @@ class AdminController extends Controller
 
         if ($search !== '') {
             $escapedSearch = addcslashes($search, '%_\\');
-            $query->where(function ($builder) use ($escapedSearch, $search, $hasUserUsernameColumn): void {
-                $like = '%'.$escapedSearch.'%';
+            $prefixLike = $escapedSearch . '%';
+            $isNumeric = is_numeric($search);
+            $numericId = $isNumeric ? (int) $search : -1;
 
-                $builder
-                    ->where('completed_tasks.offer_wall_name', 'like', $like)
-                    ->orWhere('completed_tasks.user_name', 'like', $like)
-                    ->orWhere('completed_tasks.transaction_id', 'like', $like)
-                    ->orWhere('completed_tasks.offer_name', 'like', $like)
-                    ->orWhere('completed_tasks.offer_id', 'like', $like)
-                    ->orWhere('task_users_by_id.email', 'like', $like)
-                    ->orWhere('completed_tasks.ip', 'like', $like)
-                    ->orWhere('completed_tasks.country', 'like', $like);
+            $query->where(function ($builder) use ($prefixLike, $isNumeric, $numericId, $hasUserUsernameColumn, $hasUserNameColumn, $hasUserEmailColumn): void {
+                // Prefix-first / prefix-only for username and display name
+                $builder->where('completed_tasks.user_name', 'like', $prefixLike);
 
                 if ($hasUserUsernameColumn) {
-                    $builder->orWhere('task_users_by_name.email', 'like', $like);
+                    $builder->orWhere('task_users_by_id.username', 'like', $prefixLike);
+                    $builder->orWhere('task_users_by_name.username', 'like', $prefixLike);
                 }
 
-                if (is_numeric($search)) {
-                    $builder->orWhere('completed_tasks.id', (int) $search)
-                        ->orWhere('completed_tasks.user_id', (int) $search);
+                if ($hasUserNameColumn) {
+                    $builder->orWhere('task_users_by_id.name', 'like', $prefixLike);
+                    if ($hasUserUsernameColumn) {
+                        $builder->orWhere('task_users_by_name.name', 'like', $prefixLike);
+                    }
+                }
+
+                if ($hasUserEmailColumn) {
+                    $builder->orWhere('task_users_by_id.email', 'like', $prefixLike);
+                    if ($hasUserUsernameColumn) {
+                        $builder->orWhere('task_users_by_name.email', 'like', $prefixLike);
+                    }
+                }
+
+                // Transaction ID, offer wall, offer ID, offer name, IP, country (prefix)
+                $builder->orWhere('completed_tasks.transaction_id', 'like', $prefixLike)
+                    ->orWhere('completed_tasks.offer_wall_name', 'like', $prefixLike)
+                    ->orWhere('completed_tasks.offer_name', 'like', $prefixLike)
+                    ->orWhere('completed_tasks.offer_id', 'like', $prefixLike)
+                    ->orWhere('completed_tasks.ip', 'like', $prefixLike)
+                    ->orWhere('completed_tasks.country', 'like', $prefixLike);
+
+                if ($isNumeric) {
+                    $builder->orWhere('completed_tasks.id', $numericId)
+                        ->orWhere('completed_tasks.user_id', $numericId);
                 }
             });
+
+            // Exact match priority ordering
+            $query->orderByRaw('
+                CASE
+                    WHEN LOWER(completed_tasks.user_name) = LOWER(?) THEN 1
+                    WHEN completed_tasks.user_id = ? THEN 2
+                    WHEN LOWER(completed_tasks.user_name) LIKE LOWER(?) THEN 3
+                    ELSE 4
+                END ASC, completed_tasks.created_at DESC, completed_tasks.id DESC
+            ', [
+                $search,
+                $numericId,
+                $prefixLike,
+            ]);
+        } else {
+            $query->orderByDesc('completed_tasks.created_at')
+                ->orderByDesc('completed_tasks.id');
         }
 
-        $allowedPerPageOptions = [25, 50, 100, 250, 500, 1000];
+        $allowedPerPageOptions = [10, 20, 25, 30, 50, 100, 250, 500, 1000];
 
-        if ($requestedPerPage === 'all') {
+        // Specific single date selection or requested 'all' automatically shows all matching offers
+        $isSpecificSingleDate = ($fromDate !== '' && $fromDate === $toDate);
+
+        if ($requestedPerPage === 'all' || $isSpecificSingleDate) {
             $perPage = max(1, (clone $query)->count());
         } else {
             $requestedPerPageInt = (int) $requestedPerPage;
             $perPage = in_array($requestedPerPageInt, $allowedPerPageOptions, true)
                 ? $requestedPerPageInt
-                : 25;
+                : 10;
         }
 
-        $paginator = $query
-            ->orderByDesc('completed_tasks.created_at')
-            ->orderByDesc('completed_tasks.id')
-            ->paginate(
+        $paginator = $query->paginate(
                 $perPage,
                 [
                     'completed_tasks.id as id',

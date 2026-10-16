@@ -179,7 +179,10 @@ export const api = {
   getAdminCashoutMethods: () => apiRequest('/admin/cashout-methods'),
 
   // Moderator Endpoints (Strictly Read-Only)
-  getModeratorStats: () => apiRequest('/moderator/stats'),
+  getModeratorStats: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return apiRequest(`/moderator/stats${q ? `?${q}` : ''}`);
+  },
   getModeratorUsers: async (params = {}) => {
     const q = new URLSearchParams(params).toString();
     const res = await apiRequest(`/moderator/users${q ? `?${q}` : ''}`);
