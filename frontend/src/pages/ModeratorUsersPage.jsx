@@ -1,14 +1,36 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Users, RefreshCw, AlertCircle, X, ChevronLeft, ChevronRight, Coins } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { 
+  Search, 
+  Users, 
+  RefreshCw, 
+  AlertCircle, 
+  X, 
+  ChevronLeft, 
+  ChevronRight, 
+  Coins, 
+  Calendar, 
+  CalendarDays, 
+  Eye, 
+  Layers, 
+  Clock, 
+  CheckCircle2 
+} from 'lucide-react';
 import { api } from '../services/api';
 
 export default function ModeratorUsersPage() {
   const [users, setUsers] = useState([]);
   const [totalRegisteredUsers, setTotalRegisteredUsers] = useState(0);
+  const [availableMonths, setAvailableMonths] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
+
+  // Filters State
   const [searchInput, setSearchInput] = useState('');
   const [activeSearch, setActiveSearch] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState('all'); // 'YYYY-MM' or 'all'
+  const [selectedDate, setSelectedDate] = useState(''); // 'YYYY-MM-DD' or ''
+
+  // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(25);
   const [paginationInfo, setPaginationInfo] = useState({
@@ -19,15 +41,26 @@ export default function ModeratorUsersPage() {
     from: 0,
     to: 0,
   });
+
   const [apiError, setApiError] = useState(null);
 
-  // Fetch Total Registered Users from /api/moderator/stats
+  // User Activity Detail Modal State
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [userActivity, setUserActivity] = useState([]);
+  const [modalLoading, setModalLoading] = useState(false);
+
+  // Fetch Total Users and dynamic months from /api/moderator/stats
   const fetchStats = useCallback(async () => {
     setStatsLoading(true);
     try {
       const res = await api.getModeratorStats();
-      if (res && res.data && typeof res.data.total_users === 'number') {
-        setTotalRegisteredUsers(res.data.total_users);
+      if (res && res.data) {
+        if (typeof res.data.total_users === 'number') {
+          setTotalRegisteredUsers(res.data.total_users);
+        }
+        if (Array.isArray(res.data.months) && res.data.months.length > 0) {
+          setAvailableMonths(res.data.months);
+        }
       }
     } catch (err) {
       console.error('Failed to load moderator stats:', err);
@@ -36,18 +69,26 @@ export default function ModeratorUsersPage() {
     }
   }, []);
 
-  // Fetch Paginated User List from /api/moderator/users
-  const fetchUsers = useCallback(async () => {
-    setLoading(true);
+  // Fetch Paginated User Directory with Wall/Coin Activity
+  const fetchUsers = useCallback(async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     setApiError(null);
     try {
       const params = {
         page: currentPage,
         per_page: rowsPerPage,
       };
+
       if (activeSearch.trim()) {
         params.search = activeSearch.trim();
       }
+
+      if (selectedDate.trim()) {
+        params.date = selectedDate.trim();
+      } else if (selectedMonth && selectedMonth !== 'all') {
+        params.month = selectedMonth.trim();
+      }
+
       const res = await api.getModeratorUsers(params);
       if (res && res.data) {
         setUsers(res.data);
@@ -58,13 +99,15 @@ export default function ModeratorUsersPage() {
         setUsers([]);
       }
     } catch (err) {
-      console.error('Failed to load users from backend:', err);
-      setApiError(err.message || 'Failed to load moderator user directory.');
-      setUsers([]);
+      console.error('Failed to load moderator users directory:', err);
+      if (!isBackground) {
+        setApiError(err.message || 'Failed to connect to backend users API.');
+        setUsers([]);
+      }
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
-  }, [currentPage, rowsPerPage, activeSearch]);
+  }, [currentPage, rowsPerPage, activeSearch, selectedDate, selectedMonth]);
 
   useEffect(() => {
     fetchStats();
@@ -74,6 +117,7 @@ export default function ModeratorUsersPage() {
     fetchUsers();
   }, [fetchUsers]);
 
+  // Handle Search Submission (Explicit Button + Enter Key)
   const handleSearchSubmit = (e) => {
     if (e) e.preventDefault();
     setActiveSearch(searchInput.trim());
@@ -86,14 +130,38 @@ export default function ModeratorUsersPage() {
     setCurrentPage(1);
   };
 
+  const handleClearFilters = () => {
+    setSelectedMonth('all');
+    setSelectedDate('');
+    setCurrentPage(1);
+  };
+
   const handleRefreshAll = () => {
     fetchStats();
     fetchUsers();
   };
 
+  // Inspect User Activity Modal Handler
+  const handleViewUserActivity = async (u) => {
+    setSelectedUser(u);
+    setUserActivity([]);
+    setModalLoading(true);
+    try {
+      if (api.getModeratorUserActivity) {
+        const res = await api.getModeratorUserActivity(u.id);
+        setUserActivity(res.data || []);
+      }
+    } catch (err) {
+      console.error('Failed to load user activity:', err);
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
   // Format Coin Balance strictly without USD equivalent
   const formatCoins = (val) => {
-    const num = Number(val ?? 0);
+    if (val === null || val === undefined || val === '') return '—';
+    const num = Number(val);
     if (isNaN(num)) return '0 Coins';
     const formatted = num % 1 === 0 
       ? num.toLocaleString() 
@@ -101,23 +169,50 @@ export default function ModeratorUsersPage() {
     return `${formatted} Coins`;
   };
 
+  // Human-readable filter summary badge
+  const filterSummary = useMemo(() => {
+    if (selectedDate) {
+      try {
+        const d = new Date(selectedDate + 'T00:00:00');
+        return `Date: ${d.toLocaleDateString('default', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+      } catch (e) {
+        return `Date: ${selectedDate}`;
+      }
+    }
+    if (selectedMonth && selectedMonth !== 'all') {
+      try {
+        const [y, m] = selectedMonth.split('-');
+        const d = new Date(Number(y), Number(m) - 1, 1);
+        return `Month: ${d.toLocaleString('default', { month: 'long', year: 'numeric' })}`;
+      } catch (e) {
+        return `Month: ${selectedMonth}`;
+      }
+    }
+    return 'All-Time Activity';
+  }, [selectedDate, selectedMonth]);
+
   return (
     <div className="space-y-6">
       {/* Top Header Section */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-white/5">
         <div>
-          <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
-            <Users className="w-6 h-6 text-brand-400" />
-            <span>Moderator Panel</span>
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
+              <Users className="w-6 h-6 text-brand-400" />
+              <span>Wall User Monitoring</span>
+            </h1>
+            <span className="px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-bold">
+              Read-Only
+            </span>
+          </div>
           <p className="text-xs text-slate-400 mt-1">
-            Read-only platform directory for account inquiries and user verification.
+            Real-time user directory with authoritative offerwall credit tracking, date filtering, and coin auditing.
           </p>
         </div>
 
         {/* Total Users Metric Card */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-3 px-4 py-2.5 rounded-2xl glass-card border border-brand-500/20 bg-brand-500/5 shadow-inner">
+          <div className="flex items-center gap-3 px-4 py-2 rounded-2xl glass-card border border-brand-500/20 bg-brand-500/5 shadow-inner">
             <div className="p-2 rounded-xl bg-brand-500/10 text-brand-400">
               <Users className="w-5 h-5" />
             </div>
@@ -135,14 +230,14 @@ export default function ModeratorUsersPage() {
             onClick={handleRefreshAll}
             disabled={loading || statsLoading}
             className="p-3 rounded-2xl glass-card border border-white/10 hover:border-white/20 text-slate-300 hover:text-white transition-all active:scale-95 disabled:opacity-50"
-            title="Refresh Data"
+            title="Refresh Directory"
           >
             <RefreshCw className={`w-4 h-4 ${loading || statsLoading ? 'animate-spin text-brand-400' : ''}`} />
           </button>
         </div>
       </div>
 
-      {/* API Error Notification */}
+      {/* API Error Notice */}
       {apiError && (
         <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between gap-3 animate-fade-in">
           <div className="flex items-center gap-2.5">
@@ -153,7 +248,7 @@ export default function ModeratorUsersPage() {
             </div>
           </div>
           <button
-            onClick={fetchUsers}
+            onClick={() => fetchUsers()}
             className="px-3 py-1 rounded-lg bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 font-semibold text-xs transition-colors"
           >
             Retry
@@ -161,9 +256,73 @@ export default function ModeratorUsersPage() {
         </div>
       )}
 
-      {/* Controls: Search Bar and Page Size */}
+      {/* Month & Date Filter Bar (Matching Admin Completed Offers Pattern) */}
+      <div className="p-4 rounded-3xl glass-card border border-white/10 space-y-3 shadow-lg">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Month Selector */}
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-brand-400 shrink-0" />
+              <span className="text-xs font-bold text-slate-300">Select Month:</span>
+              <select
+                value={selectedMonth}
+                onChange={(e) => {
+                  setSelectedMonth(e.target.value);
+                  setSelectedDate('');
+                  setCurrentPage(1);
+                }}
+                className="bg-[#0c1015] border border-white/15 text-xs font-bold text-white rounded-xl px-3 py-1.5 focus:outline-none focus:border-brand-400 cursor-pointer"
+              >
+                <option value="all">All Months (All-Time)</option>
+                {availableMonths.map((m) => {
+                  let label = m;
+                  try {
+                    const [y, mon] = m.split('-');
+                    label = new Date(Number(y), Number(mon) - 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+                  } catch (e) {}
+                  return <option key={m} value={m}>{label}</option>;
+                })}
+              </select>
+            </div>
+
+            {/* Specific Date Picker */}
+            <div className="flex items-center gap-2 pl-3 border-l border-white/10 text-xs text-slate-400">
+              <CalendarDays className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span>Specific Date:</span>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => {
+                  setSelectedDate(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="bg-[#0c1015] border border-white/15 text-xs text-white rounded-xl px-3 py-1.5 font-mono focus:outline-none focus:border-cyan-400"
+              />
+            </div>
+
+            {/* Clear Date Filters */}
+            {(selectedMonth !== 'all' || selectedDate) && (
+              <button
+                type="button"
+                onClick={handleClearFilters}
+                className="text-xs text-rose-400 hover:text-rose-300 font-semibold underline underline-offset-4 transition-colors"
+              >
+                Clear Date Filter
+              </button>
+            )}
+          </div>
+
+          {/* Filter Summary Badge */}
+          <div className="px-3 py-1.5 rounded-xl bg-brand-500/10 border border-brand-500/25 text-brand-300 text-xs font-bold flex items-center gap-2">
+            <CalendarDays className="w-3.5 h-3.5 text-brand-400" />
+            <span>{filterSummary}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Search & Page Size Bar */}
       <div className="p-3.5 rounded-2xl glass-card border border-white/10 flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap shadow-lg">
-        {/* Search Form with Search Button and Clear (X) */}
+        {/* Search Form */}
         <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 flex-1 min-w-[280px]">
           <div className="relative flex-1 flex items-center">
             <Search className="w-4 h-4 text-slate-500 absolute left-3 pointer-events-none" />
@@ -179,7 +338,7 @@ export default function ModeratorUsersPage() {
                 type="button"
                 onClick={handleClearSearch}
                 className="absolute right-2.5 text-slate-400 hover:text-white transition-colors"
-                title="Clear search"
+                title="Clear input"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -213,56 +372,75 @@ export default function ModeratorUsersPage() {
         </div>
       </div>
 
-      {/* Active Search Pill */}
-      {activeSearch && (
-        <div className="flex items-center gap-2 text-xs text-slate-400">
+      {/* Active Search & Filter Indicator */}
+      {(activeSearch || selectedDate || (selectedMonth && selectedMonth !== 'all')) && (
+        <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
           <span>Active filter:</span>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-brand-500/10 text-brand-300 border border-brand-500/20 font-mono">
-            "{activeSearch}"
-            <button
-              onClick={handleClearSearch}
-              className="hover:text-white transition-colors"
-              title="Remove filter"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </span>
+          {activeSearch && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-brand-500/10 text-brand-300 border border-brand-500/20 font-mono">
+              "{activeSearch}"
+              <button onClick={handleClearSearch} className="hover:text-white">
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+          {selectedDate && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-mono">
+              Date: {selectedDate}
+              <button onClick={() => { setSelectedDate(''); setCurrentPage(1); }} className="hover:text-white">
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+          {selectedMonth !== 'all' && !selectedDate && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/20 font-mono">
+              Month: {selectedMonth}
+              <button onClick={() => { setSelectedMonth('all'); setCurrentPage(1); }} className="hover:text-white">
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
           <span className="text-slate-500">
             ({paginationInfo.total.toLocaleString()} {paginationInfo.total === 1 ? 'match' : 'matches'})
           </span>
         </div>
       )}
 
-      {/* User Table (Strict 5 Columns) */}
+      {/* Wall User Monitoring Table (9 Authoritative Columns + Read-Only Action) */}
       <div className="rounded-2xl glass-card border border-white/10 overflow-hidden shadow-2xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-white/[0.04] text-slate-300 font-semibold border-b border-white/10 whitespace-nowrap">
-                <th className="py-3 px-4 border-r border-white/5 text-center w-16">S.L</th>
-                <th className="py-3 px-4 border-r border-white/5 w-24">User ID</th>
-                <th className="py-3 px-4 border-r border-white/5">Username</th>
-                <th className="py-3 px-4 border-r border-white/5">Display Name</th>
-                <th className="py-3 px-4 text-right">Coin Balance</th>
+                <th className="py-3 px-3 border-r border-white/5 text-center w-12">1. S.L</th>
+                <th className="py-3 px-3 border-r border-white/5 w-20">2. User ID</th>
+                <th className="py-3 px-3 border-r border-white/5">3. Username</th>
+                <th className="py-3 px-3 border-r border-white/5">4. Display Name</th>
+                <th className="py-3 px-3 border-r border-white/5 text-right">5. Current Balance</th>
+                <th className="py-3 px-3 border-r border-white/5">6. Latest Wall / Provider</th>
+                <th className="py-3 px-3 border-r border-white/5 text-right">7. Latest Coins</th>
+                <th className="py-3 px-3 border-r border-white/5">8. Latest Credit Date</th>
+                <th className="py-3 px-3 border-r border-white/5">9. Latest Credit Time</th>
+                <th className="py-3 px-3 text-center w-16">10. Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 font-mono text-[11px]">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center text-slate-400 font-sans">
+                  <td colSpan={10} className="py-12 text-center text-slate-400 font-sans">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <RefreshCw className="w-5 h-5 animate-spin text-brand-400" />
-                      <span>Loading user directory...</span>
+                      <span>Loading user and wall activity directory...</span>
                     </div>
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center text-slate-400 font-sans">
-                    {activeSearch ? (
+                  <td colSpan={10} className="py-12 text-center text-slate-400 font-sans">
+                    {activeSearch || selectedDate || selectedMonth !== 'all' ? (
                       <div className="space-y-1">
-                        <p className="font-semibold text-slate-300">No users found matching "{activeSearch}"</p>
-                        <p className="text-xs text-slate-500">Try searching with a different user ID, username, or name.</p>
+                        <p className="font-semibold text-slate-300">No users found matching current filter criteria.</p>
+                        <p className="text-xs text-slate-500">Try adjusting your search query or selected date/month.</p>
                       </div>
                     ) : (
                       'No registered user accounts found.'
@@ -272,37 +450,85 @@ export default function ModeratorUsersPage() {
               ) : (
                 users.map((u, index) => {
                   const sl = (rowsPerPage * (currentPage - 1)) + index + 1;
+                  const hasWallActivity = u.latest_wall && u.latest_wall !== '—';
+
                   return (
                     <tr
                       key={u.id || index}
                       className="hover:bg-white/[0.03] text-slate-300 whitespace-nowrap transition-colors"
                     >
-                      {/* Column 1: S.L */}
-                      <td className="py-3 px-4 border-r border-white/5 text-center text-slate-500 font-mono">
+                      {/* 1. S.L */}
+                      <td className="py-3 px-3 border-r border-white/5 text-center text-slate-500 font-mono">
                         {sl}
                       </td>
 
-                      {/* Column 2: User ID */}
-                      <td className="py-3 px-4 border-r border-white/5 font-bold text-brand-400">
+                      {/* 2. User ID */}
+                      <td className="py-3 px-3 border-r border-white/5 font-bold text-brand-400">
                         #{u.id}
                       </td>
 
-                      {/* Column 3: Username */}
-                      <td className="py-3 px-4 border-r border-white/5 font-sans font-semibold text-white">
+                      {/* 3. Username */}
+                      <td className="py-3 px-3 border-r border-white/5 font-sans font-semibold text-white">
                         {u.username}
                       </td>
 
-                      {/* Column 4: Display Name */}
-                      <td className="py-3 px-4 border-r border-white/5 font-sans text-slate-300">
+                      {/* 4. Display Name */}
+                      <td className="py-3 px-3 border-r border-white/5 font-sans text-slate-300">
                         {u.name || '—'}
                       </td>
 
-                      {/* Column 5: Coin Balance (ONLY COINS, NO USD) */}
-                      <td className="py-3 px-4 text-right font-mono font-bold text-amber-400">
+                      {/* 5. Current Coin Balance (ONLY COINS, NO USD) */}
+                      <td className="py-3 px-3 border-r border-white/5 text-right font-mono font-bold text-amber-400">
                         <span className="inline-flex items-center gap-1.5 justify-end">
                           <Coins className="w-3.5 h-3.5 text-amber-400/80" />
                           <span>{formatCoins(u.balance)}</span>
                         </span>
+                      </td>
+
+                      {/* 6. Latest Wall / Provider */}
+                      <td className="py-3 px-3 border-r border-white/5 font-sans">
+                        {hasWallActivity ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold text-xs">
+                            <Layers className="w-3 h-3 text-emerald-400" />
+                            <span>{u.latest_wall}</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">No activity</span>
+                        )}
+                      </td>
+
+                      {/* 7. Latest Credited Coins (ONLY COINS, NO USD) */}
+                      <td className="py-3 px-3 border-r border-white/5 text-right font-mono font-bold">
+                        {u.latest_coins !== null ? (
+                          <span className="text-brand-400">
+                            +{formatCoins(u.latest_coins)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">—</span>
+                        )}
+                      </td>
+
+                      {/* 8. Latest Credit Date */}
+                      <td className="py-3 px-3 border-r border-white/5 font-mono text-slate-300">
+                        {u.latest_credit_date || '—'}
+                      </td>
+
+                      {/* 9. Latest Credit Time */}
+                      <td className="py-3 px-3 border-r border-white/5 font-mono text-slate-400">
+                        {u.latest_credit_time || '—'}
+                      </td>
+
+                      {/* 10. Action: Read-Only Detail View */}
+                      <td className="py-3 px-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleViewUserActivity(u)}
+                          className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-[11px] font-semibold flex items-center gap-1 mx-auto transition-colors active:scale-95"
+                          title="View Recent Wall Activity"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-brand-400" />
+                          <span>View</span>
+                        </button>
                       </td>
                     </tr>
                   );
@@ -355,6 +581,119 @@ export default function ModeratorUsersPage() {
           </div>
         </div>
       </div>
+
+      {/* Read-Only User Activity Modal */}
+      {selectedUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black/80 backdrop-blur-md animate-fade-in"
+            onClick={() => setSelectedUser(null)}
+          />
+
+          {/* Modal Card */}
+          <div className="relative w-full max-w-2xl bg-[#0c1015] border border-white/10 rounded-3xl p-6 shadow-2xl z-10 space-y-5 animate-scale-up">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-white/5">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-brand-500/10 text-brand-400 border border-brand-500/20">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>Wall Activity:</span>
+                    <span className="text-brand-400 font-mono">@{selectedUser.username}</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    User ID #{selectedUser.id} &bull; {selectedUser.name || 'No Display Name'}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setSelectedUser(null)}
+                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Current Balance Summary (ONLY COINS, NO USD) */}
+            <div className="p-3.5 rounded-2xl bg-amber-500/5 border border-amber-500/20 flex items-center justify-between">
+              <div className="text-xs text-slate-400 font-semibold">Current Account Balance:</div>
+              <div className="text-base font-black font-mono text-amber-400 flex items-center gap-1.5">
+                <Coins className="w-4 h-4 text-amber-400" />
+                <span>{formatCoins(selectedUser.balance)}</span>
+              </div>
+            </div>
+
+            {/* Recent Completed Offerwall Tasks Table */}
+            <div className="space-y-2">
+              <div className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                <span>Recent Offerwall Credits (Read-Only):</span>
+                <span className="text-[11px] text-slate-500 font-mono">Max 15 recent entries</span>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 overflow-hidden max-h-64 overflow-y-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-white/[0.04] text-slate-400 font-semibold border-b border-white/10">
+                      <th className="py-2.5 px-3">Provider / Wall</th>
+                      <th className="py-2.5 px-3 text-right">Coins Credited</th>
+                      <th className="py-2.5 px-3">Credit Date</th>
+                      <th className="py-2.5 px-3">Credit Time</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 font-mono text-[11px]">
+                    {modalLoading ? (
+                      <tr>
+                        <td colSpan={4} className="py-8 text-center text-slate-400 font-sans">
+                          <RefreshCw className="w-4 h-4 animate-spin text-brand-400 inline mr-2" />
+                          Loading recent activity...
+                        </td>
+                      </tr>
+                    ) : userActivity.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-8 text-center text-slate-500 font-sans">
+                          No recent offerwall completions recorded for this user.
+                        </td>
+                      </tr>
+                    ) : (
+                      userActivity.map((act) => (
+                        <tr key={act.id} className="hover:bg-white/[0.02] text-slate-300">
+                          <td className="py-2.5 px-3 font-sans font-semibold text-emerald-400">
+                            {act.offer_wall_name}
+                          </td>
+                          <td className="py-2.5 px-3 text-right text-brand-400 font-bold">
+                            +{formatCoins(act.currency_reward)}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-300">
+                            {act.credit_date}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-400">
+                            {act.credit_time}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedUser(null)}
+                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 text-xs font-semibold border border-white/10 transition-colors"
+              >
+                Close View
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

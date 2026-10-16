@@ -190,5 +190,6 @@ export const api = {
       raw: res,
     };
   },
+  getModeratorUserActivity: (id) => apiRequest(`/moderator/users/${id}/activity`),
 };
 

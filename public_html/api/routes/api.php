@@ -76,5 +76,6 @@ Route::prefix('moderator')
     ->group(function () {
         Route::get('/stats', [ModeratorController::class, 'stats']);
         Route::get('/users', [ModeratorController::class, 'users']);
+        Route::get('/users/{id}/activity', [ModeratorController::class, 'activity']);
     });
 

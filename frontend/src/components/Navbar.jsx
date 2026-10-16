@@ -186,8 +186,19 @@ export default function Navbar() {
                         className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-200 hover:bg-white/5 hover:text-white"
                       >
                         <User className="w-4 h-4 text-cyan-400" />
-                        Profile Settings
+                        Profile
                       </Link>
+
+                      {user?.role === 'moderator' && (
+                        <Link
+                          to="/moderator"
+                          onClick={() => setUserDropdownOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-amber-400 hover:bg-amber-400/10 font-medium"
+                        >
+                          <ShieldCheck className="w-4 h-4 text-amber-400" />
+                          Moderator Panel
+                        </Link>
+                      )}
 
                       {isAdmin && (
                         <Link

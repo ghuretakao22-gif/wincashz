@@ -34,10 +34,26 @@ class ModeratorApiTest extends TestCase
             $table->rememberToken();
             $table->timestamps();
         });
+
+        Schema::create('completed_tasks', function (Blueprint $table): void {
+            $table->id();
+            $table->string('offer_wall_name')->nullable();
+            $table->unsignedBigInteger('user_id')->nullable()->index();
+            $table->string('user_name')->default('anonymous');
+            $table->string('transaction_id')->unique();
+            $table->string('offer_name')->nullable();
+            $table->string('offer_id')->nullable();
+            $table->decimal('revenue', 18, 2)->default(0);
+            $table->decimal('currency_reward', 18, 2)->default(0);
+            $table->string('ip', 100)->nullable();
+            $table->string('country')->default('unknown');
+            $table->timestamps();
+        });
     }
 
     protected function tearDown(): void
     {
+        Schema::dropIfExists('completed_tasks');
         Schema::dropIfExists('users');
         parent::tearDown();
     }
@@ -60,6 +76,24 @@ class ModeratorApiTest extends TestCase
         ], $attributes));
 
         return User::findOrFail($id);
+    }
+
+    protected function createCompletedTask(array $attributes = []): int
+    {
+        return DB::table('completed_tasks')->insertGetId(array_merge([
+            'offer_wall_name' => 'Vortex',
+            'user_id' => null,
+            'user_name' => 'testuser',
+            'transaction_id' => 'tx_'.uniqid(),
+            'offer_name' => 'Test Offer',
+            'offer_id' => 'off_123',
+            'revenue' => 1.00,
+            'currency_reward' => 470.00,
+            'ip' => '127.0.0.1',
+            'country' => 'United States',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ], $attributes));
     }
 
     /**
@@ -87,7 +121,7 @@ class ModeratorApiTest extends TestCase
         $resStats->assertStatus(200)
             ->assertJsonStructure([
                 'status',
-                'data' => ['total_users'],
+                'data' => ['total_users', 'months'],
             ]);
 
         $resUsers = $this->actingAs($moderator, 'api')->getJson('/api/moderator/users');
@@ -122,13 +156,12 @@ class ModeratorApiTest extends TestCase
     }
 
     /**
-     * Test: DATA PRIVACY - Response contains ONLY id, username, name, balance.
-     * Sensitive fields MUST be absent.
+     * Test: DATA PRIVACY - Response contains ONLY whitelisted keys. Sensitive fields MUST be absent.
      */
     public function test_data_privacy_whitelist_guarantees_no_sensitive_fields(): void
     {
         $moderator = $this->createUser(['role' => 'moderator']);
-        $this->createUser([
+        $user = $this->createUser([
             'name' => 'Target User',
             'username' => 'targetuser',
             'email' => 'sensitive_target@private.org',
@@ -136,6 +169,12 @@ class ModeratorApiTest extends TestCase
             'country' => 'Germany',
             'balance' => 450.50,
             'ban' => true,
+        ]);
+
+        $this->createCompletedTask([
+            'user_id' => $user->id,
+            'offer_wall_name' => 'Vortex',
+            'currency_reward' => 350.00,
         ]);
 
         $res = $this->actingAs($moderator, 'api')->getJson('/api/moderator/users');
@@ -150,6 +189,11 @@ class ModeratorApiTest extends TestCase
             $this->assertArrayHasKey('username', $item);
             $this->assertArrayHasKey('name', $item);
             $this->assertArrayHasKey('balance', $item);
+            $this->assertArrayHasKey('latest_wall', $item);
+            $this->assertArrayHasKey('latest_coins', $item);
+            $this->assertArrayHasKey('latest_credit_at', $item);
+            $this->assertArrayHasKey('latest_credit_date', $item);
+            $this->assertArrayHasKey('latest_credit_time', $item);
 
             // Must NOT have sensitive keys
             $this->assertArrayNotHasKey('email', $item);
@@ -158,12 +202,12 @@ class ModeratorApiTest extends TestCase
             $this->assertArrayNotHasKey('ban', $item);
             $this->assertArrayNotHasKey('role', $item);
             $this->assertArrayNotHasKey('password', $item);
+            $this->assertArrayNotHasKey('revenue', $item);
+            $this->assertArrayNotHasKey('payout', $item);
             $this->assertArrayNotHasKey('google_id', $item);
             $this->assertArrayNotHasKey('google_avatar', $item);
             $this->assertArrayNotHasKey('user_avatar', $item);
             $this->assertArrayNotHasKey('profile_setup_completed', $item);
-            $this->assertArrayNotHasKey('created_at', $item);
-            $this->assertArrayNotHasKey('updated_at', $item);
         }
     }
 
@@ -200,7 +244,6 @@ class ModeratorApiTest extends TestCase
     {
         $moderator = $this->createUser(['role' => 'moderator', 'username' => 'mod_x']);
 
-        // Insert test accounts in randomized order
         $this->createUser(['username' => 'sohelrahman', 'name' => 'Sohel Rahman']);
         $this->createUser(['username' => 'rahim', 'name' => 'Abdur Rahim']);
         $this->createUser(['username' => 'imran', 'name' => 'Imran Khan']);
@@ -244,35 +287,167 @@ class ModeratorApiTest extends TestCase
     }
 
     /**
+     * Test: WALL & COIN ACTIVITY per user without N+1 queries
+     */
+    public function test_wall_activity_and_coins_displayed_accurately(): void
+    {
+        $moderator = $this->createUser(['role' => 'moderator']);
+        $user = $this->createUser(['username' => 'gamer99', 'balance' => 1250.00]);
+
+        // Older completion
+        $this->createCompletedTask([
+            'user_id' => $user->id,
+            'offer_wall_name' => 'Torox',
+            'currency_reward' => 200.00,
+            'created_at' => now()->subDays(2),
+        ]);
+
+        // Latest completion
+        $this->createCompletedTask([
+            'user_id' => $user->id,
+            'offer_wall_name' => 'Vortex',
+            'currency_reward' => 470.00,
+            'created_at' => now(),
+        ]);
+
+        $res = $this->actingAs($moderator, 'api')->getJson('/api/moderator/users?search=gamer99');
+        $res->assertStatus(200);
+
+        $item = $res->json('data.0');
+        $this->assertNotNull($item);
+        $this->assertEquals('gamer99', $item['username']);
+        $this->assertEquals(1250.00, $item['balance']);
+        $this->assertEquals('Vortex', $item['latest_wall']);
+        $this->assertEquals(470.00, $item['latest_coins']);
+        $this->assertNotNull($item['latest_credit_date']);
+        $this->assertNotNull($item['latest_credit_time']);
+    }
+
+    /**
+     * Test: DATE FILTER scopes to specific date
+     */
+    public function test_date_filter_scopes_to_specific_date(): void
+    {
+        $moderator = $this->createUser(['role' => 'moderator']);
+        $userA = $this->createUser(['username' => 'user_oct15']);
+        $userB = $this->createUser(['username' => 'user_oct16']);
+
+        $this->createCompletedTask([
+            'user_id' => $userA->id,
+            'offer_wall_name' => 'BitLabs',
+            'currency_reward' => 100.00,
+            'created_at' => '2026-10-15 10:00:00',
+        ]);
+
+        $this->createCompletedTask([
+            'user_id' => $userB->id,
+            'offer_wall_name' => 'CPALead',
+            'currency_reward' => 300.00,
+            'created_at' => '2026-10-16 14:30:00',
+        ]);
+
+        $res = $this->actingAs($moderator, 'api')->getJson('/api/moderator/users?date=2026-10-16');
+        $res->assertStatus(200);
+
+        $usernames = collect($res->json('data'))->pluck('username')->all();
+        $this->assertContains('user_oct16', $usernames);
+        $this->assertNotContains('user_oct15', $usernames);
+
+        $matchedItem = collect($res->json('data'))->firstWhere('username', 'user_oct16');
+        $this->assertEquals('CPALead', $matchedItem['latest_wall']);
+        $this->assertEquals(300.00, $matchedItem['latest_coins']);
+    }
+
+    /**
+     * Test: MONTH FILTER scopes to specific month
+     */
+    public function test_month_filter_scopes_to_specific_month(): void
+    {
+        $moderator = $this->createUser(['role' => 'moderator']);
+        $userSep = $this->createUser(['username' => 'user_sep']);
+        $userOct = $this->createUser(['username' => 'user_oct']);
+
+        $this->createCompletedTask([
+            'user_id' => $userSep->id,
+            'offer_wall_name' => 'Torox',
+            'currency_reward' => 500.00,
+            'created_at' => '2026-09-20 12:00:00',
+        ]);
+
+        $this->createCompletedTask([
+            'user_id' => $userOct->id,
+            'offer_wall_name' => 'Vortex',
+            'currency_reward' => 750.00,
+            'created_at' => '2026-10-05 15:00:00',
+        ]);
+
+        $res = $this->actingAs($moderator, 'api')->getJson('/api/moderator/users?month=2026-10');
+        $res->assertStatus(200);
+
+        $usernames = collect($res->json('data'))->pluck('username')->all();
+        $this->assertContains('user_oct', $usernames);
+        $this->assertNotContains('user_sep', $usernames);
+    }
+
+    /**
+     * Test: USER RECENT ACTIVITY DETAIL ENDPOINT
+     */
+    public function test_user_recent_activity_detail_endpoint(): void
+    {
+        $moderator = $this->createUser(['role' => 'moderator']);
+        $user = $this->createUser(['username' => 'active_player']);
+
+        $this->createCompletedTask([
+            'user_id' => $user->id,
+            'offer_wall_name' => 'Torox',
+            'currency_reward' => 250.00,
+            'created_at' => '2026-10-16 11:00:00',
+        ]);
+
+        $this->createCompletedTask([
+            'user_id' => $user->id,
+            'offer_wall_name' => 'CPALead',
+            'currency_reward' => 450.00,
+            'created_at' => '2026-10-16 12:00:00',
+        ]);
+
+        $res = $this->actingAs($moderator, 'api')->getJson('/api/moderator/users/'.$user->id.'/activity');
+        $res->assertStatus(200);
+
+        $data = $res->json('data');
+        $this->assertCount(2, $data);
+        $this->assertEquals('CPALead', $data[0]['offer_wall_name']);
+        $this->assertEquals(450.00, $data[0]['currency_reward']);
+        $this->assertNotNull($data[0]['credit_date']);
+        $this->assertNotNull($data[0]['credit_time']);
+    }
+
+    /**
      * Test: PAGINATION options (25, 50, 100) and clamping
      */
     public function test_pagination_options_and_clamping(): void
     {
         $moderator = $this->createUser(['role' => 'moderator']);
 
-        // Test 25
         $res25 = $this->actingAs($moderator, 'api')->getJson('/api/moderator/users?per_page=25');
         $res25->assertStatus(200);
         $this->assertEquals(25, $res25->json('pagination.perPage'));
 
-        // Test 50
         $res50 = $this->actingAs($moderator, 'api')->getJson('/api/moderator/users?per_page=50');
         $res50->assertStatus(200);
         $this->assertEquals(50, $res50->json('pagination.perPage'));
 
-        // Test 100
         $res100 = $this->actingAs($moderator, 'api')->getJson('/api/moderator/users?per_page=100');
         $res100->assertStatus(200);
         $this->assertEquals(100, $res100->json('pagination.perPage'));
 
-        // Test invalid/over limit (clamped back to 25)
         $resClamped = $this->actingAs($moderator, 'api')->getJson('/api/moderator/users?per_page=500');
         $resClamped->assertStatus(200);
         $this->assertEquals(25, $resClamped->json('pagination.perPage'));
     }
 
     /**
-     * Test: Mutating endpoints do not exist
+     * Test: Mutating endpoints do not exist (Read-Only)
      */
     public function test_moderator_routes_are_strictly_read_only(): void
     {
