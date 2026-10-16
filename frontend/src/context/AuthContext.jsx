@@ -109,6 +109,7 @@ export function AuthProvider({ children }) {
     refreshBalance,
     isAuthenticated: !!user,
     isAdmin: user?.role === 'admin',
+    isModerator: user?.role === 'moderator' || user?.role === 'admin',
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -177,4 +177,18 @@ export const api = {
 
   testPostback: (slug, payload) => apiRequest(`/offerwall-postback/${slug}`, { method: 'POST', body: JSON.stringify(payload) }),
   getAdminCashoutMethods: () => apiRequest('/admin/cashout-methods'),
+
+  // Moderator Endpoints (Strictly Read-Only)
+  getModeratorStats: () => apiRequest('/moderator/stats'),
+  getModeratorUsers: async (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    const res = await apiRequest(`/moderator/users${q ? `?${q}` : ''}`);
+    return {
+      success: true,
+      data: res.data || [],
+      pagination: res.pagination || null,
+      raw: res,
+    };
+  },
 };
+

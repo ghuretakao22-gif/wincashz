@@ -27,6 +27,10 @@ const AdminFeaturedPage = lazy(() => import('./pages/AdminFeaturedPage'));
 const AdminWithdrawalsPage = lazy(() => import('./pages/AdminWithdrawalsPage'));
 const AdminSettingsPage = lazy(() => import('./pages/AdminSettingsPage'));
 
+// Lazy-Loaded Moderator Portal (Strictly Isolated & Read-Only)
+const ModeratorLayout = lazy(() => import('./components/ModeratorLayout'));
+const ModeratorUsersPage = lazy(() => import('./pages/ModeratorUsersPage'));
+
 function PageFallback() {
   return (
     <div className="min-h-screen bg-[#070a0e] flex items-center justify-center text-brand-400 font-bold font-mono text-sm animate-pulse">
@@ -121,6 +125,12 @@ export default function App() {
               <Route path="featured" element={<AdminFeaturedPage />} />
               <Route path="withdrawals" element={<AdminWithdrawalsPage />} />
               <Route path="settings" element={<AdminSettingsPage />} />
+            </Route>
+
+            {/* Moderator Routes (Strictly Isolated & Read-Only) */}
+            <Route path="/moderator" element={<ModeratorLayout />}>
+              <Route index element={<Navigate to="/moderator/users" replace />} />
+              <Route path="users" element={<ModeratorUsersPage />} />
             </Route>
 
             {/* Catch-all Fallback */}

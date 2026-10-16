@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\WithdrawalController;
+use App\Http\Controllers\Api\ModeratorController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/register', [AuthController::class, 'register']);
@@ -69,3 +70,11 @@ Route::prefix('admin')
     Route::patch('/offerwalls/{offerwall}', [AdminController::class, 'updateOfferwall']);
     Route::delete('/offerwalls/{offerwall}', [AdminController::class, 'destroyOfferwall']);
 });
+
+Route::prefix('moderator')
+    ->middleware(['auth:api', 'active', 'moderator'])
+    ->group(function () {
+        Route::get('/stats', [ModeratorController::class, 'stats']);
+        Route::get('/users', [ModeratorController::class, 'users']);
+    });
+
