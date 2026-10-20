@@ -118,14 +118,14 @@ export default function PinGate({ purpose = 'Sign In', onVerified, onAdminBypass
                   Sign Up
                 </Link>
               </p>
-            ) : (
+            ) : purpose === 'Sign Up' ? (
               <p className="text-slate-400">
                 Already have an account?{' '}
                 <Link to="/login" className="text-brand-400 font-bold hover:underline">
                   Sign In
                 </Link>
               </p>
-            )}
+            ) : null}
 
             {onAdminBypass && (
               <div>

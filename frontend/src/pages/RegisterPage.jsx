@@ -11,7 +11,13 @@ export default function RegisterPage() {
   const navigate = useNavigate();
 
   const [hasPin, setHasPin] = useState(false);
-  const [pinVerified, setPinVerified] = useState(false);
+  const [pinVerified, setPinVerified] = useState(() => {
+    try {
+      return sessionStorage.getItem('wincashz_pin_verified') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
   const [checkingPin, setCheckingPin] = useState(true);
 
   const [username, setUsername] = useState('');
@@ -120,7 +126,12 @@ export default function RegisterPage() {
     return (
       <PinGate
         purpose="Sign Up"
-        onVerified={() => setPinVerified(true)}
+        onVerified={() => {
+          try {
+            sessionStorage.setItem('wincashz_pin_verified', 'true');
+          } catch (e) {}
+          setPinVerified(true);
+        }}
         onAdminBypass={() => navigate('/admin/login')}
       />
     );

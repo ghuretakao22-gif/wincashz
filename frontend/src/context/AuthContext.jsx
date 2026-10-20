@@ -84,6 +84,9 @@ export function AuthProvider({ children }) {
     } finally {
       setStoredToken(null);
       setUser(null);
+      try {
+        sessionStorage.removeItem('wincashz_pin_verified');
+      } catch (e) {}
     }
   };
 

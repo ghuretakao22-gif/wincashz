@@ -17,7 +17,13 @@ export default function LoginPage() {
   const [isAdminMode, setIsAdminMode] = useState(isDirectAdminUrl);
 
   const [hasPin, setHasPin] = useState(false);
-  const [pinVerified, setPinVerified] = useState(false);
+  const [pinVerified, setPinVerified] = useState(() => {
+    try {
+      return sessionStorage.getItem('wincashz_pin_verified') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
   const [checkingPin, setCheckingPin] = useState(true);
 
   const [email, setEmail] = useState('');
@@ -74,6 +80,9 @@ export default function LoginPage() {
             await logout();
             setIsAdminMode(false);
             setPinVerified(false);
+            try {
+              sessionStorage.removeItem('wincashz_pin_verified');
+            } catch (e) {}
             setError('Access denied: Administrator privileges required. Normal accounts cannot bypass the site PIN gate.');
             return;
           }
@@ -121,7 +130,12 @@ export default function LoginPage() {
     return (
       <PinGate
         purpose="Sign In"
-        onVerified={() => setPinVerified(true)}
+        onVerified={() => {
+          try {
+            sessionStorage.setItem('wincashz_pin_verified', 'true');
+          } catch (e) {}
+          setPinVerified(true);
+        }}
         onAdminBypass={() => {
           setIsAdminMode(true);
           setError(null);
