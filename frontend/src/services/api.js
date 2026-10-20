@@ -194,5 +194,12 @@ export const api = {
     };
   },
   getModeratorUserActivity: (id) => apiRequest(`/moderator/users/${id}/activity`),
+
+  // Site PIN Gate
+  getSitePinStatus: () => apiRequest('/site-pin/status'),
+  verifySitePin: (pin) => apiRequest('/site-pin/verify', { method: 'POST', body: JSON.stringify({ pin }) }),
+  getAdminSitePin: () => apiRequest('/admin/site-pin'),
+  saveAdminSitePin: (pin) => apiRequest('/admin/site-pin', { method: 'POST', body: JSON.stringify({ pin }) }),
+  deleteAdminSitePin: () => apiRequest('/admin/site-pin', { method: 'DELETE' }),
 };
 

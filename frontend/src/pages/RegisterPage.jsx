@@ -2,12 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Logo from '../components/Logo';
+import PinGate from '../components/PinGate';
 import { Sparkles, Eye, EyeOff, Lock, Mail, User, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function RegisterPage() {
   const { register, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+
+  const [hasPin, setHasPin] = useState(false);
+  const [pinVerified, setPinVerified] = useState(false);
+  const [checkingPin, setCheckingPin] = useState(true);
 
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -20,10 +25,24 @@ export default function RegisterPage() {
   useEffect(() => {
     if (isAuthenticated) {
       navigate('/earn', { replace: true });
+      return;
     }
+
+    // Check site PIN status
+    api.getSitePinStatus()
+      .then((res) => {
+        setHasPin(!!res?.has_pin);
+      })
+      .catch(() => {
+        setHasPin(false);
+      })
+      .finally(() => {
+        setCheckingPin(false);
+      });
+
     // Check Google Auth
     api.getGoogleConfig()
-      .then((res) => setGoogleEnabled(!!res.enabled))
+      .then((res) => setGoogleEnabled(!!res?.enabled))
       .catch(() => {});
   }, [isAuthenticated, navigate]);
 
@@ -87,6 +106,26 @@ export default function RegisterPage() {
     }
   };
 
+  // Brief loading placeholder while determining PIN gate status
+  if (checkingPin) {
+    return (
+      <div className="min-h-screen bg-[#070a0e] flex items-center justify-center text-slate-500 text-xs">
+        Loading...
+      </div>
+    );
+  }
+
+  // Intercept with 4-digit PIN gate if active and not yet verified in this flow
+  if (hasPin && !pinVerified) {
+    return (
+      <PinGate
+        purpose="Sign Up"
+        onVerified={() => setPinVerified(true)}
+        onAdminBypass={() => navigate('/admin/login')}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative bg-[#070a0e] overflow-hidden">
       {/* Background ambient lighting */}
@@ -124,7 +163,7 @@ export default function RegisterPage() {
               <button
                 type="button"
                 onClick={handleGoogleAuth}
-                className="w-full py-3 px-4 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-sm font-semibold text-slate-200 hover:text-white transition-all flex items-center justify-center gap-3"
+                className="w-full py-3 px-4 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-sm font-semibold text-slate-200 hover:text-white transition-all flex items-center justify-center gap-3 cursor-pointer"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24">
                   <path
@@ -215,7 +254,7 @@ export default function RegisterPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 cursor-pointer"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -226,7 +265,7 @@ export default function RegisterPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3.5 rounded-xl font-bold text-slate-950 bg-gradient-to-r from-brand-400 via-brand-500 to-cyan-400 shadow-glow-emerald hover:brightness-110 active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-2 mt-2"
+              className="w-full py-3.5 rounded-xl font-bold text-slate-950 bg-gradient-to-r from-brand-400 via-brand-500 to-cyan-400 shadow-glow-emerald hover:brightness-110 active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-2 mt-2 cursor-pointer"
             >
               {loading ? (
                 <span>Creating Account...</span>

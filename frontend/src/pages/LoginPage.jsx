@@ -1,13 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Logo from '../components/Logo';
-import { Lock, Mail, Eye, EyeOff, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
+import PinGate from '../components/PinGate';
+import { Lock, Mail, Eye, EyeOff, AlertCircle, ArrowRight, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function LoginPage() {
-  const { login, isAuthenticated } = useAuth();
+  const { login, logout, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+
+  // Admin bypass mode requested via URL or UI toggle
+  const isDirectAdminUrl = location.pathname === '/admin/login' || searchParams.get('admin') === '1';
+  const [isAdminMode, setIsAdminMode] = useState(isDirectAdminUrl);
+
+  const [hasPin, setHasPin] = useState(false);
+  const [pinVerified, setPinVerified] = useState(false);
+  const [checkingPin, setCheckingPin] = useState(true);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -18,13 +29,31 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/earn', { replace: true });
+      if (user?.role === 'admin') {
+        navigate('/admin', { replace: true });
+      } else {
+        navigate('/earn', { replace: true });
+      }
+      return;
     }
+
+    // Check site PIN status
+    api.getSitePinStatus()
+      .then((res) => {
+        setHasPin(!!res?.has_pin);
+      })
+      .catch(() => {
+        setHasPin(false);
+      })
+      .finally(() => {
+        setCheckingPin(false);
+      });
+
     // Check Google Auth config
     api.getGoogleConfig()
-      .then((res) => setGoogleEnabled(!!res.enabled))
+      .then((res) => setGoogleEnabled(!!res?.enabled))
       .catch(() => {});
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, user, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -39,6 +68,20 @@ export default function LoginPage() {
     try {
       const res = await login({ email: email.trim(), password });
       if (res.success) {
+        // If logged in via Admin mode, strictly verify role
+        if (isAdminMode) {
+          if (res.user?.role !== 'admin') {
+            await logout();
+            setIsAdminMode(false);
+            setPinVerified(false);
+            setError('Access denied: Administrator privileges required. Normal accounts cannot bypass the site PIN gate.');
+            return;
+          }
+          navigate('/admin', { replace: true });
+          return;
+        }
+
+        // Standard login
         if (res.user?.role === 'admin') {
           navigate('/admin', { replace: true });
         } else {
@@ -64,6 +107,30 @@ export default function LoginPage() {
     }
   };
 
+  // Brief loading placeholder while determining PIN gate status
+  if (checkingPin && !isAdminMode) {
+    return (
+      <div className="min-h-screen bg-[#070a0e] flex items-center justify-center text-slate-500 text-xs">
+        Loading...
+      </div>
+    );
+  }
+
+  // Intercept with 4-digit PIN gate if active and not yet verified or bypassed for admin
+  if (hasPin && !pinVerified && !isAdminMode) {
+    return (
+      <PinGate
+        purpose="Sign In"
+        onVerified={() => setPinVerified(true)}
+        onAdminBypass={() => {
+          setIsAdminMode(true);
+          setError(null);
+        }}
+        errorMessage={error}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative bg-[#070a0e] overflow-hidden">
       {/* Background ambient lighting */}
@@ -74,16 +141,20 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           <Logo size="large" />
           <p className="text-xs text-slate-400 mt-2">
-            Welcome back to your rewards dashboard
+            {isAdminMode ? 'Administrator Management Access' : 'Welcome back to your rewards dashboard'}
           </p>
         </div>
 
         {/* Auth Card */}
         <div className="rounded-3xl glass-card border border-white/10 p-8 shadow-2xl space-y-6">
           <div className="text-center space-y-1">
-            <h1 className="text-2xl font-bold text-white">Sign In</h1>
+            <h1 className="text-2xl font-bold text-white">
+              {isAdminMode ? 'Admin Sign In' : 'Sign In'}
+            </h1>
             <p className="text-xs text-slate-400">
-              Access your earnings, offers, and cashout options
+              {isAdminMode
+                ? 'Direct sign in for authorized administrators'
+                : 'Access your earnings, offers, and cashout options'}
             </p>
           </div>
 
@@ -95,13 +166,13 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* Google SSO */}
-          {googleEnabled && (
+          {/* Google SSO (available for regular login only) */}
+          {!isAdminMode && googleEnabled && (
             <>
               <button
                 type="button"
                 onClick={handleGoogleAuth}
-                className="w-full py-3 px-4 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-sm font-semibold text-slate-200 hover:text-white transition-all flex items-center justify-center gap-3"
+                className="w-full py-3 px-4 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-sm font-semibold text-slate-200 hover:text-white transition-all flex items-center justify-center gap-3 cursor-pointer"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24">
                   <path
@@ -179,26 +250,44 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3.5 rounded-xl font-bold text-slate-950 bg-gradient-to-r from-brand-400 via-brand-500 to-cyan-400 shadow-glow-emerald hover:brightness-110 active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-2 mt-2"
+              className="w-full py-3.5 rounded-xl font-bold text-slate-950 bg-gradient-to-r from-brand-400 via-brand-500 to-cyan-400 shadow-glow-emerald hover:brightness-110 active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-2 mt-2 cursor-pointer"
             >
               {loading ? (
                 <span>Signing In...</span>
               ) : (
                 <>
-                  <span>Sign In</span>
+                  <span>{isAdminMode ? 'Admin Sign In' : 'Sign In'}</span>
                   <ArrowRight className="w-4 h-4 text-slate-950" />
                 </>
               )}
             </button>
           </form>
 
+          {/* Switch to user PIN mode if in admin mode and PIN exists */}
+          {isAdminMode && hasPin && (
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAdminMode(false);
+                  setError(null);
+                }}
+                className="text-xs text-slate-500 hover:text-brand-400 transition-colors cursor-pointer"
+              >
+                ← Return to User PIN Gate
+              </button>
+            </div>
+          )}
+
           {/* Bottom Prompt */}
-          <div className="text-center pt-2 border-t border-white/5 text-xs text-slate-400">
-            Don't have an account yet?{' '}
-            <Link to="/register" className="font-semibold text-brand-400 hover:text-brand-300 ml-1">
-              Sign up for free
-            </Link>
-          </div>
+          {!isAdminMode && (
+            <div className="text-center pt-2 border-t border-white/5 text-xs text-slate-400">
+              Don't have an account yet?{' '}
+              <Link to="/register" className="font-semibold text-brand-400 hover:text-brand-300 ml-1">
+                Sign up for free
+              </Link>
+            </div>
+          )}
         </div>
 
         {/* Security badge */}

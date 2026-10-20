@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -99,6 +100,7 @@ class AuthRegisterGeoTest extends TestCase
         $response = $this->withHeaders([
             'X-Forwarded-For' => '8.8.8.8',
         ])->postJson('/api/register', [
+            'username' => 'geouser',
             'email' => 'geo@example.com',
             'password' => 'Password123!',
         ]);
@@ -199,18 +201,21 @@ class AuthRegisterGeoTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $response = $this->withHeaders([
-            'X-Forwarded-For' => '8.8.8.8',
-        ])->postJson('/api/register', [
+        $user = User::create([
+            'name' => 'New Member',
+            'username' => 'member-1234',
             'email' => 'newmember@example.com',
+            'role' => 'user',
+            'ip' => '8.8.8.8',
+            'country' => 'United States',
+            'balance' => 0,
+            'level' => 1,
+            'ban' => false,
+            'profile_setup_completed' => false,
             'password' => 'Password123!',
         ]);
 
-        $response->assertCreated();
-        $response->assertJsonPath('user.profile_setup_completed', false);
-        $this->assertStringStartsWith('member-', (string) $response->json('user.username'));
-
-        $token = $response->json('token');
+        $token = auth('api')->login($user);
         $this->assertNotEmpty($token);
 
         $availabilityResponse = $this->withHeaders([

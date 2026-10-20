@@ -19,7 +19,8 @@ import {
   Menu,
   MoreVertical,
   ChevronRight,
-  ShieldCheck
+  ShieldCheck,
+  KeyRound
 } from 'lucide-react';
 
 export default function AdminLayout() {
@@ -70,6 +71,7 @@ export default function AdminLayout() {
     { name: 'Offerwalls', path: '/admin/offerwalls', icon: Layers, badge: 'Postback' },
     { name: 'Featured Walls', path: '/admin/featured', icon: Star },
     { name: 'Withdrawals', path: '/admin/withdrawals', icon: Wallet },
+    { name: 'Site PIN', path: '/admin/pin', icon: KeyRound },
     { name: 'Website Settings', path: '/admin/settings', icon: Settings },
   ];
 

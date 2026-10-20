@@ -17,6 +17,8 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 Route::get('/visitor-geo', [AuthController::class, 'visitorGeo']);
 Route::get('/google-auth/config', [AuthController::class, 'googleConfig']);
 Route::get('/site-settings', [AdminController::class, 'publicSettings']);
+Route::get('/site-pin/status', [AdminController::class, 'sitePinStatus']);
+Route::post('/site-pin/verify', [AdminController::class, 'verifySitePin'])->middleware('throttle:30,1');
 Route::post('/google-auth/start', [AuthController::class, 'googleStart']);
 Route::get('/offers', [AdminController::class, 'offers']);
 Route::get('/timeline', [AdminController::class, 'timeline']);
@@ -69,6 +71,9 @@ Route::prefix('admin')
     Route::post('/offerwalls', [AdminController::class, 'storeOfferwall']);
     Route::patch('/offerwalls/{offerwall}', [AdminController::class, 'updateOfferwall']);
     Route::delete('/offerwalls/{offerwall}', [AdminController::class, 'destroyOfferwall']);
+    Route::get('/site-pin', [AdminController::class, 'getSitePin']);
+    Route::match(['put', 'post'], '/site-pin', [AdminController::class, 'saveSitePin']);
+    Route::delete('/site-pin', [AdminController::class, 'deleteSitePin']);
 });
 
 Route::prefix('moderator')

@@ -26,6 +26,7 @@ const AdminOfferwallsPage = lazy(() => import('./pages/AdminOfferwallsPage'));
 const AdminFeaturedPage = lazy(() => import('./pages/AdminFeaturedPage'));
 const AdminWithdrawalsPage = lazy(() => import('./pages/AdminWithdrawalsPage'));
 const AdminSettingsPage = lazy(() => import('./pages/AdminSettingsPage'));
+const AdminSitePinPage = lazy(() => import('./pages/AdminSitePinPage'));
 
 // Lazy-Loaded Moderator Portal (Strictly Isolated & Read-Only)
 const ModeratorLayout = lazy(() => import('./components/ModeratorLayout'));
@@ -77,6 +78,7 @@ export default function App() {
               }
             />
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/admin/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route
               path="/earn"
@@ -124,6 +126,7 @@ export default function App() {
               <Route path="offerwalls" element={<AdminOfferwallsPage />} />
               <Route path="featured" element={<AdminFeaturedPage />} />
               <Route path="withdrawals" element={<AdminWithdrawalsPage />} />
+              <Route path="pin" element={<AdminSitePinPage />} />
               <Route path="settings" element={<AdminSettingsPage />} />
             </Route>
 

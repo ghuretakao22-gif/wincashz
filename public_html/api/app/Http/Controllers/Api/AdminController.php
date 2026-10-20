@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
@@ -781,6 +782,80 @@ class AdminController extends Controller
             'settings' => [
                 'logoUrl' => $logoDataUrl,
             ],
+        ]);
+    }
+
+    public function sitePinStatus(): JsonResponse
+    {
+        return response()->json([
+            'has_pin' => filled(Setting::value('site_pin_hash')),
+        ]);
+    }
+
+    public function verifySitePin(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'pin' => ['required', 'string', 'regex:/^\d{4}$/'],
+        ], [
+            'pin.required' => 'PIN is required.',
+            'pin.regex' => 'PIN must be exactly 4 digits.',
+        ]);
+
+        $hash = Setting::value('site_pin_hash');
+
+        if ($hash === '') {
+            return response()->json([
+                'success' => true,
+                'message' => 'PIN not required.',
+            ]);
+        }
+
+        if (! Hash::check($validated['pin'], $hash)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Incorrect PIN. Please try again.',
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'PIN verified successfully.',
+        ]);
+    }
+
+    public function getSitePin(): JsonResponse
+    {
+        return response()->json([
+            'has_pin' => filled(Setting::value('site_pin_hash')),
+        ]);
+    }
+
+    public function saveSitePin(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'pin' => ['required', 'string', 'regex:/^\d{4}$/'],
+        ], [
+            'pin.required' => 'PIN is required.',
+            'pin.regex' => 'PIN must be exactly 4 digits.',
+        ]);
+
+        Setting::setValue('site_pin_hash', Hash::make($validated['pin']));
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Site PIN saved successfully.',
+            'has_pin' => true,
+        ]);
+    }
+
+    public function deleteSitePin(): JsonResponse
+    {
+        Setting::query()->where('name', 'site_pin_hash')->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Site PIN removed successfully.',
+            'has_pin' => false,
         ]);
     }
 
