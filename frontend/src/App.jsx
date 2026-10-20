@@ -66,7 +66,7 @@ function MainLayout({ children }) {
 
 // Global Site Access PIN Gate Guard
 function GlobalPinGate({ children }) {
-  const { isAdmin, loading: authLoading } = useAuth();
+  const { isAuthenticated, isAdmin, loading: authLoading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -143,6 +143,20 @@ function GlobalPinGate({ children }) {
           sessionStorage.setItem('wincashz_pin_verified', 'true');
         } catch (e) {}
         setPinVerified(true);
+
+        // Required flow:
+        // PIN -> Landing Page -> Sign Up / Login -> Authenticated user -> Protected pages
+        // If unauthenticated visitor enters PIN:
+        // Default entry is Landing Page ('/').
+        // If they explicitly visited '/login' or '/register', keep them there.
+        // Otherwise, redirect to Landing Page ('/').
+        if (!isAuthenticated) {
+          if (location.pathname === '/login' || location.pathname === '/register') {
+            // Keep on login or register
+          } else {
+            navigate('/', { replace: true });
+          }
+        }
       }}
       onAdminBypass={() => {
         navigate('/admin/login');
@@ -181,22 +195,30 @@ export default function App() {
               <Route
                 path="/earn"
                 element={
-                  <MainLayout>
-                    <EarnPage />
-                  </MainLayout>
+                  <ProtectedRoute>
+                    <MainLayout>
+                      <EarnPage />
+                    </MainLayout>
+                  </ProtectedRoute>
                 }
               />
               <Route
                 path="/cashout"
                 element={
-                  <MainLayout>
-                    <CashoutPage />
-                  </MainLayout>
+                  <ProtectedRoute>
+                    <MainLayout>
+                      <CashoutPage />
+                    </MainLayout>
+                  </ProtectedRoute>
                 }
               />
               <Route
                 path="/payment"
-                element={<Navigate to="/cashout" replace />}
+                element={
+                  <ProtectedRoute>
+                    <Navigate to="/cashout" replace />
+                  </ProtectedRoute>
+                }
               />
               <Route
                 path="/dashboard"
