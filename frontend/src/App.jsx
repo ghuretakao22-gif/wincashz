@@ -114,17 +114,17 @@ function GlobalPinGate({ children }) {
     return children;
   }
 
+  // If already verified in this session, allow access directly without waiting
+  if (pinVerified) {
+    return children;
+  }
+
   if (checkingPin || authLoading) {
     return <PageFallback />;
   }
 
   // If server has no PIN configured, allow access directly
   if (!hasPin) {
-    return children;
-  }
-
-  // If already verified in this session, allow access directly
-  if (pinVerified) {
     return children;
   }
 
