@@ -15,6 +15,7 @@ class MyId extends Model
     protected $fillable = [
         'my_id_code',
         'label',
+        'friendly_name',
         'is_active',
     ];
 

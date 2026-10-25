@@ -24,7 +24,9 @@ import {
   Hash,
   Coins,
   Calendar,
-  TrendingUp
+  TrendingUp,
+  Megaphone,
+  CreditCard
 } from 'lucide-react';
 
 export default function AdminLayout() {
@@ -79,7 +81,9 @@ export default function AdminLayout() {
     { name: 'My IDs', path: '/admin/my-ids', icon: Hash },
     { name: 'My ID Overview', path: '/admin/my-id-overview', icon: TrendingUp },
     { name: 'Payout Rules', path: '/admin/payout-rules', icon: Coins },
+    { name: 'My ID Payments', path: '/admin/my-id-payments', icon: CreditCard, badge: 'Payout' },
     { name: 'My ID Settings', path: '/admin/my-id-settings', icon: Calendar },
+    { name: 'Moderator Notice', path: '/admin/moderator-notice', icon: Megaphone, badge: 'Live' },
     { name: 'Website Settings', path: '/admin/settings', icon: Settings },
   ];
 

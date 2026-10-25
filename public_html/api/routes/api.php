@@ -7,9 +7,13 @@ use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\WithdrawalController;
 use App\Http\Controllers\Api\ModeratorController;
 use App\Http\Controllers\Api\ModeratorMyEarnController;
+use App\Http\Controllers\Api\ModeratorDashboardController;
 use App\Http\Controllers\Api\AdminMyIdController;
 use App\Http\Controllers\Api\AdminMyIdPayoutRuleController;
 use App\Http\Controllers\Api\AdminMyIdSettingsController;
+use App\Http\Controllers\Api\AdminMyIdPayoutController;
+use App\Http\Controllers\Api\ModeratorNoticeController;
+use App\Http\Controllers\Api\ModeratorPayoutController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/register', [AuthController::class, 'register']);
@@ -88,14 +92,24 @@ Route::prefix('admin')
     Route::delete('/my-id-payout-rules/{id}', [AdminMyIdPayoutRuleController::class, 'destroy']);
     Route::get('/my-id-settings', [AdminMyIdSettingsController::class, 'getSettings']);
     Route::match(['post', 'patch'], '/my-id-settings', [AdminMyIdSettingsController::class, 'updateSettings']);
+    Route::get('/moderator-notice', [ModeratorNoticeController::class, 'getAdminNotice']);
+    Route::match(['post', 'patch'], '/moderator-notice', [ModeratorNoticeController::class, 'updateAdminNotice']);
+    Route::get('/my-id-payouts', [AdminMyIdPayoutController::class, 'index']);
+    Route::patch('/my-id-payouts/{id}/status', [AdminMyIdPayoutController::class, 'updateStatus']);
+    Route::get('/my-id-payouts/settings', [AdminMyIdPayoutController::class, 'getSettings']);
+    Route::match(['post', 'patch'], '/my-id-payouts/settings', [AdminMyIdPayoutController::class, 'updateSettings']);
 });
 
 Route::prefix('moderator')
     ->middleware(['auth:api', 'active', 'moderator'])
     ->group(function () {
+        Route::get('/dashboard', [ModeratorDashboardController::class, 'index']);
+        Route::get('/notice', [ModeratorNoticeController::class, 'getModeratorNotice']);
         Route::get('/stats', [ModeratorController::class, 'stats']);
         Route::get('/users', [ModeratorController::class, 'users']);
         Route::get('/users/{id}/activity', [ModeratorController::class, 'activity']);
         Route::get('/my-earn', [ModeratorMyEarnController::class, 'index']);
+        Route::get('/payouts', [ModeratorPayoutController::class, 'index']);
+        Route::post('/payouts', [ModeratorPayoutController::class, 'store']);
     });
 

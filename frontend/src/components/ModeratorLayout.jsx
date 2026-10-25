@@ -14,13 +14,23 @@ import {
   PanelLeftOpen, 
   ShieldCheck, 
   Layers,
-  Coins
+  Coins,
+  LayoutDashboard,
+  Megaphone,
+  CheckCircle2,
+  Wallet
 } from 'lucide-react';
+import { api } from '../services/api';
 
 export default function ModeratorLayout() {
   const { user, isAuthenticated, isModerator, logout, loading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Moderator Live Notice State
+  const [notice, setNotice] = useState(null);
+  const [showNoticeModal, setShowNoticeModal] = useState(false);
+  const [noticeDismissed, setNoticeDismissed] = useState(false);
 
   // Sidebar collapse state with localStorage persistence
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -45,6 +55,49 @@ export default function ModeratorLayout() {
     setMobileDrawerOpen(false);
   }, [location.pathname]);
 
+  // Fetch live notice for moderators
+  useEffect(() => {
+    let active = true;
+
+    const fetchNotice = async () => {
+      try {
+        const res = await api.getModeratorNotice();
+        if (!active) return;
+        if (res && (res.status === 'success' || res.data)) {
+          const data = res.data || res;
+          if (data && data.enabled && (data.headline || data.text)) {
+            setNotice(data);
+            const isDismissed = localStorage.getItem(`wincashz_mod_notice_dismissed_${data.updated_at}`) === 'true';
+            setNoticeDismissed(isDismissed);
+          } else {
+            setNotice(null);
+          }
+        }
+      } catch (err) {
+        // Silently catch error
+      }
+    };
+
+    if (isAuthenticated && isModerator) {
+      fetchNotice();
+      const interval = setInterval(fetchNotice, 30000);
+      return () => {
+        active = false;
+        clearInterval(interval);
+      };
+    }
+  }, [isAuthenticated, isModerator]);
+
+  const handleDismissNotice = () => {
+    if (notice?.updated_at) {
+      try {
+        localStorage.setItem(`wincashz_mod_notice_dismissed_${notice.updated_at}`, 'true');
+      } catch (e) {}
+    }
+    setNoticeDismissed(true);
+    setShowNoticeModal(false);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#070a0e] flex items-center justify-center text-slate-400">
@@ -58,11 +111,13 @@ export default function ModeratorLayout() {
   }
 
   const moderatorLinks = [
+    { name: 'My Dashboard', path: '/moderator/dashboard', icon: LayoutDashboard },
     { name: 'Wall User', path: '/moderator/users', icon: Users, badge: 'Live' },
     { name: 'My Earn', path: '/moderator/my-earn', icon: Coins },
+    { name: 'Payout', path: '/moderator/payout', icon: Wallet },
   ];
 
-  const currentLink = moderatorLinks.find(l => l.path === location.pathname) || { name: 'Wall User' };
+  const currentLink = moderatorLinks.find(l => l.path === location.pathname) || { name: 'My Dashboard' };
 
   const handleBack = () => {
     if (window.history.length > 2) {
@@ -182,10 +237,10 @@ export default function ModeratorLayout() {
               </div>
             </div>
 
-            {/* Nav Links: ONLY Wall User */}
+            {/* Nav Links */}
             <nav className="space-y-1">
               {moderatorLinks.map((link) => {
-                const active = location.pathname === link.path || (location.pathname === '/moderator' && link.path === '/moderator/users');
+                const active = location.pathname === link.path || (location.pathname === '/moderator' && link.path === '/moderator/dashboard');
                 return (
                   <Link
                     key={link.name}
@@ -270,7 +325,7 @@ export default function ModeratorLayout() {
 
                 <nav className="space-y-1">
                   {moderatorLinks.map((link) => {
-                    const active = location.pathname === link.path || (location.pathname === '/moderator' && link.path === '/moderator/users');
+                    const active = location.pathname === link.path || (location.pathname === '/moderator' && link.path === '/moderator/dashboard');
                     return (
                       <Link
                         key={link.name}
@@ -321,7 +376,100 @@ export default function ModeratorLayout() {
         )}
 
         {/* Main Content Area */}
-        <main className="flex-1 w-full max-w-full overflow-x-hidden p-4 sm:p-6 lg:p-8">
+        <main className="flex-1 w-full max-w-full overflow-x-hidden p-4 sm:p-6 lg:p-8 space-y-4">
+          {/* Moderator Live Notice Floating / Top Bar */}
+          {notice && notice.enabled && !noticeDismissed && (
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-orange-500/10 border border-amber-500/30 text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg shadow-amber-950/20 animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                  <Megaphone className="w-4 h-4 animate-bounce" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      Live Notice
+                    </span>
+                    <h4 className="text-xs font-bold text-white truncate">
+                      {notice.headline || 'Official Moderator Notice'}
+                    </h4>
+                  </div>
+                  {notice.text && (
+                    <p className="text-[11px] text-amber-200/90 mt-1 line-clamp-1">
+                      {notice.text}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setShowNoticeModal(true)}
+                  className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-xs font-bold border border-amber-500/30 transition-all cursor-pointer"
+                >
+                  Read Full Notice
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDismissNotice}
+                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                  title="Dismiss notice"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Got it / বুঝেছি</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Moderator Live Notice Popup Modal */}
+          {showNoticeModal && notice && notice.enabled && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="glass-card border border-amber-500/30 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-4 animate-in fade-in zoom-in-95 relative overflow-hidden">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
+                      <Megaphone className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black text-white leading-tight">
+                        {notice.headline || 'Official Moderator Notice'}
+                      </h3>
+                      <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">
+                        Moderator Live Announcement
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowNoticeModal(false)}
+                    className="p-1 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 text-xs text-slate-200 leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto">
+                  {notice.text || 'No additional details provided.'}
+                </div>
+
+                <div className="pt-2 flex items-center justify-between border-t border-white/5">
+                  <span className="text-[11px] text-slate-500">
+                    {notice.updated_at ? `Updated: ${new Date(notice.updated_at).toLocaleString()}` : 'Admin Broadcast'}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={handleDismissNotice}
+                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-brand-400 to-cyan-400 hover:brightness-110 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-glow-emerald cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-slate-950" />
+                    <span>Got it / বুঝেছি</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <Outlet />
         </main>
       </div>

@@ -194,10 +194,15 @@ export const api = {
     };
   },
   getModeratorUserActivity: (id) => apiRequest(`/moderator/users/${id}/activity`),
+  getModeratorDashboard: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return apiRequest(`/moderator/dashboard${q ? `?${q}` : ''}`);
+  },
   getModeratorMyEarn: (params = {}) => {
     const q = new URLSearchParams(params).toString();
     return apiRequest(`/moderator/my-earn${q ? `?${q}` : ''}`);
   },
+  getModeratorNotice: () => apiRequest('/moderator/notice'),
 
   // Site PIN Gate
   getSitePinStatus: () => apiRequest('/site-pin/status'),
@@ -230,5 +235,25 @@ export const api = {
   // Admin My ID Settings (Activation, Start Date, USD->BDT Rate)
   getAdminMyIdSettings: () => apiRequest('/admin/my-id-settings'),
   updateAdminMyIdSettings: (data) => apiRequest('/admin/my-id-settings', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Admin Moderator Live Notice
+  getAdminModeratorNotice: () => apiRequest('/admin/moderator-notice'),
+  updateAdminModeratorNotice: (data) => apiRequest('/admin/moderator-notice', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Moderator Payouts
+  getModeratorPayouts: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return apiRequest(`/moderator/payouts${q ? `?${q}` : ''}`);
+  },
+  submitModeratorPayout: (data) => apiRequest('/moderator/payouts', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Admin My ID Payouts
+  getAdminMyIdPayouts: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return apiRequest(`/admin/my-id-payouts${q ? `?${q}` : ''}`);
+  },
+  updateAdminMyIdPayoutStatus: (id, data) => apiRequest(`/admin/my-id-payouts/${id}/status`, { method: 'PATCH', body: JSON.stringify(data) }),
+  getAdminMyIdPayoutSettings: () => apiRequest('/admin/my-id-payouts/settings'),
+  updateAdminMyIdPayoutSettings: (data) => apiRequest('/admin/my-id-payouts/settings', { method: 'PATCH', body: JSON.stringify(data) }),
 };
 

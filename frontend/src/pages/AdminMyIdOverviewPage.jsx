@@ -201,7 +201,7 @@ export default function AdminMyIdOverviewPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search My ID code or label..."
+            placeholder="Search My ID code, friendly name, or label..."
             className="w-full pl-9 pr-4 py-2 bg-white/[0.03] border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500/50"
           />
         </div>
@@ -220,13 +220,14 @@ export default function AdminMyIdOverviewPage() {
         </div>
       </div>
 
-      {/* Main Table: My ID, Label, Linked Users, Total Offers, Total USD, Total BDT, Status */}
+      {/* Main Table: My ID, Friendly Name, Label, Linked Users, Total Offers, Total USD, Total BDT, Status */}
       <div className="rounded-2xl bg-[#0c1015]/80 border border-white/5 overflow-hidden shadow-xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-white/[0.02] border-b border-white/5 text-[11px] uppercase font-bold tracking-wider text-slate-400">
                 <th className="py-3 px-4">My ID</th>
+                <th className="py-3 px-4">Friendly Name</th>
                 <th className="py-3 px-4">Label</th>
                 <th className="py-3 px-4 text-center">Linked Users</th>
                 <th className="py-3 px-4 text-center">Total Offers</th>
@@ -238,14 +239,14 @@ export default function AdminMyIdOverviewPage() {
             <tbody className="divide-y divide-white/5 text-slate-300">
               {loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="py-12 text-center text-slate-500">
+                  <td colSpan="8" className="py-12 text-center text-slate-500">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto text-brand-400 mb-2" />
                     <span>Loading overview...</span>
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="py-12 text-center text-slate-500">
+                  <td colSpan="8" className="py-12 text-center text-slate-500">
                     <Hash className="w-8 h-8 text-slate-600 mx-auto mb-2 opacity-60" />
                     <div className="font-semibold text-slate-300">No My IDs found</div>
                     <div className="text-[11px] text-slate-500 mt-0.5">Try adjusting your search or status filter.</div>
@@ -259,6 +260,11 @@ export default function AdminMyIdOverviewPage() {
                       <span className="font-mono text-xs px-2.5 py-1 rounded-lg bg-brand-500/10 text-brand-400 border border-brand-500/20">
                         {row.my_id_code}
                       </span>
+                    </td>
+
+                    {/* Friendly Name */}
+                    <td className="py-3.5 px-4 font-bold text-brand-300">
+                      {row.friendly_name || <span className="text-slate-600 font-normal italic">—</span>}
                     </td>
 
                     {/* Label */}

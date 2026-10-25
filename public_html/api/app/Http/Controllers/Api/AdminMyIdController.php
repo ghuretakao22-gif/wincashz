@@ -22,9 +22,13 @@ class AdminMyIdController extends Controller
         $query = MyId::query()->withCount('users');
 
         if ($search !== '') {
-            $query->where(function ($q) use ($search): void {
+            $hasFriendlyName = Schema::hasColumn('my_ids', 'friendly_name');
+            $query->where(function ($q) use ($search, $hasFriendlyName): void {
                 $q->where('my_id_code', 'like', "%{$search}%")
                   ->orWhere('label', 'like', "%{$search}%");
+                if ($hasFriendlyName) {
+                    $q->orWhere('friendly_name', 'like', "%{$search}%");
+                }
             });
         }
 
@@ -44,6 +48,7 @@ class AdminMyIdController extends Controller
         $validated = $request->validate([
             'my_id_code' => ['required', 'string', 'max:50', 'unique:my_ids,my_id_code'],
             'label' => ['nullable', 'string', 'max:255'],
+            'friendly_name' => ['nullable', 'string', 'max:255'],
             'is_active' => ['nullable', 'boolean'],
         ], [
             'my_id_code.required' => 'My ID code is required.',
@@ -51,11 +56,17 @@ class AdminMyIdController extends Controller
             'my_id_code.max' => 'My ID code cannot exceed 50 characters.',
         ]);
 
-        $myId = MyId::create([
+        $createData = [
             'my_id_code' => trim($validated['my_id_code']),
             'label' => isset($validated['label']) && trim((string) $validated['label']) !== '' ? trim((string) $validated['label']) : null,
             'is_active' => $request->has('is_active') ? (bool) $request->input('is_active') : true,
-        ]);
+        ];
+
+        if (Schema::hasColumn('my_ids', 'friendly_name')) {
+            $createData['friendly_name'] = isset($validated['friendly_name']) && trim((string) $validated['friendly_name']) !== '' ? trim((string) $validated['friendly_name']) : null;
+        }
+
+        $myId = MyId::create($createData);
 
         $myId->loadCount('users');
 
@@ -67,7 +78,7 @@ class AdminMyIdController extends Controller
     }
 
     /**
-     * Update the specified My ID (label, status).
+     * Update the specified My ID (label, friendly_name, status).
      */
     public function update(Request $request, int|string $id): JsonResponse
     {
@@ -75,12 +86,18 @@ class AdminMyIdController extends Controller
 
         $validated = $request->validate([
             'label' => ['nullable', 'string', 'max:255'],
+            'friendly_name' => ['nullable', 'string', 'max:255'],
             'is_active' => ['nullable', 'boolean'],
         ]);
 
         if ($request->has('label')) {
             $labelInput = trim((string) $request->input('label', ''));
             $myId->label = $labelInput !== '' ? $labelInput : null;
+        }
+
+        if ($request->has('friendly_name') && Schema::hasColumn('my_ids', 'friendly_name')) {
+            $fnInput = trim((string) $request->input('friendly_name', ''));
+            $myId->friendly_name = $fnInput !== '' ? $fnInput : null;
         }
 
         if ($request->has('is_active')) {
@@ -131,9 +148,13 @@ class AdminMyIdController extends Controller
         $query = MyId::query()->withCount('users');
 
         if ($search !== '') {
-            $query->where(function ($q) use ($search): void {
+            $hasFriendlyName = Schema::hasColumn('my_ids', 'friendly_name');
+            $query->where(function ($q) use ($search, $hasFriendlyName): void {
                 $q->where('my_id_code', 'like', "%{$search}%")
                   ->orWhere('label', 'like', "%{$search}%");
+                if ($hasFriendlyName) {
+                    $q->orWhere('friendly_name', 'like', "%{$search}%");
+                }
             });
         }
 
@@ -184,6 +205,7 @@ class AdminMyIdController extends Controller
                 'id' => $m->id,
                 'my_id_code' => $code,
                 'label' => $m->label,
+                'friendly_name' => $m->friendly_name,
                 'is_active' => (bool) $m->is_active,
                 'status' => $m->is_active ? 'Active' : 'Inactive',
                 'linked_users' => $linked,

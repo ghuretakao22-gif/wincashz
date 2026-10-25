@@ -33,11 +33,15 @@ const AdminMyIdsPage = lazy(() => import('./pages/AdminMyIdsPage'));
 const AdminMyIdOverviewPage = lazy(() => import('./pages/AdminMyIdOverviewPage'));
 const AdminPayoutRulesPage = lazy(() => import('./pages/AdminPayoutRulesPage'));
 const AdminMyIdSettingsPage = lazy(() => import('./pages/AdminMyIdSettingsPage'));
+const AdminModeratorNoticePage = lazy(() => import('./pages/AdminModeratorNoticePage'));
+const AdminMyIdPaymentsPage = lazy(() => import('./pages/AdminMyIdPaymentsPage'));
 
 // Lazy-Loaded Moderator Portal (Strictly Isolated & Read-Only)
 const ModeratorLayout = lazy(() => import('./components/ModeratorLayout'));
+const ModeratorDashboardPage = lazy(() => import('./pages/ModeratorDashboardPage'));
 const ModeratorUsersPage = lazy(() => import('./pages/ModeratorUsersPage'));
 const ModeratorMyEarnPage = lazy(() => import('./pages/ModeratorMyEarnPage'));
+const ModeratorPayoutPage = lazy(() => import('./pages/ModeratorPayoutPage'));
 
 function PageFallback() {
   return (
@@ -259,15 +263,19 @@ export default function App() {
                 <Route path="my-ids" element={<AdminMyIdsPage />} />
                 <Route path="my-id-overview" element={<AdminMyIdOverviewPage />} />
                 <Route path="payout-rules" element={<AdminPayoutRulesPage />} />
+                <Route path="my-id-payments" element={<AdminMyIdPaymentsPage />} />
                 <Route path="my-id-settings" element={<AdminMyIdSettingsPage />} />
+                <Route path="moderator-notice" element={<AdminModeratorNoticePage />} />
                 <Route path="settings" element={<AdminSettingsPage />} />
               </Route>
 
               {/* Moderator Routes (Strictly Isolated & Read-Only) */}
               <Route path="/moderator" element={<ModeratorLayout />}>
-                <Route index element={<Navigate to="/moderator/users" replace />} />
+                <Route index element={<Navigate to="/moderator/dashboard" replace />} />
+                <Route path="dashboard" element={<ModeratorDashboardPage />} />
                 <Route path="users" element={<ModeratorUsersPage />} />
                 <Route path="my-earn" element={<ModeratorMyEarnPage />} />
+                <Route path="payout" element={<ModeratorPayoutPage />} />
               </Route>
 
               {/* Catch-all Fallback */}

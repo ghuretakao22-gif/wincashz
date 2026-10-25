@@ -28,6 +28,7 @@ export default function AdminMyIdsPage() {
   // Create Modal State
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createCode, setCreateCode] = useState('');
+  const [createFriendlyName, setCreateFriendlyName] = useState('');
   const [createLabel, setCreateLabel] = useState('');
   const [createActive, setCreateActive] = useState(true);
   const [createSubmitting, setCreateSubmitting] = useState(false);
@@ -35,6 +36,7 @@ export default function AdminMyIdsPage() {
 
   // Edit Modal State
   const [editingItem, setEditingItem] = useState(null);
+  const [editFriendlyName, setEditFriendlyName] = useState('');
   const [editLabel, setEditLabel] = useState('');
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState(null);
@@ -109,6 +111,7 @@ export default function AdminMyIdsPage() {
     try {
       const res = await api.createAdminMyId({
         my_id_code: cleanCode,
+        friendly_name: createFriendlyName.trim() || null,
         label: createLabel.trim() || null,
         is_active: createActive,
       });
@@ -116,6 +119,7 @@ export default function AdminMyIdsPage() {
       if (res.success) {
         setShowCreateModal(false);
         setCreateCode('');
+        setCreateFriendlyName('');
         setCreateLabel('');
         setCreateActive(true);
         setMsg({ type: 'success', text: `My ID ${cleanCode} created successfully.` });
@@ -129,14 +133,15 @@ export default function AdminMyIdsPage() {
     }
   };
 
-  // Open Edit Label Modal
+  // Open Edit Modal
   const openEditModal = (item) => {
     setEditingItem(item);
+    setEditFriendlyName(item.friendly_name || '');
     setEditLabel(item.label || '');
     setEditError(null);
   };
 
-  // Save Edit Label
+  // Save Edit Details
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     if (!editingItem) return;
@@ -144,15 +149,20 @@ export default function AdminMyIdsPage() {
     setEditSubmitting(true);
     try {
       const res = await api.updateAdminMyId(editingItem.id, {
+        friendly_name: editFriendlyName.trim() || null,
         label: editLabel.trim(),
       });
       if (res.success) {
-        setMyIds(prev => prev.map(m => m.id === editingItem.id ? { ...m, label: editLabel.trim() || null } : m));
+        setMyIds(prev => prev.map(m => m.id === editingItem.id ? { 
+          ...m, 
+          friendly_name: editFriendlyName.trim() || null,
+          label: editLabel.trim() || null 
+        } : m));
         setEditingItem(null);
-        setMsg({ type: 'success', text: `Label for My ID ${editingItem.my_id_code} updated successfully.` });
+        setMsg({ type: 'success', text: `Details for My ID ${editingItem.my_id_code} updated successfully.` });
       }
     } catch (err) {
-      setEditError(err.message || 'Failed to update label.');
+      setEditError(err.message || 'Failed to update details.');
     } finally {
       setEditSubmitting(false);
     }
@@ -208,6 +218,7 @@ export default function AdminMyIdsPage() {
           <button
             onClick={() => {
               setCreateCode('');
+              setCreateFriendlyName('');
               setCreateLabel('');
               setCreateActive(true);
               setCreateError(null);
@@ -262,7 +273,7 @@ export default function AdminMyIdsPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by My ID code (e.g. 1001) or label..."
+              placeholder="Search by My ID code, friendly name, or label..."
               className="w-full pl-10 pr-10 py-2.5 rounded-xl glass-input text-xs"
             />
             {search && (
@@ -291,6 +302,7 @@ export default function AdminMyIdsPage() {
             <thead>
               <tr className="border-b border-white/5 bg-white/[0.02] text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
                 <th className="py-3.5 px-4">My ID</th>
+                <th className="py-3.5 px-4">Friendly Name</th>
                 <th className="py-3.5 px-4">Label</th>
                 <th className="py-3.5 px-4">Status</th>
                 <th className="py-3.5 px-4">Linked Users</th>
@@ -301,14 +313,14 @@ export default function AdminMyIdsPage() {
             <tbody className="divide-y divide-white/5 text-slate-300">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-500">
+                  <td colSpan={7} className="py-12 text-center text-slate-500">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-brand-400" />
                     <span>Loading My IDs...</span>
                   </td>
                 </tr>
               ) : myIds.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-500">
+                  <td colSpan={7} className="py-12 text-center text-slate-500">
                     <Hash className="w-8 h-8 mx-auto mb-2 opacity-30" />
                     <p className="font-medium text-slate-400">No My IDs found</p>
                     <p className="text-[11px] text-slate-600 mt-1">
@@ -330,6 +342,15 @@ export default function AdminMyIdsPage() {
                         <span className="px-2 py-1 rounded-lg bg-brand-500/10 border border-brand-500/20 text-brand-400">
                           #{item.my_id_code}
                         </span>
+                      </td>
+
+                      {/* Friendly Name */}
+                      <td className="py-3 px-4 text-slate-200">
+                        {item.friendly_name ? (
+                          <span className="font-bold text-brand-300">{item.friendly_name}</span>
+                        ) : (
+                          <span className="text-slate-500 italic text-[11px]">None</span>
+                        )}
                       </td>
 
                       {/* Label */}
@@ -451,6 +472,20 @@ export default function AdminMyIdsPage() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                  Friendly Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={createFriendlyName}
+                  onChange={(e) => setCreateFriendlyName(e.target.value)}
+                  placeholder="e.g. Rihan"
+                  className="w-full px-4 py-3 rounded-xl glass-input text-sm"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">Friendly display name for moderator leaderboard.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
                   Label (Optional)
                 </label>
                 <input
@@ -513,14 +548,14 @@ export default function AdminMyIdsPage() {
         </div>
       )}
 
-      {/* EDIT LABEL MODAL */}
+      {/* EDIT MODAL */}
       {editingItem && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="glass-card border border-white/10 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Pencil className="w-5 h-5 text-brand-400" />
-                <h3 className="text-lg font-bold text-white">Edit My ID Label</h3>
+                <h3 className="text-lg font-bold text-white">Edit My ID Details</h3>
               </div>
               <button
                 onClick={() => setEditingItem(null)}
@@ -550,6 +585,21 @@ export default function AdminMyIdsPage() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                  Friendly Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={editFriendlyName}
+                  onChange={(e) => setEditFriendlyName(e.target.value)}
+                  placeholder="e.g. Rihan"
+                  autoFocus
+                  className="w-full px-4 py-3 rounded-xl glass-input text-sm"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">Friendly display name for moderator leaderboard.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
                   Label
                 </label>
                 <input
@@ -557,7 +607,6 @@ export default function AdminMyIdsPage() {
                   value={editLabel}
                   onChange={(e) => setEditLabel(e.target.value)}
                   placeholder="e.g. Primary Campaign"
-                  autoFocus
                   className="w-full px-4 py-3 rounded-xl glass-input text-sm"
                 />
               </div>
