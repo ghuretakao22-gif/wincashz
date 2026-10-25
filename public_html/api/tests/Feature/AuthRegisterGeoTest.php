@@ -15,12 +15,23 @@ class AuthRegisterGeoTest extends TestCase
     {
         parent::setUp();
 
+        if (!Schema::hasTable('my_ids')) {
+            Schema::create('my_ids', function (Blueprint $table): void {
+                $table->id();
+                $table->string('my_id_code')->unique();
+                $table->string('label')->nullable();
+                $table->boolean('is_active')->default(true);
+                $table->timestamps();
+            });
+        }
+
         Schema::create('users', function (Blueprint $table): void {
             $table->id();
             $table->string('name');
             $table->string('username')->unique();
             $table->string('email')->unique();
             $table->enum('role', ['admin', 'user'])->default('user');
+            $table->string('my_id')->nullable()->index();
             $table->string('ip', 45)->nullable();
             $table->string('country')->nullable();
             $table->decimal('balance', 12, 2)->default(0);

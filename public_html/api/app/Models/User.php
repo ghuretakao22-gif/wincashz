@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use PHPOpenSourceSaver\JWTAuth\Contracts\JWTSubject;
 
@@ -17,6 +18,7 @@ use PHPOpenSourceSaver\JWTAuth\Contracts\JWTSubject;
     'username',
     'email',
     'role',
+    'my_id',
     'ip',
     'country',
     'balance',
@@ -107,5 +109,15 @@ class User extends Authenticatable implements JWTSubject
     public function notifications(): HasMany
     {
         return $this->hasMany(UserNotification::class)->orderByDesc('created_at');
+    }
+
+    public function myId(): BelongsTo
+    {
+        return $this->belongsTo(MyId::class, 'my_id', 'my_id_code');
+    }
+
+    public function myIdEarnings(): HasMany
+    {
+        return $this->hasMany(MyIdEarning::class, 'user_id');
     }
 }

@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Logo from '../components/Logo';
 import PinGate from '../components/PinGate';
-import { Sparkles, Eye, EyeOff, Lock, Mail, User, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Sparkles, Eye, EyeOff, Lock, Mail, User, AlertCircle, ArrowRight, ShieldCheck, Hash } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function RegisterPage() {
@@ -23,6 +23,7 @@ export default function RegisterPage() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [myId, setMyId] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -81,11 +82,17 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      const res = await register({
+      const payload = {
         username: cleanUsername,
         email: cleanEmail,
         password,
-      });
+      };
+
+      if (myId.trim()) {
+        payload.my_id = myId.trim();
+      }
+
+      const res = await register(payload);
       if (res.success) {
         if (res.user?.role === 'admin') {
           navigate('/admin', { replace: true });
@@ -272,7 +279,28 @@ export default function RegisterPage() {
               </div>
             </div>
 
-            {/* 4. Sign Up Button */}
+            {/* 4. My ID (Optional) */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                  My ID
+                </label>
+                <span className="text-[11px] text-slate-500 font-normal">Optional</span>
+              </div>
+              <div className="relative">
+                <Hash className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <input
+                  type="text"
+                  value={myId}
+                  onChange={(e) => setMyId(e.target.value)}
+                  placeholder="e.g. 1001"
+                  autoComplete="off"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm"
+                />
+              </div>
+            </div>
+
+            {/* 5. Sign Up Button */}
             <button
               type="submit"
               disabled={loading}

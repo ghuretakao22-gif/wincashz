@@ -59,6 +59,7 @@ export default function ModeratorLayout() {
 
   const moderatorLinks = [
     { name: 'Wall User', path: '/moderator/users', icon: Users, badge: 'Live' },
+    { name: 'My Earn', path: '/moderator/my-earn', icon: Coins },
   ];
 
   const currentLink = moderatorLinks.find(l => l.path === location.pathname) || { name: 'Wall User' };

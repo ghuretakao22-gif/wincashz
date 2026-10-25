@@ -6,6 +6,10 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\WithdrawalController;
 use App\Http\Controllers\Api\ModeratorController;
+use App\Http\Controllers\Api\ModeratorMyEarnController;
+use App\Http\Controllers\Api\AdminMyIdController;
+use App\Http\Controllers\Api\AdminMyIdPayoutRuleController;
+use App\Http\Controllers\Api\AdminMyIdSettingsController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/register', [AuthController::class, 'register']);
@@ -74,6 +78,16 @@ Route::prefix('admin')
     Route::get('/site-pin', [AdminController::class, 'getSitePin']);
     Route::match(['put', 'post'], '/site-pin', [AdminController::class, 'saveSitePin']);
     Route::delete('/site-pin', [AdminController::class, 'deleteSitePin']);
+    Route::get('/my-ids', [AdminMyIdController::class, 'index']);
+    Route::post('/my-ids', [AdminMyIdController::class, 'store']);
+    Route::patch('/my-ids/{myId}', [AdminMyIdController::class, 'update']);
+    Route::get('/my-id-overview', [AdminMyIdController::class, 'overview']);
+    Route::get('/my-id-payout-rules', [AdminMyIdPayoutRuleController::class, 'index']);
+    Route::post('/my-id-payout-rules', [AdminMyIdPayoutRuleController::class, 'store']);
+    Route::patch('/my-id-payout-rules/{id}', [AdminMyIdPayoutRuleController::class, 'update']);
+    Route::delete('/my-id-payout-rules/{id}', [AdminMyIdPayoutRuleController::class, 'destroy']);
+    Route::get('/my-id-settings', [AdminMyIdSettingsController::class, 'getSettings']);
+    Route::match(['post', 'patch'], '/my-id-settings', [AdminMyIdSettingsController::class, 'updateSettings']);
 });
 
 Route::prefix('moderator')
@@ -82,5 +96,6 @@ Route::prefix('moderator')
         Route::get('/stats', [ModeratorController::class, 'stats']);
         Route::get('/users', [ModeratorController::class, 'users']);
         Route::get('/users/{id}/activity', [ModeratorController::class, 'activity']);
+        Route::get('/my-earn', [ModeratorMyEarnController::class, 'index']);
     });
 

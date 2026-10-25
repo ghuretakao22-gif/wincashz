@@ -20,7 +20,11 @@ import {
   MoreVertical,
   ChevronRight,
   ShieldCheck,
-  KeyRound
+  KeyRound,
+  Hash,
+  Coins,
+  Calendar,
+  TrendingUp
 } from 'lucide-react';
 
 export default function AdminLayout() {
@@ -72,6 +76,10 @@ export default function AdminLayout() {
     { name: 'Featured Walls', path: '/admin/featured', icon: Star },
     { name: 'Withdrawals', path: '/admin/withdrawals', icon: Wallet },
     { name: 'Site PIN', path: '/admin/pin', icon: KeyRound },
+    { name: 'My IDs', path: '/admin/my-ids', icon: Hash },
+    { name: 'My ID Overview', path: '/admin/my-id-overview', icon: TrendingUp },
+    { name: 'Payout Rules', path: '/admin/payout-rules', icon: Coins },
+    { name: 'My ID Settings', path: '/admin/my-id-settings', icon: Calendar },
     { name: 'Website Settings', path: '/admin/settings', icon: Settings },
   ];
 

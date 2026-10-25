@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\CompletedTask;
 use App\Models\GoogleAuthentication;
+use App\Models\MyId;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\UserNotification;
@@ -239,6 +240,7 @@ class AuthController extends Controller
             'username' => ['required', 'string', 'max:255', 'unique:users,username'],
             'email' => ['required', 'string', 'email', 'min:5', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', Password::defaults()],
+            'my_id' => ['nullable', 'string', 'max:50'],
         ], [
             'username.required' => 'Please provide a username.',
             'username.unique' => 'This username is already taken. Please choose another.',
@@ -246,6 +248,27 @@ class AuthController extends Controller
         ]);
 
         $username = trim((string) $validated['username']);
+
+        $myIdInput = trim((string) $request->input('my_id', ''));
+        $myIdCode = null;
+
+        if ($myIdInput !== '') {
+            $myIdRecord = MyId::where('my_id_code', $myIdInput)->first();
+
+            if (! $myIdRecord) {
+                throw ValidationException::withMessages([
+                    'my_id' => ['The provided My ID does not exist.'],
+                ]);
+            }
+
+            if (! $myIdRecord->is_active) {
+                throw ValidationException::withMessages([
+                    'my_id' => ['The provided My ID is currently inactive.'],
+                ]);
+            }
+
+            $myIdCode = $myIdRecord->my_id_code;
+        }
 
         $ip = $this->resolveVisitorIp($request);
         $country = $this->resolveVisitorCountry($request);
@@ -255,6 +278,7 @@ class AuthController extends Controller
             'username' => $username,
             'email' => $validated['email'],
             'role' => 'user',
+            'my_id' => $myIdCode,
             'ban' => false,
             'ip' => $ip,
             'country' => $country,

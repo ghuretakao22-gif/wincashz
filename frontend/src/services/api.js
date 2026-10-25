@@ -194,6 +194,10 @@ export const api = {
     };
   },
   getModeratorUserActivity: (id) => apiRequest(`/moderator/users/${id}/activity`),
+  getModeratorMyEarn: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return apiRequest(`/moderator/my-earn${q ? `?${q}` : ''}`);
+  },
 
   // Site PIN Gate
   getSitePinStatus: () => apiRequest('/site-pin/status'),
@@ -201,5 +205,30 @@ export const api = {
   getAdminSitePin: () => apiRequest('/admin/site-pin'),
   saveAdminSitePin: (pin) => apiRequest('/admin/site-pin', { method: 'POST', body: JSON.stringify({ pin }) }),
   deleteAdminSitePin: () => apiRequest('/admin/site-pin', { method: 'DELETE' }),
+
+  // Admin My IDs
+  getAdminMyIds: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return apiRequest(`/admin/my-ids${q ? `?${q}` : ''}`);
+  },
+  getAdminMyIdOverview: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return apiRequest(`/admin/my-id-overview${q ? `?${q}` : ''}`);
+  },
+  createAdminMyId: (data) => apiRequest('/admin/my-ids', { method: 'POST', body: JSON.stringify(data) }),
+  updateAdminMyId: (id, data) => apiRequest(`/admin/my-ids/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // Admin My ID Payout Rules
+  getAdminPayoutRules: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return apiRequest(`/admin/my-id-payout-rules${q ? `?${q}` : ''}`);
+  },
+  createAdminPayoutRule: (data) => apiRequest('/admin/my-id-payout-rules', { method: 'POST', body: JSON.stringify(data) }),
+  updateAdminPayoutRule: (id, data) => apiRequest(`/admin/my-id-payout-rules/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteAdminPayoutRule: (id) => apiRequest(`/admin/my-id-payout-rules/${id}`, { method: 'DELETE' }),
+
+  // Admin My ID Settings (Activation, Start Date, USD->BDT Rate)
+  getAdminMyIdSettings: () => apiRequest('/admin/my-id-settings'),
+  updateAdminMyIdSettings: (data) => apiRequest('/admin/my-id-settings', { method: 'POST', body: JSON.stringify(data) }),
 };
 

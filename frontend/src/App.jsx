@@ -29,10 +29,15 @@ const AdminFeaturedPage = lazy(() => import('./pages/AdminFeaturedPage'));
 const AdminWithdrawalsPage = lazy(() => import('./pages/AdminWithdrawalsPage'));
 const AdminSettingsPage = lazy(() => import('./pages/AdminSettingsPage'));
 const AdminSitePinPage = lazy(() => import('./pages/AdminSitePinPage'));
+const AdminMyIdsPage = lazy(() => import('./pages/AdminMyIdsPage'));
+const AdminMyIdOverviewPage = lazy(() => import('./pages/AdminMyIdOverviewPage'));
+const AdminPayoutRulesPage = lazy(() => import('./pages/AdminPayoutRulesPage'));
+const AdminMyIdSettingsPage = lazy(() => import('./pages/AdminMyIdSettingsPage'));
 
 // Lazy-Loaded Moderator Portal (Strictly Isolated & Read-Only)
 const ModeratorLayout = lazy(() => import('./components/ModeratorLayout'));
 const ModeratorUsersPage = lazy(() => import('./pages/ModeratorUsersPage'));
+const ModeratorMyEarnPage = lazy(() => import('./pages/ModeratorMyEarnPage'));
 
 function PageFallback() {
   return (
@@ -251,6 +256,10 @@ export default function App() {
                 <Route path="featured" element={<AdminFeaturedPage />} />
                 <Route path="withdrawals" element={<AdminWithdrawalsPage />} />
                 <Route path="pin" element={<AdminSitePinPage />} />
+                <Route path="my-ids" element={<AdminMyIdsPage />} />
+                <Route path="my-id-overview" element={<AdminMyIdOverviewPage />} />
+                <Route path="payout-rules" element={<AdminPayoutRulesPage />} />
+                <Route path="my-id-settings" element={<AdminMyIdSettingsPage />} />
                 <Route path="settings" element={<AdminSettingsPage />} />
               </Route>
 
@@ -258,6 +267,7 @@ export default function App() {
               <Route path="/moderator" element={<ModeratorLayout />}>
                 <Route index element={<Navigate to="/moderator/users" replace />} />
                 <Route path="users" element={<ModeratorUsersPage />} />
+                <Route path="my-earn" element={<ModeratorMyEarnPage />} />
               </Route>
 
               {/* Catch-all Fallback */}
