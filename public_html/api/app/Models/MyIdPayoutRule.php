@@ -17,6 +17,7 @@ class MyIdPayoutRule extends Model
         'offer_name',
         'coin_amount',
         'user_payout_usd',
+        'usd_bdt_rate',
         'is_active',
     ];
 
@@ -25,6 +26,7 @@ class MyIdPayoutRule extends Model
         return [
             'coin_amount' => 'decimal:4',
             'user_payout_usd' => 'decimal:4',
+            'usd_bdt_rate' => 'decimal:2',
             'is_active' => 'boolean',
         ];
     }
@@ -53,19 +55,24 @@ class MyIdPayoutRule extends Model
         $numericCoins = (float) $coinAmount;
 
         // 1. Try exact match on provider + offer_id + coin_amount
-        if ($normalizedOfferId !== null) {
+        if ($normalizedOfferId !== null && $normalizedOfferId !== '-') {
             $exactRule = static::query()
                 ->where('is_active', true)
-                ->whereRaw('LOWER(provider) = ?', [$normalizedProvider])
-                ->whereRaw('LOWER(offer_id) = ?', [strtolower($normalizedOfferId)])
+                ->whereRaw('LOWER(TRIM(provider)) = ?', [$normalizedProvider])
+                ->whereRaw('LOWER(TRIM(offer_id)) = ?', [strtolower($normalizedOfferId)])
                 ->where('coin_amount', $numericCoins)
                 ->orderByDesc('id')
                 ->first();
 
             if ($exactRule) {
+                $ruleRate = ($exactRule->usd_bdt_rate !== null && (float) $exactRule->usd_bdt_rate > 0)
+                    ? (float) $exactRule->usd_bdt_rate
+                    : \App\Services\MyIdEarningService::getUsdBdtRate();
+
                 return [
                     'matched' => true,
                     'payout_usd' => (float) $exactRule->user_payout_usd,
+                    'usd_bdt_rate' => $ruleRate,
                     'status' => 'MAPPED',
                     'rule' => $exactRule,
                 ];
@@ -75,16 +82,25 @@ class MyIdPayoutRule extends Model
         // 2. Try match on provider + coin_amount where offer_id is null/wildcard
         $wildcardRule = static::query()
             ->where('is_active', true)
-            ->whereRaw('LOWER(provider) = ?', [$normalizedProvider])
-            ->whereNull('offer_id')
+            ->whereRaw('LOWER(TRIM(provider)) = ?', [$normalizedProvider])
+            ->where(function ($q): void {
+                $q->whereNull('offer_id')
+                  ->orWhere('offer_id', '')
+                  ->orWhere('offer_id', '-');
+            })
             ->where('coin_amount', $numericCoins)
             ->orderByDesc('id')
             ->first();
 
         if ($wildcardRule) {
+            $ruleRate = ($wildcardRule->usd_bdt_rate !== null && (float) $wildcardRule->usd_bdt_rate > 0)
+                ? (float) $wildcardRule->usd_bdt_rate
+                : \App\Services\MyIdEarningService::getUsdBdtRate();
+
             return [
                 'matched' => true,
                 'payout_usd' => (float) $wildcardRule->user_payout_usd,
+                'usd_bdt_rate' => $ruleRate,
                 'status' => 'MAPPED',
                 'rule' => $wildcardRule,
             ];

@@ -86,6 +86,7 @@ export default function AdminPayoutRulesPage() {
   const [offerName, setOfferName] = useState('');
   const [coinAmount, setCoinAmount] = useState('');
   const [userPayoutUsd, setUserPayoutUsd] = useState('');
+  const [ruleUsdBdtRate, setRuleUsdBdtRate] = useState('122.00');
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [modalError, setModalError] = useState(null);
@@ -97,6 +98,7 @@ export default function AdminPayoutRulesPage() {
   const [editOfferName, setEditOfferName] = useState('');
   const [editCoinAmount, setEditCoinAmount] = useState('');
   const [editUserPayoutUsd, setEditUserPayoutUsd] = useState('');
+  const [editUsdBdtRate, setEditUsdBdtRate] = useState('122.00');
   const [editIsActive, setEditIsActive] = useState(true);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState(null);
@@ -253,6 +255,11 @@ export default function AdminPayoutRulesPage() {
       return;
     }
 
+    if (!ruleUsdBdtRate || isNaN(Number(ruleUsdBdtRate)) || Number(ruleUsdBdtRate) <= 0) {
+      setModalError('Please enter a valid positive 1 USD = BDT conversion rate (e.g. 122.00).');
+      return;
+    }
+
     const cleanOfferId = offerId.trim();
 
     setSubmitting(true);
@@ -263,6 +270,7 @@ export default function AdminPayoutRulesPage() {
         offer_name: offerName.trim() || null,
         coin_amount: Number(coinAmount),
         user_payout_usd: Number(userPayoutUsd),
+        usd_bdt_rate: Number(ruleUsdBdtRate),
         is_active: isActive,
       });
 
@@ -273,6 +281,7 @@ export default function AdminPayoutRulesPage() {
         setOfferName('');
         setCoinAmount('');
         setUserPayoutUsd('');
+        setRuleUsdBdtRate('122.00');
         setIsActive(true);
         setSearch('');
         setProviderFilter('');
@@ -299,6 +308,7 @@ export default function AdminPayoutRulesPage() {
     setEditOfferName(rule.offer_name || '');
     setEditCoinAmount(rule.coin_amount !== null && rule.coin_amount !== undefined ? String(rule.coin_amount) : '');
     setEditUserPayoutUsd(rule.user_payout_usd !== null && rule.user_payout_usd !== undefined ? String(rule.user_payout_usd) : '');
+    setEditUsdBdtRate(rule.usd_bdt_rate !== null && rule.usd_bdt_rate !== undefined ? String(rule.usd_bdt_rate) : '122.00');
     setEditIsActive(!!rule.is_active);
     setEditError(null);
   };
@@ -325,6 +335,11 @@ export default function AdminPayoutRulesPage() {
       return;
     }
 
+    if (!editUsdBdtRate || isNaN(Number(editUsdBdtRate)) || Number(editUsdBdtRate) <= 0) {
+      setEditError('Please enter a valid positive 1 USD = BDT conversion rate (e.g. 122.00).');
+      return;
+    }
+
     const cleanOfferId = editOfferId.trim();
 
     setEditSubmitting(true);
@@ -335,6 +350,7 @@ export default function AdminPayoutRulesPage() {
         offer_name: editOfferName.trim() || null,
         coin_amount: Number(editCoinAmount),
         user_payout_usd: Number(editUserPayoutUsd),
+        usd_bdt_rate: Number(editUsdBdtRate),
         is_active: editIsActive,
       });
 
@@ -443,6 +459,7 @@ export default function AdminPayoutRulesPage() {
               setOfferName('');
               setCoinAmount('');
               setUserPayoutUsd('');
+              setRuleUsdBdtRate('122.00');
               setIsActive(true);
               setModalError(null);
               setShowAddModal(true);
@@ -715,6 +732,7 @@ export default function AdminPayoutRulesPage() {
                 <th className="py-3.5 px-4">Offer Name</th>
                 <th className="py-3.5 px-4">Coin</th>
                 <th className="py-3.5 px-4">Payout (USD)</th>
+                <th className="py-3.5 px-4 text-right">1 USD = BDT</th>
                 <th className="py-3.5 px-4 text-center">Today Count</th>
                 <th className="py-3.5 px-4 text-center">Total Count</th>
                 <th className="py-3.5 px-4">Status</th>
@@ -724,14 +742,14 @@ export default function AdminPayoutRulesPage() {
             <tbody className="divide-y divide-white/5 text-slate-300">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-500">
+                  <td colSpan={10} className="py-12 text-center text-slate-500">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-brand-400" />
                     <span>Loading Payout Rules...</span>
                   </td>
                 </tr>
               ) : rules.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-500">
+                  <td colSpan={10} className="py-12 text-center text-slate-500">
                     <Coins className="w-8 h-8 mx-auto mb-2 opacity-30" />
                     <p className="font-medium text-slate-400">No payout rules found</p>
                     <p className="text-[11px] text-slate-600 mt-1">
@@ -777,6 +795,11 @@ export default function AdminPayoutRulesPage() {
                       {/* Payout (USD) */}
                       <td className="py-3 px-4 font-mono font-black text-emerald-400 text-sm">
                         ${Number(rule.user_payout_usd).toFixed(2)}
+                      </td>
+
+                      {/* 1 USD = BDT */}
+                      <td className="py-3 px-4 font-mono font-bold text-amber-300 text-right">
+                        ৳{Number(rule.usd_bdt_rate || 122).toFixed(2)}
                       </td>
 
                       {/* Today Count */}
@@ -973,8 +996,8 @@ export default function AdminPayoutRulesPage() {
                 />
               </div>
 
-              {/* Coin Amount & Payout USD */}
-              <div className="grid grid-cols-2 gap-3">
+              {/* Coin Amount, Payout USD & 1 USD = BDT */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">
                     Coins Credited <span className="text-rose-400">*</span>
@@ -993,7 +1016,7 @@ export default function AdminPayoutRulesPage() {
 
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">
-                    Worker Payout (USD) <span className="text-rose-400">*</span>
+                    Payout (USD) <span className="text-rose-400">*</span>
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono">$</span>
@@ -1005,6 +1028,25 @@ export default function AdminPayoutRulesPage() {
                       value={userPayoutUsd}
                       onChange={(e) => setUserPayoutUsd(e.target.value)}
                       placeholder="e.g. 0.70"
+                      className="w-full pl-7 pr-3.5 py-2.5 rounded-xl glass-input font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    1 USD = BDT <span className="text-rose-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono">৳</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      value={ruleUsdBdtRate}
+                      onChange={(e) => setRuleUsdBdtRate(e.target.value)}
+                      placeholder="e.g. 122.00"
                       className="w-full pl-7 pr-3.5 py-2.5 rounded-xl glass-input font-mono"
                     />
                   </div>
@@ -1118,8 +1160,8 @@ export default function AdminPayoutRulesPage() {
                 />
               </div>
 
-              {/* Coin Amount & Payout USD */}
-              <div className="grid grid-cols-2 gap-3">
+              {/* Coin Amount, Payout USD & 1 USD = BDT */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">
                     Coins Credited <span className="text-rose-400">*</span>
@@ -1137,7 +1179,7 @@ export default function AdminPayoutRulesPage() {
 
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">
-                    Worker Payout (USD) <span className="text-rose-400">*</span>
+                    Payout (USD) <span className="text-rose-400">*</span>
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono">$</span>
@@ -1148,6 +1190,25 @@ export default function AdminPayoutRulesPage() {
                       required
                       value={editUserPayoutUsd}
                       onChange={(e) => setEditUserPayoutUsd(e.target.value)}
+                      className="w-full pl-7 pr-3.5 py-2.5 rounded-xl glass-input font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    1 USD = BDT <span className="text-rose-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono">৳</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      value={editUsdBdtRate}
+                      onChange={(e) => setEditUsdBdtRate(e.target.value)}
+                      placeholder="e.g. 122.00"
                       className="w-full pl-7 pr-3.5 py-2.5 rounded-xl glass-input font-mono"
                     />
                   </div>

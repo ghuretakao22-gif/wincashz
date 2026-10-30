@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\MyIdPayoutRule;
+use App\Models\Setting;
+use App\Services\MyIdEarningService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -194,11 +196,13 @@ class AdminMyIdPayoutRuleController extends Controller
             'offer_name' => ['nullable', 'string', 'max:255'],
             'coin_amount' => ['required', 'numeric', 'min:0'],
             'user_payout_usd' => ['required', 'numeric', 'min:0'],
+            'usd_bdt_rate' => ['nullable', 'numeric', 'min:0.01'],
             'is_active' => ['nullable', 'boolean'],
         ], [
             'provider.required' => 'Provider name is required.',
             'coin_amount.required' => 'Credited coin amount is required.',
             'user_payout_usd.required' => 'User payout USD is required.',
+            'usd_bdt_rate.min' => 'BDT conversion rate must be greater than 0.',
         ]);
 
         $cleanProvider = trim($validated['provider']);
@@ -207,6 +211,9 @@ class AdminMyIdPayoutRuleController extends Controller
         $cleanOfferName = isset($validated['offer_name']) && trim((string) $validated['offer_name']) !== '' ? trim((string) $validated['offer_name']) : null;
         $coinAmount = (float) $validated['coin_amount'];
         $userPayoutUsd = (float) $validated['user_payout_usd'];
+        $usdBdtRate = (isset($validated['usd_bdt_rate']) && is_numeric($validated['usd_bdt_rate']) && (float) $validated['usd_bdt_rate'] > 0)
+            ? (float) $validated['usd_bdt_rate']
+            : null;
         $isActive = $request->has('is_active') ? (bool) $request->input('is_active') : true;
 
         // Conflict check: Provider + Coin + Offer ID combination must not already exist
@@ -236,8 +243,12 @@ class AdminMyIdPayoutRuleController extends Controller
             'offer_name' => $cleanOfferName,
             'coin_amount' => $coinAmount,
             'user_payout_usd' => $userPayoutUsd,
+            'usd_bdt_rate' => $usdBdtRate,
             'is_active' => $isActive,
         ]);
+
+        // Feature 3: Auto-backfill unmapped earnings for this rule
+        $this->backfillUnmappedEarnings($rule);
 
         return response()->json([
             'success' => true,
@@ -268,7 +279,10 @@ class AdminMyIdPayoutRuleController extends Controller
             'offer_name' => ['nullable', 'string', 'max:255'],
             'coin_amount' => ['nullable', 'numeric', 'min:0'],
             'user_payout_usd' => ['nullable', 'numeric', 'min:0'],
+            'usd_bdt_rate' => ['nullable', 'numeric', 'min:0.01'],
             'is_active' => ['nullable', 'boolean'],
+        ], [
+            'usd_bdt_rate.min' => 'BDT conversion rate must be greater than 0.',
         ]);
 
         $newProvider = $request->has('provider') ? trim((string) $request->input('provider')) : $rule->provider;
@@ -317,16 +331,104 @@ class AdminMyIdPayoutRuleController extends Controller
             $rule->user_payout_usd = (float) $request->input('user_payout_usd');
         }
 
+        if ($request->has('usd_bdt_rate')) {
+            $rule->usd_bdt_rate = (float) $request->input('usd_bdt_rate');
+        }
+
         if ($request->has('is_active')) {
             $rule->is_active = (bool) $request->input('is_active');
         }
 
         $rule->save();
 
+        // Feature 3: Auto-backfill unmapped earnings for this rule
+        $this->backfillUnmappedEarnings($rule);
+
         return response()->json([
             'success' => true,
             'message' => 'Payout rule updated successfully.',
             'data' => $rule,
+        ]);
+    }
+
+    /**
+     * Auto-backfill unmapped (payout_usd = 0) earnings for this rule.
+     *
+     * Match logic:
+     * - LOWER(TRIM(provider)) = LOWER(TRIM(rule.provider))
+     * - coin_amount = rule.coin_amount
+     * - if rule has a specific offer_id (not null/empty/'-'):
+     *     matches exact offer_id case-insensitively
+     * - else (wildcard rule for provider + coin):
+     *     matches all unmapped earnings for this provider + coins, EXCEPT those
+     *     whose offer_id is claimed by an active specific rule for this provider + coin.
+     *
+     * Safe update scope (IMPORTANT):
+     * - Only rows where payout_usd = 0 are updated so historical non-zero/paid
+     *   earnings are never overwritten.
+     */
+    public function backfillUnmappedEarnings(MyIdPayoutRule $rule): int
+    {
+        if (!Schema::hasTable('my_id_earnings') || !$rule->is_active) {
+            return 0;
+        }
+
+        $normProvider = strtolower(trim((string) $rule->provider));
+        $coinAmount = (float) $rule->coin_amount;
+        $payoutUsd = (float) $rule->user_payout_usd;
+        $usdBdtRate = ($rule->usd_bdt_rate !== null && (float) $rule->usd_bdt_rate > 0)
+            ? (float) $rule->usd_bdt_rate
+            : MyIdEarningService::getUsdBdtRate();
+        $payoutBdt = round($payoutUsd * $usdBdtRate, 2);
+
+        $query = DB::table('my_id_earnings')
+            ->whereRaw('LOWER(TRIM(provider)) = ?', [$normProvider])
+            ->where('coin_amount', $coinAmount)
+            ->where(function ($q): void {
+                $q->whereNull('payout_usd')
+                  ->orWhere('payout_usd', 0);
+            });
+
+        $normOfferId = $rule->offer_id !== null && trim((string) $rule->offer_id) !== '' && trim((string) $rule->offer_id) !== '-'
+            ? strtolower(trim((string) $rule->offer_id))
+            : null;
+
+        if ($normOfferId !== null) {
+            // Specific rule: match normalized offer_id exactly
+            $query->whereRaw("LOWER(TRIM(COALESCE(offer_id, ''))) = ?", [$normOfferId]);
+        } else {
+            // Wildcard rule for provider + coin:
+            // Claim all unmapped rows for this provider + coin, but exclude rows whose offer_id
+            // matches an active specific rule for this provider + coin
+            $specificOfferIds = MyIdPayoutRule::query()
+                ->where('is_active', true)
+                ->where('id', '!=', $rule->id)
+                ->whereRaw('LOWER(TRIM(provider)) = ?', [$normProvider])
+                ->where('coin_amount', $coinAmount)
+                ->whereNotNull('offer_id')
+                ->where('offer_id', '!=', '')
+                ->where('offer_id', '!=', '-')
+                ->pluck('offer_id')
+                ->map(fn ($id) => strtolower(trim((string) $id)))
+                ->filter()
+                ->values()
+                ->all();
+
+            if (!empty($specificOfferIds)) {
+                $query->where(function ($q) use ($specificOfferIds): void {
+                    $q->whereNull('offer_id')
+                      ->orWhere('offer_id', '')
+                      ->orWhere('offer_id', '-')
+                      ->orWhereNotIn(DB::raw("LOWER(TRIM(offer_id))"), $specificOfferIds);
+                });
+            }
+        }
+
+        return $query->update([
+            'payout_usd' => $payoutUsd,
+            'usd_bdt_rate' => $usdBdtRate,
+            'payout_bdt' => $payoutBdt,
+            'updated_at' => Carbon::now('UTC'),
         ]);
     }
 

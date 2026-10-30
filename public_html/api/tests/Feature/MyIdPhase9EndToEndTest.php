@@ -38,6 +38,7 @@ class MyIdPhase9EndToEndTest extends TestCase
                 $table->string('offer_name')->nullable();
                 $table->decimal('coin_amount', 14, 4)->index();
                 $table->decimal('user_payout_usd', 14, 4);
+                $table->decimal('usd_bdt_rate', 10, 2)->nullable();
                 $table->boolean('is_active')->default(true)->index();
                 $table->timestamps();
             });

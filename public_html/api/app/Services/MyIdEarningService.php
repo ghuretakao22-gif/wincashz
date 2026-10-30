@@ -136,24 +136,28 @@ class MyIdEarningService
 
         if (!$resolved['matched'] || $resolved['payout_usd'] === null) {
             return [
-                'eligible' => false,
+                'eligible' => true,
                 'reason' => 'unmapped_rule',
                 'status' => 'UNMAPPED',
-                'payout_usd' => null,
-                'payout_bdt' => null,
-                'usd_bdt_rate' => $rate,
+                'payout_usd' => 0.0,
+                'payout_bdt' => 0.0,
+                'usd_bdt_rate' => 0.0,
             ];
         }
 
         $payoutUsd = (float) $resolved['payout_usd'];
-        $payoutBdt = static::convertUsdToBdt($payoutUsd, $rate);
+        $ruleRate = (float) ($resolved['rule']?->usd_bdt_rate ?? 0);
+        if ($ruleRate <= 0) {
+            $ruleRate = static::getUsdBdtRate();
+        }
+        $payoutBdt = round($payoutUsd * $ruleRate, 2);
 
         return [
             'eligible' => true,
             'status' => 'MAPPED',
             'payout_usd' => $payoutUsd,
             'payout_bdt' => $payoutBdt,
-            'usd_bdt_rate' => $rate,
+            'usd_bdt_rate' => $ruleRate,
         ];
     }
 
@@ -268,22 +272,27 @@ class MyIdEarningService
             $task->currency_reward ?? 0
         );
 
-        if (!$resolved['matched'] || $resolved['payout_usd'] === null) {
-            return [
-                'created' => false,
-                'status' => 'UNMAPPED',
-                'reason' => 'unmapped_rule',
-                'earning' => null,
-                'payout_usd' => null,
-                'usd_bdt_rate' => $rate,
-                'payout_bdt' => null,
-            ];
+        $isMapped = ($resolved['matched'] && $resolved['payout_usd'] !== null);
+
+        if ($isMapped) {
+            $payoutUsd = (float) $resolved['payout_usd'];
+            $ruleRate = (float) ($resolved['rule']?->usd_bdt_rate ?? 0);
+            if ($ruleRate <= 0) {
+                $ruleRate = static::getUsdBdtRate();
+            }
+            $payoutBdt = round($payoutUsd * $ruleRate, 2);
+            $activeUsdBdtRate = $ruleRate;
+            $recordStatus = 'RECORDED';
+        } else {
+            // UNMAPPED: worker completed an offer with no matching rule yet
+            // Still insert my_id_earnings so Moderator counts Today/Total Offers, money = 0
+            $payoutUsd = 0.0;
+            $activeUsdBdtRate = 0.0;
+            $payoutBdt = 0.0;
+            $recordStatus = 'UNMAPPED_RECORDED';
         }
 
-        $payoutUsd = (float) $resolved['payout_usd'];
-        $payoutBdt = static::convertUsdToBdt($payoutUsd, $rate);
-
-        // 6. Create immutable ledger record with snapshot values
+        // 6. Create ledger record with snapshot values
         try {
             $earning = MyIdEarning::create([
                 'my_id_code' => $user->my_id,
@@ -294,17 +303,17 @@ class MyIdEarningService
                 'offer_name' => $task->offer_name !== null ? (string) $task->offer_name : null,
                 'coin_amount' => (float) ($task->currency_reward ?? 0),
                 'payout_usd' => $payoutUsd,
-                'usd_bdt_rate' => $rate,
+                'usd_bdt_rate' => $activeUsdBdtRate,
                 'payout_bdt' => $payoutBdt,
                 'completed_at' => $task->created_at,
             ]);
 
             return [
                 'created' => true,
-                'status' => 'RECORDED',
+                'status' => $recordStatus,
                 'earning' => $earning,
                 'payout_usd' => $payoutUsd,
-                'usd_bdt_rate' => $rate,
+                'usd_bdt_rate' => $activeUsdBdtRate,
                 'payout_bdt' => $payoutBdt,
             ];
         } catch (QueryException $e) {

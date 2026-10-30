@@ -38,6 +38,7 @@ class MyIdEarningLedgerTest extends TestCase
                 $table->string('offer_name')->nullable();
                 $table->decimal('coin_amount', 14, 4)->index();
                 $table->decimal('user_payout_usd', 14, 4);
+                $table->decimal('usd_bdt_rate', 10, 2)->nullable();
                 $table->boolean('is_active')->default(true)->index();
                 $table->timestamps();
             });
@@ -355,7 +356,7 @@ class MyIdEarningLedgerTest extends TestCase
         $this->assertSame(1, $count);
     }
 
-    public function test_unmapped_payout_rule_handling_creates_no_earning(): void
+    public function test_unmapped_payout_rule_handling_creates_zero_payout_earning(): void
     {
         Setting::setValue(MyIdEarningService::SETTING_SYSTEM_ENABLED, '1');
         Setting::setValue(MyIdEarningService::SETTING_USD_BDT_RATE, '122.00');
@@ -383,14 +384,18 @@ class MyIdEarningLedgerTest extends TestCase
 
         $result = MyIdEarningService::recordTaskEarning($task);
 
-        $this->assertFalse($result['created']);
-        $this->assertSame('UNMAPPED', $result['status']);
-        $this->assertNull($result['payout_usd']);
-        $this->assertNull($result['payout_bdt']);
-        $this->assertNull($result['earning']);
+        $this->assertTrue($result['created']);
+        $this->assertSame('UNMAPPED_RECORDED', $result['status']);
+        $this->assertEquals(0.0, (float) $result['payout_usd']);
+        $this->assertEquals(0.0, (float) $result['payout_bdt']);
+        $this->assertNotNull($result['earning']);
 
-        // Ensure zero records created in DB
-        $this->assertSame(0, MyIdEarning::count());
+        // Exactly 1 unmapped record created in DB with 0 payout
+        $this->assertSame(1, MyIdEarning::count());
+        $earning = MyIdEarning::first();
+        $this->assertEquals(0.0, (float) $earning->payout_usd);
+        $this->assertEquals(0.0, (float) $earning->payout_bdt);
+        $this->assertEquals(0.0, (float) $earning->usd_bdt_rate);
     }
 
     public function test_raw_provider_revenue_is_never_used(): void

@@ -5,8 +5,10 @@ namespace Tests\Feature;
 use App\Models\CompletedTask;
 use App\Models\MyId;
 use App\Models\MyIdEarning;
+use App\Models\MyIdPayoutRule;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\MyIdEarningService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -87,6 +89,7 @@ class MyIdSystemRefinementsTest extends TestCase
                 $table->string('offer_id')->nullable();
                 $table->decimal('revenue', 18, 4)->default(0);
                 $table->decimal('reward', 18, 4)->default(0);
+                $table->decimal('currency_reward', 18, 4)->default(0);
                 $table->string('ip', 100)->nullable();
                 $table->string('country')->default('unknown');
                 $table->timestamps();
@@ -124,11 +127,26 @@ class MyIdSystemRefinementsTest extends TestCase
             });
         }
 
+        if (!Schema::hasTable('my_id_payout_rules')) {
+            Schema::create('my_id_payout_rules', function (Blueprint $table): void {
+                $table->id();
+                $table->string('provider')->index();
+                $table->string('offer_id')->nullable()->index();
+                $table->string('offer_name')->nullable();
+                $table->decimal('coin_amount', 14, 4)->index();
+                $table->decimal('user_payout_usd', 14, 4);
+                $table->decimal('usd_bdt_rate', 10, 2)->nullable();
+                $table->boolean('is_active')->default(true)->index();
+                $table->timestamps();
+            });
+        }
+
         // Clean tables
         DB::table('users')->delete();
         DB::table('my_ids')->delete();
         DB::table('settings')->delete();
         DB::table('my_id_earnings')->delete();
+        DB::table('my_id_payout_rules')->delete();
     }
 
     private function enableMyIdSystem(): void
@@ -512,5 +530,356 @@ class MyIdSystemRefinementsTest extends TestCase
         $this->assertSame(1.25, (float) $row['offer_price']);
         $this->assertSame(1.25, (float) $row['net_usd']);
         $this->assertSame(150.0, (float) $row['net_bdt']);
+    }
+
+    public function test_admin_can_create_payout_rule_with_custom_usd_bdt_rate(): void
+    {
+        $admin = User::create([
+            'name' => 'Admin User',
+            'username' => 'admin_rate',
+            'email' => 'admin_rate@test.com',
+            'password' => Hash::make('password'),
+            'role' => 'admin',
+        ]);
+        $token = auth('api')->login($admin);
+
+        $res = $this->withHeaders(['Authorization' => 'Bearer '.$token])
+            ->postJson('/api/admin/my-id-payout-rules', [
+                'provider' => 'Torox',
+                'offer_id' => 'game_prime',
+                'offer_name' => 'Torox Prime',
+                'coin_amount' => 450,
+                'user_payout_usd' => 1.50,
+                'usd_bdt_rate' => 125.50,
+                'is_active' => true,
+            ]);
+
+        $res->assertCreated();
+        $res->assertJsonPath('success', true);
+        $this->assertEquals(125.50, (float) $res->json('data.usd_bdt_rate'));
+
+        $this->assertDatabaseHas('my_id_payout_rules', [
+            'provider' => 'Torox',
+            'offer_id' => 'game_prime',
+            'coin_amount' => 450,
+            'usd_bdt_rate' => 125.50,
+        ]);
+    }
+
+    public function test_admin_can_update_payout_rule_usd_bdt_rate(): void
+    {
+        $admin = User::create([
+            'name' => 'Admin User 2',
+            'username' => 'admin_rate_2',
+            'email' => 'admin_rate_2@test.com',
+            'password' => Hash::make('password'),
+            'role' => 'admin',
+        ]);
+        $token = auth('api')->login($admin);
+
+        $rule = MyIdPayoutRule::create([
+            'provider' => 'AdGate',
+            'offer_id' => 'offer_1',
+            'offer_name' => 'Offer 1',
+            'coin_amount' => 300,
+            'user_payout_usd' => 0.80,
+            'usd_bdt_rate' => 122.00,
+            'is_active' => true,
+        ]);
+
+        $res = $this->withHeaders(['Authorization' => 'Bearer '.$token])
+            ->patchJson('/api/admin/my-id-payout-rules/'.$rule->id, [
+                'usd_bdt_rate' => 128.00,
+            ]);
+
+        $res->assertOk();
+        $res->assertJsonPath('success', true);
+        $this->assertEquals(128.00, (float) $res->json('data.usd_bdt_rate'));
+
+        $this->assertEquals(128.00, (float) $rule->fresh()->usd_bdt_rate);
+    }
+
+    public function test_offer_completion_uses_rule_specific_bdt_rate(): void
+    {
+        $this->enableMyIdSystem();
+
+        MyId::create(['my_id_code' => 'RATE_TEST', 'is_active' => true]);
+        $worker = User::create([
+            'name' => 'Worker Rate',
+            'username' => 'worker_rate',
+            'email' => 'worker_rate@test.com',
+            'password' => Hash::make('password'),
+            'role' => 'user',
+            'my_id' => 'RATE_TEST',
+        ]);
+
+        MyIdPayoutRule::create([
+            'provider' => 'Torox',
+            'offer_id' => 'survey_101',
+            'offer_name' => 'Survey 101',
+            'coin_amount' => 600,
+            'user_payout_usd' => 2.00,
+            'usd_bdt_rate' => 125.00,
+            'is_active' => true,
+        ]);
+
+        $task = CompletedTask::create([
+            'offer_wall_name' => 'Torox',
+            'user_id' => $worker->id,
+            'user_name' => $worker->username,
+            'transaction_id' => 'tx_rate_spec_1',
+            'offer_id' => 'survey_101',
+            'offer_name' => 'Survey 101',
+            'reward' => 600,
+            'currency_reward' => 600,
+            'revenue' => 5.00,
+            'created_at' => Carbon::now('UTC'),
+        ]);
+
+        $result = MyIdEarningService::recordTaskEarning($task);
+
+        $this->assertTrue($result['created']);
+        $this->assertEquals(2.00, (float) $result['payout_usd']);
+        $this->assertEquals(125.00, (float) $result['usd_bdt_rate']);
+        $this->assertEquals(250.00, (float) $result['payout_bdt']); // 2.00 * 125
+
+        $earning = MyIdEarning::where('completed_task_id', $task->id)->first();
+        $this->assertNotNull($earning);
+        $this->assertEquals(2.00, (float) $earning->payout_usd);
+        $this->assertEquals(125.00, (float) $earning->usd_bdt_rate);
+        $this->assertEquals(250.00, (float) $earning->payout_bdt);
+    }
+
+    public function test_unmapped_offer_creates_zero_payout_counted_in_moderator_panel(): void
+    {
+        $this->enableMyIdSystem();
+
+        MyId::create(['my_id_code' => 'UNMAPPED_MY', 'is_active' => true]);
+
+        $moderator = User::create([
+            'name' => 'Mod Unmapped',
+            'username' => 'mod_unmapped',
+            'email' => 'mod_unmapped@test.com',
+            'password' => Hash::make('password'),
+            'role' => 'moderator',
+            'my_id' => 'UNMAPPED_MY',
+        ]);
+        $worker = User::create([
+            'name' => 'Worker Unmapped',
+            'username' => 'worker_unmapped',
+            'email' => 'worker_unmapped@test.com',
+            'password' => Hash::make('password'),
+            'role' => 'user',
+            'my_id' => 'UNMAPPED_MY',
+        ]);
+
+        $task = CompletedTask::create([
+            'offer_wall_name' => 'MysteryWall',
+            'user_id' => $worker->id,
+            'user_name' => $worker->username,
+            'transaction_id' => 'tx_unmapped_test_1',
+            'offer_id' => 'mystery_offer',
+            'offer_name' => 'Mystery Task',
+            'reward' => 800,
+            'currency_reward' => 800,
+            'revenue' => 10.00,
+            'created_at' => Carbon::now('UTC'),
+        ]);
+
+        $result = MyIdEarningService::recordTaskEarning($task);
+
+        $this->assertTrue($result['created']);
+        $this->assertSame('UNMAPPED_RECORDED', $result['status']);
+        $this->assertEquals(0.0, (float) $result['payout_usd']);
+        $this->assertEquals(0.0, (float) $result['payout_bdt']);
+
+        // Check Moderator My Earn panel
+        $token = auth('api')->login($moderator);
+        $response = $this->withHeaders(['Authorization' => 'Bearer '.$token])
+            ->getJson('/api/moderator/my-earn');
+
+        $response->assertOk();
+        $offerSummary = $response->json('data.offer_summary');
+        $this->assertCount(1, $offerSummary);
+        $row = $offerSummary[0];
+
+        $this->assertSame('MysteryWall', $row['provider']);
+        $this->assertSame(800.0, (float) $row['coin']);
+        $this->assertSame(1, $row['today_offers']);
+        $this->assertSame(1, $row['total_offers']);
+        $this->assertEquals(0.0, (float) $row['offer_price']);
+        $this->assertEquals(0.0, (float) $row['net_usd']);
+        $this->assertEquals(0.0, (float) $row['net_bdt']);
+    }
+
+    public function test_admin_creating_rule_auto_backfills_unmapped_zero_earnings(): void
+    {
+        $this->enableMyIdSystem();
+
+        MyId::create(['my_id_code' => 'BACKFILL_MY', 'is_active' => true]);
+
+        $moderator = User::create([
+            'name' => 'Mod Backfill',
+            'username' => 'mod_backfill',
+            'email' => 'mod_backfill@test.com',
+            'password' => Hash::make('password'),
+            'role' => 'moderator',
+            'my_id' => 'BACKFILL_MY',
+        ]);
+        $worker = User::create([
+            'name' => 'Worker Backfill',
+            'username' => 'worker_backfill',
+            'email' => 'worker_backfill@test.com',
+            'password' => Hash::make('password'),
+            'role' => 'user',
+            'my_id' => 'BACKFILL_MY',
+        ]);
+        $admin = User::create([
+            'name' => 'Admin Backfill',
+            'username' => 'admin_backfill',
+            'email' => 'admin_backfill@test.com',
+            'password' => Hash::make('password'),
+            'role' => 'admin',
+        ]);
+
+        // 1. Worker completes offer with NO matching rule
+        $task = CompletedTask::create([
+            'offer_wall_name' => 'RevU',
+            'user_id' => $worker->id,
+            'user_name' => $worker->username,
+            'transaction_id' => 'tx_backfill_1',
+            'offer_id' => 'revu_survey',
+            'offer_name' => 'Revu Survey',
+            'reward' => 500,
+            'currency_reward' => 500,
+            'revenue' => 15.00,
+            'created_at' => Carbon::now('UTC'),
+        ]);
+
+        $recordResult = MyIdEarningService::recordTaskEarning($task);
+        $this->assertTrue($recordResult['created']);
+        $this->assertEquals(0.0, (float) $recordResult['payout_usd']);
+
+        $earning = MyIdEarning::where('completed_task_id', $task->id)->first();
+        $this->assertEquals(0.0, (float) $earning->payout_usd);
+
+        // 2. Admin creates the matching rule
+        $adminToken = auth('api')->login($admin);
+        $createRes = $this->withHeaders(['Authorization' => 'Bearer '.$adminToken])
+            ->postJson('/api/admin/my-id-payout-rules', [
+                'provider' => 'RevU',
+                'offer_id' => 'revu_survey',
+                'offer_name' => 'Revu Survey',
+                'coin_amount' => 500,
+                'user_payout_usd' => 1.50,
+                'usd_bdt_rate' => 124.00,
+                'is_active' => true,
+            ]);
+
+        $createRes->assertCreated();
+
+        // 3. Earning must be auto-backfilled to 1.50 USD and 186.00 BDT
+        $earning->refresh();
+        $this->assertEquals(1.50, (float) $earning->payout_usd);
+        $this->assertEquals(124.00, (float) $earning->usd_bdt_rate);
+        $this->assertEquals(186.00, (float) $earning->payout_bdt);
+
+        // 4. Moderator panel immediately reflects updated net USD and BDT
+        $modToken = auth('api')->login($moderator);
+        $modRes = $this->withHeaders(['Authorization' => 'Bearer '.$modToken])
+            ->getJson('/api/moderator/my-earn');
+
+        $modRes->assertOk();
+        $offerSummary = $modRes->json('data.offer_summary');
+        $this->assertCount(1, $offerSummary);
+        $this->assertEquals(1.50, (float) $offerSummary[0]['net_usd']);
+        $this->assertEquals(186.00, (float) $offerSummary[0]['net_bdt']);
+    }
+
+    public function test_wildcard_backfill_does_not_overwrite_specific_rule_unmapped_rows(): void
+    {
+        $this->enableMyIdSystem();
+
+        MyId::create(['my_id_code' => 'WILD_MY', 'is_active' => true]);
+        $worker = User::create([
+            'name' => 'Worker Wild',
+            'username' => 'worker_wild',
+            'email' => 'worker_wild@test.com',
+            'password' => Hash::make('password'),
+            'role' => 'user',
+            'my_id' => 'WILD_MY',
+        ]);
+        $admin = User::create([
+            'name' => 'Admin Wild',
+            'username' => 'admin_wild',
+            'email' => 'admin_wild@test.com',
+            'password' => Hash::make('password'),
+            'role' => 'admin',
+        ]);
+
+        // Pre-create an active specific rule for 'special_offer'
+        MyIdPayoutRule::create([
+            'provider' => 'Vortex',
+            'offer_id' => 'special_offer',
+            'offer_name' => 'Special Offer',
+            'coin_amount' => 400,
+            'user_payout_usd' => 3.00,
+            'usd_bdt_rate' => 125.00,
+            'is_active' => true,
+        ]);
+
+        // Manually insert an unmapped row that has offer_id = 'special_offer'
+        $unmappedSpecific = MyIdEarning::create([
+            'my_id_code' => 'WILD_MY',
+            'user_id' => $worker->id,
+            'completed_task_id' => 9991,
+            'provider' => 'Vortex',
+            'offer_id' => 'special_offer',
+            'offer_name' => 'Special Offer',
+            'coin_amount' => 400,
+            'payout_usd' => 0.0,
+            'usd_bdt_rate' => 0.0,
+            'payout_bdt' => 0.0,
+            'completed_at' => Carbon::now('UTC'),
+        ]);
+
+        // Also insert an unmapped row that is generic (e.g. 'generic_offer')
+        $unmappedGeneric = MyIdEarning::create([
+            'my_id_code' => 'WILD_MY',
+            'user_id' => $worker->id,
+            'completed_task_id' => 9992,
+            'provider' => 'Vortex',
+            'offer_id' => 'generic_offer',
+            'offer_name' => 'Generic Offer',
+            'coin_amount' => 400,
+            'payout_usd' => 0.0,
+            'usd_bdt_rate' => 0.0,
+            'payout_bdt' => 0.0,
+            'completed_at' => Carbon::now('UTC'),
+        ]);
+
+        // Admin creates a WILDCARD rule for Vortex + 400 coins
+        $adminToken = auth('api')->login($admin);
+        $res = $this->withHeaders(['Authorization' => 'Bearer '.$adminToken])
+            ->postJson('/api/admin/my-id-payout-rules', [
+                'provider' => 'Vortex',
+                'offer_id' => null,
+                'offer_name' => 'Wildcard All Vortex 400',
+                'coin_amount' => 400,
+                'user_payout_usd' => 1.00,
+                'usd_bdt_rate' => 122.00,
+                'is_active' => true,
+            ]);
+
+        $res->assertCreated();
+
+        // Generic unmapped must be backfilled to 1.00 USD
+        $unmappedGeneric->refresh();
+        $this->assertEquals(1.00, (float) $unmappedGeneric->payout_usd);
+        $this->assertEquals(122.00, (float) $unmappedGeneric->payout_bdt);
+
+        // Specific unmapped row MUST NOT be stolen by the wildcard rule!
+        $unmappedSpecific->refresh();
+        $this->assertEquals(0.0, (float) $unmappedSpecific->payout_usd);
     }
 }
