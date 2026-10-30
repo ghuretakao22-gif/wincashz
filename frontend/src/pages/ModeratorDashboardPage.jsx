@@ -123,15 +123,17 @@ export default function ModeratorDashboardPage() {
     return Array.isArray(data.offer_summary) ? data.offer_summary : [];
   }, [data.offer_summary]);
 
-  // Top 5 Workers for this My ID (Current Month)
-  const topWorkers = useMemo(() => {
-    return Array.isArray(data.top_workers)
-      ? data.top_workers
-      : Array.isArray(data.leaderboard?.top_workers)
-        ? data.leaderboard.top_workers
-        : Array.isArray(data.leaderboard?.top_5)
-          ? data.leaderboard.top_5
-          : [];
+  // Monthly Team Leaderboard (Top 10 teams on platform)
+  const teamLeaderboard = useMemo(() => {
+    return Array.isArray(data.team_leaderboard)
+      ? data.team_leaderboard
+      : Array.isArray(data.leaderboard?.team_leaderboard)
+        ? data.leaderboard.team_leaderboard
+        : Array.isArray(data.leaderboard?.teams)
+          ? data.leaderboard.teams
+          : Array.isArray(data.leaderboard?.top_10)
+            ? data.leaderboard.top_10
+            : [];
   }, [data]);
 
   // My Rank (Current Month team standing on the platform)
@@ -139,11 +141,23 @@ export default function ModeratorDashboardPage() {
     return data.my_rank || data.leaderboard?.my_rank || data.leaderboard?.own_rank || {
       rank: 1,
       total_teams: 1,
-      my_id_code: data.my_id,
+      my_id_code: data.my_id || '',
+      team_name: data.friendly_name || data.my_id || '',
+      total_offers: 0,
+      total_income_usd: 0,
+      total_income_bdt: 0,
       monthly_usd: 0,
       monthly_bdt: 0,
+      is_in_top_10: true,
     };
   }, [data]);
+
+  const isInTop10 = useMemo(() => {
+    if (typeof myRank.is_in_top_10 === 'boolean') {
+      return myRank.is_in_top_10;
+    }
+    return teamLeaderboard.some((t) => t.is_own_team || (myRank.my_id_code && t.my_id_code === myRank.my_id_code));
+  }, [myRank, teamLeaderboard]);
 
   // Filter offer summary table by search query
   const filteredOfferSummary = useMemo(() => {
@@ -361,7 +375,211 @@ export default function ModeratorDashboardPage() {
         ))}
       </div>
 
-      {/* B) EXACTLY ONE MAIN TABLE: OFFER SUMMARY TABLE */}
+      {/* B) MONTHLY TEAM LEADERBOARD (UTC) */}
+      <div className="bg-[#0c1015]/90 border border-white/5 rounded-3xl overflow-hidden shadow-xl">
+        {/* Leaderboard Header with prominent "Your Rank" pill */}
+        <div className="p-4 sm:p-6 border-b border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 shrink-0">
+              <Trophy className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-black text-white tracking-tight">
+                  Monthly Team Leaderboard (UTC)
+                </h2>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/15 text-brand-300 border border-brand-500/30 uppercase tracking-wider">
+                  Top 10
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Live monthly platform team rankings ordered by total income (USD) and completed offers.
+              </p>
+            </div>
+          </div>
+
+          {/* Prominent Your Rank display */}
+          <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-brand-500/10 via-emerald-500/10 to-cyan-500/10 border border-brand-500/30 text-white shrink-0 shadow-lg shadow-brand-500/5">
+            <Crown className="w-4 h-4 text-brand-400" />
+            <span className="text-xs font-bold text-slate-300">Your Rank:</span>
+            <span className="font-mono font-black text-sm text-transparent bg-clip-text bg-gradient-to-r from-brand-300 to-emerald-300">
+              #{myRank.rank}
+            </span>
+            <span className="text-[11px] text-slate-400 font-medium">
+              of {myRank.total_teams} {myRank.total_teams === 1 ? 'Team' : 'Teams'}
+            </span>
+          </div>
+        </div>
+
+        {/* Responsive Table: Exactly 5 Columns */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="border-b border-white/5 bg-white/[0.02] text-slate-400 uppercase text-[10px] font-bold tracking-wider">
+                <th className="py-3.5 px-4 text-center w-16">Rank</th>
+                <th className="py-3.5 px-4">My ID / Team</th>
+                <th className="py-3.5 px-4 text-right">Total Offers</th>
+                <th className="py-3.5 px-4 text-right">Total Income (USD)</th>
+                <th className="py-3.5 px-4 text-right">Total Income (BDT)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5 font-medium">
+              {loading && teamLeaderboard.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="py-10 text-center text-slate-500 font-medium">
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-brand-400" />
+                    Loading team leaderboard...
+                  </td>
+                </tr>
+              ) : teamLeaderboard.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="py-10 text-center text-slate-500">
+                    No team activity recorded yet for this month.
+                  </td>
+                </tr>
+              ) : (
+                <>
+                  {teamLeaderboard.map((row, idx) => {
+                    const rankNum = row.rank || idx + 1;
+                    const isOwn = row.is_own_team || (myRank.my_id_code && row.my_id_code === myRank.my_id_code);
+                    return (
+                      <tr
+                        key={row.my_id_code || idx}
+                        className={`transition-colors ${
+                          isOwn
+                            ? 'bg-brand-500/10 hover:bg-brand-500/15 border-y border-brand-500/30'
+                            : 'hover:bg-white/[0.02]'
+                        }`}
+                      >
+                        {/* 1. Rank */}
+                        <td className="py-3 px-4 text-center">
+                          {rankNum === 1 ? (
+                            <div className="w-7 h-7 mx-auto rounded-xl bg-amber-400/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black text-sm shadow-sm shadow-amber-950/40">
+                              🥇
+                            </div>
+                          ) : rankNum === 2 ? (
+                            <div className="w-7 h-7 mx-auto rounded-xl bg-slate-300/20 text-slate-200 border border-slate-300/30 flex items-center justify-center font-black text-sm">
+                              🥈
+                            </div>
+                          ) : rankNum === 3 ? (
+                            <div className="w-7 h-7 mx-auto rounded-xl bg-amber-700/20 text-amber-400 border border-amber-700/30 flex items-center justify-center font-black text-sm">
+                              🥉
+                            </div>
+                          ) : (
+                            <div
+                              className={`w-7 h-7 mx-auto rounded-xl flex items-center justify-center font-mono font-bold text-xs ${
+                                isOwn
+                                  ? 'bg-brand-500/20 text-brand-300 border border-brand-500/30'
+                                  : 'bg-white/5 text-slate-400 border border-white/5'
+                              }`}
+                            >
+                              #{rankNum}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* 2. My ID / Team */}
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2">
+                            <span className={`font-bold ${isOwn ? 'text-brand-300' : 'text-white'}`}>
+                              {row.team_name || row.my_id_code || 'Unnamed Team'}
+                            </span>
+                            {row.my_id_code && row.team_name !== row.my_id_code && (
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-slate-400">
+                                {row.my_id_code}
+                              </span>
+                            )}
+                            {isOwn && (
+                              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/40 shadow-sm">
+                                You
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* 3. Total Offers */}
+                        <td className="py-3 px-4 text-right font-mono font-semibold text-slate-200">
+                          <span className="inline-block px-2.5 py-0.5 rounded-lg bg-white/5 border border-white/5">
+                            {Number(row.total_offers || 0).toLocaleString()}
+                          </span>
+                        </td>
+
+                        {/* 4. Total Income (USD) */}
+                        <td className="py-3 px-4 text-right font-mono font-black text-emerald-400 text-sm">
+                          ${(Number(row.total_income_usd) || 0).toFixed(2)}
+                        </td>
+
+                        {/* 5. Total Income (BDT) */}
+                        <td className="py-3 px-4 text-right font-mono font-bold text-cyan-300">
+                          ৳{Math.round(Number(row.total_income_bdt) || 0).toLocaleString()}
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {/* If moderator is outside Top 10, display their row below Top 10 */}
+                  {!isInTop10 && myRank.rank && (
+                    <>
+                      <tr>
+                        <td
+                          colSpan="5"
+                          className="py-2 text-center text-slate-500 font-bold tracking-widest border-t border-b border-dashed border-white/10 bg-white/[0.01]"
+                        >
+                          •••
+                        </td>
+                      </tr>
+                      <tr className="bg-brand-500/10 hover:bg-brand-500/15 border-y border-brand-500/30 transition-colors">
+                        {/* 1. Rank */}
+                        <td className="py-3 px-4 text-center">
+                          <div className="w-7 h-7 mx-auto rounded-xl bg-brand-500/20 text-brand-300 border border-brand-500/40 flex items-center justify-center font-mono font-bold text-xs">
+                            #{myRank.rank}
+                          </div>
+                        </td>
+
+                        {/* 2. My ID / Team */}
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-brand-300">
+                              {myRank.team_name || myRank.my_id_code || 'Your Team'}
+                            </span>
+                            {myRank.my_id_code && myRank.team_name !== myRank.my_id_code && (
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-slate-400">
+                                {myRank.my_id_code}
+                              </span>
+                            )}
+                            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/40 shadow-sm">
+                              You
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* 3. Total Offers */}
+                        <td className="py-3 px-4 text-right font-mono font-semibold text-slate-200">
+                          <span className="inline-block px-2.5 py-0.5 rounded-lg bg-white/5 border border-white/5">
+                            {Number(myRank.total_offers || 0).toLocaleString()}
+                          </span>
+                        </td>
+
+                        {/* 4. Total Income (USD) */}
+                        <td className="py-3 px-4 text-right font-mono font-black text-emerald-400 text-sm">
+                          ${(Number(myRank.total_income_usd ?? myRank.monthly_usd) || 0).toFixed(2)}
+                        </td>
+
+                        {/* 5. Total Income (BDT) */}
+                        <td className="py-3 px-4 text-right font-mono font-bold text-cyan-300">
+                          ৳{Math.round(Number(myRank.total_income_bdt ?? myRank.monthly_bdt) || 0).toLocaleString()}
+                        </td>
+                      </tr>
+                    </>
+                  )}
+                </>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* C) OFFER SUMMARY TABLE */}
       <div className="bg-[#0c1015]/90 border border-white/5 rounded-3xl overflow-hidden shadow-xl">
         {/* Table Header Controls */}
         <div className="p-4 sm:p-6 border-b border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -527,177 +745,6 @@ export default function ModeratorDashboardPage() {
             </div>
           </div>
         )}
-      </div>
-
-      {/* C) MONTHLY LEADERBOARD & MY RANK SECTION */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        {/* Left Column (2 cols): Top 5 Workers list strictly for this My ID */}
-        <div className="lg:col-span-2 bg-[#0c1015]/90 border border-white/5 rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between pb-4 border-b border-white/5">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
-                  <Trophy className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm sm:text-base font-black text-white tracking-tight flex items-center gap-2">
-                    Top Workers Leaderboard
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/15 text-brand-300 border border-brand-500/30 uppercase tracking-wider">
-                      This Month (UTC)
-                    </span>
-                  </h3>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    Top contributing workers registered under your My ID.
-                  </p>
-                </div>
-              </div>
-
-              <Link
-                to="/moderator/users"
-                className="hidden sm:inline-flex items-center gap-1 text-xs text-brand-400 hover:text-brand-300 font-semibold"
-              >
-                <span>All Users</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
-
-            {/* List */}
-            <div className="divide-y divide-white/5 pt-2">
-              {topWorkers.length === 0 ? (
-                <div className="py-8 text-center text-slate-500 text-xs">
-                  No worker completions recorded yet for this month.
-                </div>
-              ) : (
-                topWorkers.map((w, idx) => {
-                  const rankNumber = w.rank || idx + 1;
-                  return (
-                    <div
-                      key={w.user_id || idx}
-                      className="py-3 flex items-center justify-between gap-3 hover:bg-white/[0.02] px-2 rounded-xl transition-colors"
-                    >
-                      {/* Rank badge + User info */}
-                      <div className="flex items-center gap-3 min-w-0">
-                        {rankNumber === 1 ? (
-                          <div className="w-7 h-7 rounded-xl bg-amber-400/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black text-xs shrink-0 shadow-sm shadow-amber-950/40">
-                            🥇
-                          </div>
-                        ) : rankNumber === 2 ? (
-                          <div className="w-7 h-7 rounded-xl bg-slate-300/20 text-slate-200 border border-slate-300/30 flex items-center justify-center font-black text-xs shrink-0">
-                            🥈
-                          </div>
-                        ) : rankNumber === 3 ? (
-                          <div className="w-7 h-7 rounded-xl bg-amber-700/20 text-amber-400 border border-amber-700/30 flex items-center justify-center font-black text-xs shrink-0">
-                            🥉
-                          </div>
-                        ) : (
-                          <div className="w-7 h-7 rounded-xl bg-white/5 text-slate-400 border border-white/5 flex items-center justify-center font-mono font-bold text-xs shrink-0">
-                            #{rankNumber}
-                          </div>
-                        )}
-
-                        <div className="min-w-0">
-                          <Link
-                            to={`/moderator/completed-offers?user_id=${w.user_id}`}
-                            className="text-xs font-bold text-white hover:text-brand-300 transition-colors truncate block max-w-[160px] sm:max-w-[220px]"
-                            title={w.username}
-                          >
-                            {w.username || `User #${w.user_id}`}
-                          </Link>
-                          <div className="text-[10px] text-slate-400 font-mono">
-                            ID: #{w.user_id}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Offers count + Earnings */}
-                      <div className="flex items-center gap-4 text-right shrink-0">
-                        <div>
-                          <span className="inline-block px-2 py-0.5 rounded-md bg-white/5 border border-white/5 text-[11px] font-mono font-bold text-slate-200">
-                            {w.completed_offers} {w.completed_offers === 1 ? 'offer' : 'offers'}
-                          </span>
-                        </div>
-
-                        <div className="min-w-[80px]">
-                          <div className="text-xs font-mono font-black text-brand-300">
-                            ${(Number(w.payout_usd) || 0).toFixed(2)}
-                          </div>
-                          <div className="text-[10px] font-mono text-cyan-300 font-semibold">
-                            ৳{Math.round(Number(w.payout_bdt) || 0).toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          <div className="pt-3 border-t border-white/5 text-[11px] text-slate-500 flex items-center justify-between">
-            <span>Ranked by completed offers & payout volume this month.</span>
-            <Link
-              to="/moderator/completed-offers"
-              className="text-brand-400 hover:text-brand-300 font-semibold flex items-center gap-1 sm:hidden"
-            >
-              <span>View Offers</span>
-              <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-        </div>
-
-        {/* Right Column (1 col): "My Rank" Card */}
-        <div className="bg-[#0c1015]/90 border border-white/5 rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col justify-between relative overflow-hidden bg-gradient-to-br from-brand-500/[0.04] via-transparent to-cyan-500/[0.04]">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-white/5">
-              <div className="flex items-center gap-2">
-                <Crown className="w-4 h-4 text-brand-400" />
-                <span className="text-xs font-black uppercase tracking-wider text-slate-300">
-                  Team Standing
-                </span>
-              </div>
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-white/5 border border-white/5 text-slate-400">
-                {data.my_id || 'MY ID'}
-              </span>
-            </div>
-
-            {/* Big Rank Number */}
-            <div className="pt-2 text-center sm:text-left">
-              <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                Platform Monthly Position
-              </div>
-              <div className="mt-2 flex items-baseline justify-center sm:justify-start gap-2.5">
-                <span className="text-5xl sm:text-6xl font-black font-mono text-transparent bg-clip-text bg-gradient-to-r from-brand-300 via-emerald-300 to-cyan-300 tracking-tight">
-                  #{myRank.rank}
-                </span>
-                <span className="text-xs font-bold text-slate-400 font-mono">
-                  of {myRank.total_teams} {myRank.total_teams === 1 ? 'team' : 'teams'} this month
-                </span>
-              </div>
-            </div>
-
-            {/* Monthly Total USD for this My ID */}
-            <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">Team Monthly Earning:</span>
-                <span className="font-mono font-black text-brand-300 text-sm">
-                  ${(Number(myRank.monthly_usd) || 0).toFixed(2)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs pt-1 border-t border-white/5">
-                <span className="text-slate-400">BDT Converted:</span>
-                <span className="font-mono font-bold text-cyan-300 text-xs">
-                  ৳{Math.round(Number(myRank.monthly_bdt) || 0).toLocaleString()}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-4 border-t border-white/5 mt-4">
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              Standing is calculated live across all active platform moderator teams by total USD earnings completed this month.
-            </p>
-          </div>
-        </div>
       </div>
     </div>
   );

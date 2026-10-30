@@ -322,7 +322,8 @@ class ModeratorDashboardController extends Controller
             ->values()
             ->all();
 
-        // 4. "My Rank": Position of this My ID among ALL My IDs on the platform this month, ranked by monthly USD
+        // 4. "Monthly Team Leaderboard (UTC)" & "My Rank"
+        // Order by Total Income (USD) first, then Total Offers
         $allTeamsSub = DB::table('my_id_earnings')
             ->where(function ($q) use ($currentMonth) {
                 $q->where('completed_at', 'like', $currentMonth . '%')
@@ -351,37 +352,77 @@ class ModeratorDashboardController extends Controller
             ->orderByDesc('completed_offers')
             ->get();
 
+        $teamFriendlyNames = [];
         $activeMyIdsCount = 0;
         if (Schema::hasTable('my_ids')) {
+            $teamFriendlyNames = DB::table('my_ids')
+                ->whereNotNull('my_id_code')
+                ->pluck('friendly_name', 'my_id_code')
+                ->all();
             $activeMyIdsCount = DB::table('my_ids')->where('is_active', true)->count();
         }
-        $totalTeamsCount = max($activeMyIdsCount, $rankedTeams->count(), 1);
 
-        $myRankPosition = null;
+        $allRankedTeams = [];
+        $rankCounter = 1;
+        $foundMyRank = false;
+        $myMonthlyOffers = 0;
         $myMonthlyUsd = 0.0;
         $myMonthlyBdt = 0.0;
-        $teamIndex = 1;
+        $myRankPosition = null;
 
         foreach ($rankedTeams as $team) {
-            if ($team->my_id_code === $myIdCode) {
-                $myRankPosition = $teamIndex;
-                $myMonthlyUsd = (float) $team->total_usd;
-                $myMonthlyBdt = (float) $team->total_bdt;
-                break;
+            $code = (string) $team->my_id_code;
+            $isOwn = ($code === $myIdCode);
+            $friendly = $teamFriendlyNames[$code] ?? null;
+            $teamName = !empty($friendly) ? $friendly : $code;
+            $offers = (int) $team->completed_offers;
+            $usd = (float) $team->total_usd;
+            $bdt = (float) $team->total_bdt;
+
+            if ($isOwn) {
+                $foundMyRank = true;
+                $myRankPosition = $rankCounter;
+                $myMonthlyOffers = $offers;
+                $myMonthlyUsd = $usd;
+                $myMonthlyBdt = $bdt;
             }
-            $teamIndex++;
+
+            $allRankedTeams[] = [
+                'rank' => $rankCounter,
+                'my_id_code' => $code,
+                'team_name' => $teamName,
+                'total_offers' => $offers,
+                'total_income_usd' => round($usd, 2),
+                'total_income_bdt' => round($bdt, 2),
+                'is_own_team' => $isOwn,
+            ];
+
+            $rankCounter++;
         }
 
-        if ($myRankPosition === null) {
-            $myRankPosition = min($totalTeamsCount, $rankedTeams->count() + 1);
+        $totalTeamsCount = max($activeMyIdsCount, count($allRankedTeams), 1);
+
+        if (!$foundMyRank) {
+            $myRankPosition = min($totalTeamsCount, count($allRankedTeams) + 1);
         }
+
+        // Show Top 10 teams only per specification
+        $teamLeaderboard = array_slice($allRankedTeams, 0, 10);
+
+        $isInTop10 = ($myRankPosition !== null && $myRankPosition <= 10 && $myRankPosition <= count($allRankedTeams));
 
         $myRankData = [
             'rank' => $myRankPosition,
             'total_teams' => $totalTeamsCount,
             'my_id_code' => $myIdCode,
+            'team_name' => !empty($friendlyName) ? $friendlyName : $myIdCode,
+            'total_offers' => $myMonthlyOffers,
+            'total_income_usd' => round($myMonthlyUsd, 2),
+            'total_income_bdt' => round($myMonthlyBdt, 2),
             'monthly_usd' => round($myMonthlyUsd, 2),
             'monthly_bdt' => round($myMonthlyBdt, 2),
+            'is_in_top_10' => $isInTop10,
+            'is_own_team' => true,
         ];
 
         // Today stats for this My ID (always computed for today UTC)
@@ -441,11 +482,15 @@ class ModeratorDashboardController extends Controller
                     'chargebacks_count' => $chargebacksCount,
                     'chargebacks_amount' => round($chargebacksAmount, 2),
                 ],
+                'team_leaderboard' => $teamLeaderboard,
                 'offer_summary' => $offerSummary,
                 'items' => $items,
                 'top_workers' => $topWorkers,
                 'my_rank' => $myRankData,
                 'leaderboard' => [
+                    'team_leaderboard' => $teamLeaderboard,
+                    'teams' => $teamLeaderboard,
+                    'top_10' => $teamLeaderboard,
                     'top_workers' => $topWorkers,
                     'top_5' => $topWorkers,
                     'my_rank' => $myRankData,

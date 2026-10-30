@@ -416,14 +416,109 @@ class ModeratorUpgradeTest extends TestCase
         $this->assertEquals(2, $myRank['rank']); // Position 2 of 3
         $this->assertEquals(3, $myRank['total_teams']);
         $this->assertEquals('TEAM_BETA', $myRank['my_id_code']);
-        $this->assertEquals(30.00, $myRank['monthly_usd']);
+        $this->assertEquals(30.00, (float) $myRank['monthly_usd']);
+        $this->assertEquals(30.00, (float) $myRank['total_income_usd']);
+        $this->assertEquals(3600.00, (float) $myRank['total_income_bdt']);
+        $this->assertEquals(1, $myRank['total_offers']);
+        $this->assertTrue($myRank['is_in_top_10']);
 
-        // Check privacy: response must NOT contain other teams' names or codes in leaderboard
+        // Check Team Leaderboard (exactly 5 columns: rank, team, total offers, usd, bdt)
+        $teams = $res->json('data.team_leaderboard');
+        $this->assertCount(3, $teams);
+
+        // Rank 1: TEAM_GAMMA ($50 USD)
+        $this->assertEquals(1, $teams[0]['rank']);
+        $this->assertEquals('TEAM_GAMMA', $teams[0]['my_id_code']);
+        $this->assertEquals('Gamma', $teams[0]['team_name']);
+        $this->assertEquals(1, $teams[0]['total_offers']);
+        $this->assertEquals(50.00, (float) $teams[0]['total_income_usd']);
+        $this->assertEquals(6000.00, (float) $teams[0]['total_income_bdt']);
+        $this->assertFalse($teams[0]['is_own_team']);
+
+        // Rank 2: TEAM_BETA ($30 USD - own team)
+        $this->assertEquals(2, $teams[1]['rank']);
+        $this->assertEquals('TEAM_BETA', $teams[1]['my_id_code']);
+        $this->assertEquals('Alpha Team', $teams[1]['team_name']);
+        $this->assertEquals(1, $teams[1]['total_offers']);
+        $this->assertEquals(30.00, (float) $teams[1]['total_income_usd']);
+        $this->assertEquals(3600.00, (float) $teams[1]['total_income_bdt']);
+        $this->assertTrue($teams[1]['is_own_team']);
+
+        // Rank 3: TEAM_DELTA ($10 USD)
+        $this->assertEquals(3, $teams[2]['rank']);
+        $this->assertEquals('TEAM_DELTA', $teams[2]['my_id_code']);
+        $this->assertEquals('Delta', $teams[2]['team_name']);
+        $this->assertEquals(1, $teams[2]['total_offers']);
+        $this->assertEquals(10.00, (float) $teams[2]['total_income_usd']);
+        $this->assertEquals(1200.00, (float) $teams[2]['total_income_bdt']);
+        $this->assertFalse($teams[2]['is_own_team']);
+
+        // Check privacy: strictly scoped, no worker IDs or foreign user emails leaked
         $json = $res->getContent();
-        $this->assertStringNotContainsString('TEAM_GAMMA', $json);
-        $this->assertStringNotContainsString('TEAM_DELTA', $json);
-        $this->assertStringNotContainsString('Gamma', $json);
-        $this->assertStringNotContainsString('Delta', $json);
+        $this->assertStringNotContainsString('"user_id":99', $json);
+        $this->assertStringNotContainsString('"user_id":102', $json);
+    }
+
+    public function test_moderator_outside_top_10_has_rank_and_is_not_in_top_10(): void
+    {
+        $mod = $this->createModerator('TEAM_11');
+        $currentMonth = now()->format('Y-m');
+
+        // Create 11 other teams with higher earnings (TEAM_01 .. TEAM_11)
+        for ($i = 1; $i <= 10; $i++) {
+            $code = sprintf('TEAM_%02d', $i);
+            DB::table('my_ids')->insert([
+                'my_id_code' => $code,
+                'friendly_name' => "Team {$i}",
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            DB::table('my_id_earnings')->insert([
+                'my_id_code' => $code,
+                'user_id' => 200 + $i,
+                'provider' => 'Torox',
+                'coin_amount' => 1000 * (15 - $i),
+                'payout_usd' => (15 - $i) * 10.00,
+                'payout_bdt' => (15 - $i) * 1200.00,
+                'completed_at' => "{$currentMonth}-10 12:00:00",
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        // Moderator TEAM_11 has lowest earnings ($5 USD -> Rank 11)
+        DB::table('my_id_earnings')->insert([
+            'my_id_code' => 'TEAM_11',
+            'user_id' => 300,
+            'provider' => 'Torox',
+            'coin_amount' => 500,
+            'payout_usd' => 5.00,
+            'payout_bdt' => 600.00,
+            'completed_at' => "{$currentMonth}-10 12:00:00",
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $res = $this->actingAs($mod, 'api')->getJson('/api/moderator/dashboard');
+        $res->assertOk();
+
+        // Top 10 teams only returned in team_leaderboard
+        $leaderboard = $res->json('data.team_leaderboard');
+        $this->assertCount(10, $leaderboard);
+        $this->assertEquals(1, $leaderboard[0]['rank']);
+        $this->assertEquals(10, $leaderboard[9]['rank']);
+
+        // Moderator is outside top 10
+        $myRank = $res->json('data.my_rank');
+        $this->assertEquals(11, $myRank['rank']);
+        $this->assertEquals(11, $myRank['total_teams']);
+        $this->assertEquals('TEAM_11', $myRank['my_id_code']);
+        $this->assertEquals(5.00, (float) $myRank['total_income_usd']);
+        $this->assertEquals(600.00, (float) $myRank['total_income_bdt']);
+        $this->assertEquals(1, $myRank['total_offers']);
+        $this->assertFalse($myRank['is_in_top_10']);
     }
 
     public function test_moderator_cannot_see_other_my_id_workers_in_leaderboard(): void
