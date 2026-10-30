@@ -254,7 +254,7 @@ class AdminMyIdManagementTest extends TestCase
         $signupResponse->assertStatus(422);
         $signupResponse->assertJsonValidationErrors(['my_id']);
         $signupResponse->assertJsonFragment([
-            'my_id' => ['The provided My ID is currently inactive.'],
+            'my_id' => ['Invalid or inactive My ID code.'],
         ]);
     }
 

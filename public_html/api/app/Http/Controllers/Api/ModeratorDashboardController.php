@@ -76,10 +76,17 @@ class ModeratorDashboardController extends Controller
                     'selected_month' => $selectedMonth,
                     'months' => $allMonths,
                     'summary' => [
+                        'my_id' => $myIdCode !== '' ? $myIdCode : null,
+                        'friendly_name' => null,
                         'total_linked_users' => 0,
                         'total_completed_offers' => 0,
                         'total_usd_earn' => 0.0,
                         'total_bdt_earn' => 0.0,
+                        'today_completed_offers' => 0,
+                        'today_usd_earn' => 0.0,
+                        'today_bdt_earn' => 0.0,
+                        'chargebacks_count' => 0,
+                        'chargebacks_amount' => 0.0,
                     ],
                     'offer_summary' => [],
                     'items' => [],
@@ -121,35 +128,48 @@ class ModeratorDashboardController extends Controller
             });
         }
 
-        // 1. Offer Summary Table: Grouped by (offer_name, provider) for this My ID only
+        // 1. Offer Summary Table: Exactly 8 columns per specification
+        // Columns: 1. Provider, 2. Offer Name, 3. Coin, 4. Today Offers, 5. Total Offers, 6. Offer Price (USD), 7. Net USD, 8. Net BDT
         $offerSummarySub = (clone $earningsQuery)
             ->selectRaw("
-                COALESCE(NULLIF(TRIM(offer_name), ''), NULLIF(TRIM(offer_id), ''), 'Standard Offer') as norm_offer_name,
                 COALESCE(NULLIF(TRIM(provider), ''), 'Unknown Provider') as norm_provider,
-                payout_usd,
-                payout_bdt
-            ");
+                COALESCE(NULLIF(TRIM(offer_name), ''), NULLIF(TRIM(offer_id), ''), 'Standard Offer') as norm_offer_name,
+                COALESCE(coin_amount, 0) as norm_coin_amount,
+                COALESCE(payout_usd, 0) as norm_payout_usd,
+                COALESCE(payout_bdt, 0) as norm_payout_bdt,
+                CASE WHEN COALESCE(completed_at, created_at) LIKE ? THEN 1 ELSE 0 END as is_today
+            ", [$todayDate . '%']);
 
         $offerSummary = DB::query()
             ->fromSub($offerSummarySub, 'off_sub')
             ->selectRaw("
-                norm_offer_name as offer_name,
                 norm_provider as provider,
-                COUNT(*) as total_completed,
-                COALESCE(SUM(payout_usd), 0) as earnings_usd,
-                COALESCE(SUM(payout_bdt), 0) as earnings_bdt
+                norm_offer_name as offer_name,
+                norm_coin_amount as coin,
+                SUM(is_today) as today_offers,
+                COUNT(*) as total_offers,
+                norm_payout_usd as offer_price,
+                COALESCE(SUM(norm_payout_usd), 0) as net_usd,
+                COALESCE(SUM(norm_payout_bdt), 0) as net_bdt
             ")
-            ->groupBy('norm_offer_name', 'norm_provider')
-            ->orderByDesc('total_completed')
-            ->orderByDesc('earnings_usd')
+            ->groupBy('norm_provider', 'norm_offer_name', 'norm_coin_amount', 'norm_payout_usd')
+            ->orderByDesc('total_offers')
+            ->orderByDesc('net_usd')
             ->get()
             ->map(function ($row) {
                 return [
-                    'offer_name' => (string) $row->offer_name,
                     'provider' => (string) $row->provider,
-                    'total_completed' => (int) $row->total_completed,
-                    'earnings_usd' => round((float) $row->earnings_usd, 2),
-                    'earnings_bdt' => round((float) $row->earnings_bdt, 2),
+                    'offer_name' => (string) $row->offer_name,
+                    'coin' => round((float) $row->coin, 2),
+                    'today_offers' => (int) $row->today_offers,
+                    'total_offers' => (int) $row->total_offers,
+                    'offer_price' => round((float) $row->offer_price, 4),
+                    'net_usd' => round((float) $row->net_usd, 2),
+                    'net_bdt' => round((float) $row->net_bdt, 2),
+                    // Backward-compat keys
+                    'total_completed' => (int) $row->total_offers,
+                    'earnings_usd' => round((float) $row->net_usd, 2),
+                    'earnings_bdt' => round((float) $row->net_bdt, 2),
                 ];
             })
             ->values()
@@ -292,6 +312,40 @@ class ModeratorDashboardController extends Controller
             ];
         }
 
+        // Today stats for this My ID (always computed for today UTC)
+        $todayStats = DB::table('my_id_earnings')
+            ->where('my_id_code', $myIdCode)
+            ->where(function ($q) use ($todayDate) {
+                $q->where('completed_at', 'like', $todayDate . '%')
+                  ->orWhere(function ($q2) use ($todayDate) {
+                      $q2->whereNull('completed_at')->where('created_at', 'like', $todayDate . '%');
+                  });
+            })
+            ->selectRaw('COUNT(*) as completed_cnt, COALESCE(SUM(payout_usd), 0) as usd_sum, COALESCE(SUM(payout_bdt), 0) as bdt_sum')
+            ->first();
+
+        $todayCompletedOffers = (int) ($todayStats->completed_cnt ?? 0);
+        $todayUsdEarn = (float) ($todayStats->usd_sum ?? 0);
+        $todayBdtEarn = (float) ($todayStats->bdt_sum ?? 0);
+
+        // Chargebacks for users linked to this My ID
+        $chargebacksCount = 0;
+        $chargebacksAmount = 0.0;
+        if (Schema::hasTable('chargebacks')) {
+            $linkedUserIds = User::query()->where('my_id', $myIdCode)->pluck('id');
+            if ($linkedUserIds->isNotEmpty()) {
+                $cbQuery = DB::table('chargebacks')->whereIn('user_id', $linkedUserIds);
+                if ($activePeriod === 'today') {
+                    $cbQuery->where('created_at', 'like', $todayDate . '%');
+                } elseif ($activePeriod !== 'all') {
+                    $targetMonth = ($selectedMonth !== '' && $selectedMonth !== 'all') ? $selectedMonth : $currentMonth;
+                    $cbQuery->where('created_at', 'like', $targetMonth . '%');
+                }
+                $chargebacksCount = (int) (clone $cbQuery)->count();
+                $chargebacksAmount = (float) (clone $cbQuery)->sum('currency_reward');
+            }
+        }
+
         return response()->json([
             'status' => 'success',
             'data' => [
@@ -309,6 +363,11 @@ class ModeratorDashboardController extends Controller
                     'total_completed_offers' => $totalCompletedOffers,
                     'total_usd_earn' => round($totalUsdEarn, 2),
                     'total_bdt_earn' => round($totalBdtEarn, 2),
+                    'today_completed_offers' => $todayCompletedOffers,
+                    'today_usd_earn' => round($todayUsdEarn, 2),
+                    'today_bdt_earn' => round($todayBdtEarn, 2),
+                    'chargebacks_count' => $chargebacksCount,
+                    'chargebacks_amount' => round($chargebacksAmount, 2),
                 ],
                 'offer_summary' => $offerSummary,
                 'items' => $items,

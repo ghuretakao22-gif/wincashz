@@ -307,6 +307,17 @@ export default function ModeratorMyEarnPage() {
   };
 
   const offerSummary = useMemo(() => Array.isArray(data.offer_summary) ? data.offer_summary : [], [data.offer_summary]);
+  const offerSummaryTotals = useMemo(() => {
+    return offerSummary.reduce(
+      (acc, row) => ({
+        today_offers: acc.today_offers + (Number(row.today_offers) || 0),
+        total_offers: acc.total_offers + (Number(row.total_offers || row.total_completed) || 0),
+        net_usd: acc.net_usd + (Number(row.net_usd ?? row.earnings_usd) || 0),
+        net_bdt: acc.net_bdt + (Number(row.net_bdt ?? row.earnings_bdt) || 0),
+      }),
+      { today_offers: 0, total_offers: 0, net_usd: 0, net_bdt: 0 }
+    );
+  }, [offerSummary]);
   const items = useMemo(() => Array.isArray(data.items) ? data.items : [], [data.items]);
   const activePeriod = data.active_period || (selectedMonth === 'today' ? 'today' : (selectedMonth === 'all' ? 'all' : 'this_month'));
 
@@ -520,52 +531,94 @@ export default function ModeratorMyEarnPage() {
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-white/[0.02] border-b border-white/5 text-[11px] uppercase font-bold tracking-wider text-slate-400">
-                <th className="py-3 px-4">Offer Name</th>
-                <th className="py-3 px-4">Provider</th>
-                <th className="py-3 px-4 text-center">Total Completed</th>
-                <th className="py-3 px-4 text-right">Earnings (USD)</th>
-                <th className="py-3 px-4 text-right">Earnings (BDT)</th>
+                <th className="py-3 px-3">Provider</th>
+                <th className="py-3 px-3">Offer Name</th>
+                <th className="py-3 px-3 text-right">Coin</th>
+                <th className="py-3 px-3 text-center">Today Offers</th>
+                <th className="py-3 px-3 text-center">Total Offers</th>
+                <th className="py-3 px-3 text-right">Offer Price (USD)</th>
+                <th className="py-3 px-3 text-right">Net Result (USD)</th>
+                <th className="py-3 px-3 text-right">Net Result (BDT)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 text-slate-300">
               {loading && offerSummary.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="py-8 text-center text-slate-500">
+                  <td colSpan="8" className="py-8 text-center text-slate-500">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto text-brand-400 mb-1" />
                     <span>Loading offer summary...</span>
                   </td>
                 </tr>
               ) : offerSummary.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="py-8 text-center text-slate-500">
+                  <td colSpan="8" className="py-8 text-center text-slate-500">
                     <Coins className="w-7 h-7 mx-auto mb-1 text-slate-600 opacity-40" />
                     <p className="font-semibold text-slate-400">No offer earnings recorded for this period</p>
                   </td>
                 </tr>
               ) : (
                 offerSummary.map((row, idx) => (
-                  <tr key={`${row.provider}_${row.offer_name}_${idx}`} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="py-3 px-4 font-semibold text-white">
-                      {row.offer_name}
-                    </td>
-                    <td className="py-3 px-4">
+                  <tr key={`${row.provider}_${row.offer_name}_${row.coin}_${idx}`} className="hover:bg-white/[0.02] transition-colors">
+                    {/* 1. Provider */}
+                    <td className="py-3 px-3">
                       <span className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-bold text-[11px]">
                         {row.provider}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-center font-bold text-amber-400">
-                      {row.total_completed.toLocaleString()}
+                    {/* 2. Offer Name */}
+                    <td className="py-3 px-3 font-semibold text-white max-w-[220px] truncate" title={row.offer_name}>
+                      {row.offer_name || 'Standard Offer'}
                     </td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-emerald-400">
-                      ${Number(row.earnings_usd).toFixed(2)}
+                    {/* 3. Coin */}
+                    <td className="py-3 px-3 text-right font-mono font-bold text-amber-400">
+                      {Number(row.coin || 0).toLocaleString()}
                     </td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-cyan-300">
-                      ৳{Number(row.earnings_bdt).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {/* 4. Today Offers */}
+                    <td className="py-3 px-3 text-center font-mono font-bold text-brand-400">
+                      {Number(row.today_offers || 0).toLocaleString()}
+                    </td>
+                    {/* 5. Total Offers */}
+                    <td className="py-3 px-3 text-center font-mono font-bold text-white">
+                      {Number(row.total_offers || row.total_completed || 0).toLocaleString()}
+                    </td>
+                    {/* 6. Offer Price (USD) */}
+                    <td className="py-3 px-3 text-right font-mono text-slate-300">
+                      ${Number(row.offer_price || 0).toFixed(4)}
+                    </td>
+                    {/* 7. Net Result (USD) */}
+                    <td className="py-3 px-3 text-right font-mono font-bold text-emerald-400">
+                      ${Number(row.net_usd ?? row.earnings_usd ?? 0).toFixed(2)}
+                    </td>
+                    {/* 8. Net Result (BDT) */}
+                    <td className="py-3 px-3 text-right font-mono font-bold text-cyan-300">
+                      ৳{Number(row.net_bdt ?? row.earnings_bdt ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                   </tr>
                 ))
               )}
             </tbody>
+            {offerSummary.length > 0 && (
+              <tfoot className="border-t-2 border-white/10 bg-white/[0.03] font-bold">
+                <tr>
+                  <td colSpan="3" className="py-3 px-3 text-white uppercase text-[11px]">
+                    Total ({offerSummary.length} {offerSummary.length === 1 ? 'Offer' : 'Offers'})
+                  </td>
+                  <td className="py-3 px-3 text-center font-mono text-brand-400">
+                    {offerSummaryTotals.today_offers.toLocaleString()}
+                  </td>
+                  <td className="py-3 px-3 text-center font-mono text-white">
+                    {offerSummaryTotals.total_offers.toLocaleString()}
+                  </td>
+                  <td className="py-3 px-3 text-right text-slate-500">—</td>
+                  <td className="py-3 px-3 text-right font-mono text-emerald-400">
+                    ${offerSummaryTotals.net_usd.toFixed(2)}
+                  </td>
+                  <td className="py-3 px-3 text-right font-mono text-cyan-300">
+                    ৳{offerSummaryTotals.net_bdt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>

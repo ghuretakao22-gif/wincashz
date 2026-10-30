@@ -253,6 +253,7 @@ class AdminController extends Controller
         return response()->json([
             'settings' => [
                 'logoUrl' => $this->siteLogo(),
+                'my_id_system_enabled' => MyIdEarningService::isSystemEnabled(),
             ],
         ]);
     }
@@ -393,7 +394,8 @@ class AdminController extends Controller
                     ->orWhere('email', 'like', $like)
                     ->orWhere('role', 'like', $like)
                     ->orWhere('ip', 'like', $like)
-                    ->orWhere('country', 'like', $like);
+                    ->orWhere('country', 'like', $like)
+                    ->orWhere('my_id', 'like', $like);
 
                 if (is_numeric($search)) {
                     $builder->orWhere('id', (int) $search);
@@ -426,6 +428,7 @@ class AdminController extends Controller
                     'level',
                     'ip',
                     'country',
+                    'my_id',
                     'ban',
                     'created_at',
                 ],
@@ -1500,33 +1503,67 @@ class AdminController extends Controller
 
     public function updateUser(Request $request, User $user): JsonResponse
     {
-        $original = $user->only(['role', 'balance', 'level', 'ban']);
+        $original = $user->only(['role', 'balance', 'level', 'ban', 'my_id']);
         $validated = $request->validate([
-            'role' => ['required', Rule::in(['admin', 'user'])],
-            'balance' => ['required', 'numeric', 'min:0'],
-            'level' => ['required', 'integer', 'min:1'],
+            'role' => ['sometimes', Rule::in(['admin', 'user', 'moderator'])],
+            'balance' => ['sometimes', 'numeric', 'min:0'],
+            'level' => ['sometimes', 'integer', 'min:1'],
             'ban' => ['sometimes', 'boolean'],
+            'my_id' => ['sometimes', 'nullable', 'string', 'max:50'],
         ]);
-        $nextBan = array_key_exists('ban', $validated) ? (bool) $validated['ban'] : (bool) $original['ban'];
 
-        $user->update($validated);
+        if (array_key_exists('role', $validated)) {
+            $user->role = $validated['role'];
+        }
+        if (array_key_exists('balance', $validated)) {
+            $user->balance = $validated['balance'];
+        }
+        if (array_key_exists('level', $validated)) {
+            $user->level = $validated['level'];
+        }
+        if (array_key_exists('ban', $validated)) {
+            $user->ban = (bool) $validated['ban'];
+        }
+
+        if ($request->has('my_id')) {
+            $myIdInput = trim((string) $request->input('my_id', ''));
+            if ($myIdInput === '' || strtolower($myIdInput) === 'none' || $myIdInput === '-') {
+                $user->my_id = null;
+            } else {
+                $myIdRecord = \App\Models\MyId::where('my_id_code', $myIdInput)->first();
+                if (! $myIdRecord || ! $myIdRecord->is_active) {
+                    throw ValidationException::withMessages([
+                        'my_id' => ['The selected My ID is inactive or not found.'],
+                    ]);
+                }
+                $user->my_id = $myIdRecord->my_id_code;
+            }
+        }
+
+        $user->save();
+
+        $nextBan = (bool) $user->ban;
 
         $changes = [];
 
-        if ($original['role'] !== $validated['role']) {
+        if (array_key_exists('role', $validated) && $original['role'] !== $validated['role']) {
             $changes[] = "role changed to {$validated['role']}";
         }
 
-        if ((string) $original['balance'] !== (string) $validated['balance']) {
+        if (array_key_exists('balance', $validated) && (string) $original['balance'] !== (string) $validated['balance']) {
             $changes[] = 'balance updated';
         }
 
-        if ((string) $original['level'] !== (string) $validated['level']) {
+        if (array_key_exists('level', $validated) && (string) $original['level'] !== (string) $validated['level']) {
             $changes[] = "level updated to {$validated['level']}";
         }
 
         if ((bool) $original['ban'] !== $nextBan) {
             $changes[] = $nextBan ? 'account banned' : 'account unbanned';
+        }
+
+        if ($request->has('my_id') && (string) $original['my_id'] !== (string) $user->my_id) {
+            $changes[] = "My ID changed to ".($user->my_id ?: 'none');
         }
 
         if ($changes !== []) {

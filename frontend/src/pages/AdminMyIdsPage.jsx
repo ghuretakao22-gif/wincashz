@@ -107,6 +107,11 @@ export default function AdminMyIdsPage() {
       return;
     }
 
+    if (!/^[a-zA-Z0-9_\-]+$/.test(cleanCode)) {
+      setCreateError('My ID code may only contain letters, numbers, underscores, and hyphens (no spaces).');
+      return;
+    }
+
     setCreateSubmitting(true);
     try {
       const res = await api.createAdminMyId({

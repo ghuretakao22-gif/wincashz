@@ -210,7 +210,7 @@ class MyIdRelationshipTest extends TestCase
         $response->assertStatus(422);
         $response->assertJsonValidationErrors(['my_id']);
         $response->assertJsonFragment([
-            'my_id' => ['The provided My ID does not exist.'],
+            'my_id' => ['Invalid or inactive My ID code.'],
         ]);
 
         $this->assertDatabaseMissing('users', [
@@ -239,7 +239,7 @@ class MyIdRelationshipTest extends TestCase
         $response->assertStatus(422);
         $response->assertJsonValidationErrors(['my_id']);
         $response->assertJsonFragment([
-            'my_id' => ['The provided My ID is currently inactive.'],
+            'my_id' => ['Invalid or inactive My ID code.'],
         ]);
 
         $this->assertDatabaseMissing('users', [

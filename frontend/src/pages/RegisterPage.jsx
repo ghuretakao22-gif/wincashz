@@ -24,6 +24,7 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [myId, setMyId] = useState('');
+  const [myIdSystemEnabled, setMyIdSystemEnabled] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -46,6 +47,15 @@ export default function RegisterPage() {
       .finally(() => {
         setCheckingPin(false);
       });
+
+    // Check Site Settings (My ID system status)
+    api.getSiteSettings()
+      .then((res) => {
+        if (res?.settings && typeof res.settings.my_id_system_enabled !== 'undefined') {
+          setMyIdSystemEnabled(!!res.settings.my_id_system_enabled);
+        }
+      })
+      .catch(() => {});
 
     // Check Google Auth
     api.getGoogleConfig()
@@ -80,6 +90,12 @@ export default function RegisterPage() {
       return;
     }
 
+    const cleanMyId = myId.trim();
+    if (myIdSystemEnabled && !cleanMyId) {
+      setError('Please enter a valid My ID code.');
+      return;
+    }
+
     setLoading(true);
     try {
       const payload = {
@@ -88,8 +104,9 @@ export default function RegisterPage() {
         password,
       };
 
-      if (myId.trim()) {
-        payload.my_id = myId.trim();
+      if (cleanMyId) {
+        payload.my_id = cleanMyId;
+        payload.my_id_code = cleanMyId;
       }
 
       const res = await register(payload);
@@ -279,25 +296,35 @@ export default function RegisterPage() {
               </div>
             </div>
 
-            {/* 4. My ID (Optional) */}
+            {/* 4. My ID */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
-                  My ID
+                  {myIdSystemEnabled ? 'My ID Code *' : 'My ID'}
                 </label>
-                <span className="text-[11px] text-slate-500 font-normal">Optional</span>
+                {myIdSystemEnabled ? (
+                  <span className="text-[11px] text-brand-400 font-semibold">Required</span>
+                ) : (
+                  <span className="text-[11px] text-slate-500 font-normal">Optional</span>
+                )}
               </div>
               <div className="relative">
                 <Hash className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
                   type="text"
+                  required={myIdSystemEnabled}
                   value={myId}
                   onChange={(e) => setMyId(e.target.value)}
-                  placeholder="e.g. 1001"
+                  placeholder={myIdSystemEnabled ? 'e.g. MY12345' : 'e.g. 1001'}
                   autoComplete="off"
                   className="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm"
                 />
               </div>
+              {myIdSystemEnabled && (
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Ask your moderator or team leader for your assigned My ID code.
+                </p>
+              )}
             </div>
 
             {/* 5. Sign Up Button */}

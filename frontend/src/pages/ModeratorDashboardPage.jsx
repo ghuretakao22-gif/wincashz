@@ -16,7 +16,8 @@ import {
   UserCheck,
   Sparkles,
   Layers,
-  Clock
+  Clock,
+  ShieldAlert
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -97,6 +98,17 @@ export default function ModeratorDashboardPage() {
   };
 
   const offerSummary = useMemo(() => Array.isArray(data.offer_summary) ? data.offer_summary : [], [data.offer_summary]);
+  const offerSummaryTotals = useMemo(() => {
+    return offerSummary.reduce(
+      (acc, row) => ({
+        today_offers: acc.today_offers + (Number(row.today_offers) || 0),
+        total_offers: acc.total_offers + (Number(row.total_offers || row.total_completed) || 0),
+        net_usd: acc.net_usd + (Number(row.net_usd ?? row.earnings_usd) || 0),
+        net_bdt: acc.net_bdt + (Number(row.net_bdt ?? row.earnings_bdt) || 0),
+      }),
+      { today_offers: 0, total_offers: 0, net_usd: 0, net_bdt: 0 }
+    );
+  }, [offerSummary]);
   const items = useMemo(() => Array.isArray(data.items) ? data.items : [], [data.items]);
   const top5 = useMemo(() => Array.isArray(data.leaderboard?.top_5) ? data.leaderboard.top_5 : [], [data.leaderboard]);
   const ownRank = data.leaderboard?.own_rank;
@@ -265,73 +277,82 @@ export default function ModeratorDashboardPage() {
 
       {/* 6 TOP SUMMARY CARDS */}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4">
-        {/* Card 1: My ID */}
-        <div className="p-4 rounded-2xl bg-[#0c1015]/80 border border-white/5 shadow-sm">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">My ID</span>
-          <div className="mt-2 text-xl sm:text-2xl font-black text-brand-400 font-mono truncate">
-            {data.my_id ? `#${data.my_id}` : 'None'}
-          </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Assigned code</p>
-        </div>
-
-        {/* Card 2: Friendly Name */}
-        <div className="p-4 rounded-2xl bg-[#0c1015]/80 border border-white/5 shadow-sm">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Friendly Name</span>
-          <div className="mt-2 text-xl sm:text-2xl font-black text-white truncate" title={data.friendly_name || 'Not set'}>
-            {data.friendly_name || <span className="text-slate-500 italic text-base">Not set</span>}
-          </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Display handle</p>
-        </div>
-
-        {/* Card 3: Total Linked Users */}
+        {/* Card 1: Total Users */}
         <div className="p-4 rounded-2xl bg-[#0c1015]/80 border border-white/5 shadow-sm">
           <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Users</span>
           <div className="mt-2 text-xl sm:text-2xl font-black text-cyan-400 flex items-center gap-1.5">
             <Users className="w-5 h-5 text-cyan-400 shrink-0" />
-            <span>{summary.total_linked_users || 0}</span>
+            <span>{(summary.total_linked_users || 0).toLocaleString()}</span>
           </div>
           <p className="text-[11px] text-slate-500 mt-0.5">Linked to your My ID</p>
         </div>
 
-        {/* Card 4: Total Completed Offers */}
+        {/* Card 2: Total Completed Offers */}
         <div className="p-4 rounded-2xl bg-[#0c1015]/80 border border-white/5 shadow-sm">
           <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Completed Offers</span>
           <div className="mt-2 text-xl sm:text-2xl font-black text-amber-400 flex items-center gap-1.5">
             <CheckCircle2 className="w-5 h-5 text-amber-400 shrink-0" />
-            <span>{summary.total_completed_offers || 0}</span>
+            <span>{(summary.total_completed_offers || 0).toLocaleString()}</span>
           </div>
           <p className="text-[11px] text-slate-500 mt-0.5">{formatMonthLabel(data.selected_month)}</p>
         </div>
 
-        {/* Card 5: Total USD Earn */}
+        {/* Card 3: Total Earnings (USD / BDT) */}
         <div className="p-4 rounded-2xl bg-[#0c1015]/80 border border-white/5 shadow-sm">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total USD</span>
-          <div className="mt-2 text-xl sm:text-2xl font-black text-emerald-400 font-mono truncate">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Earnings</span>
+          <div className="mt-2 text-lg sm:text-xl font-black text-emerald-400 font-mono truncate">
             ${Number(summary.total_usd_earn || 0).toFixed(2)}
           </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Snapshot USD rate</p>
+          <p className="text-[11px] text-cyan-300 font-mono font-bold mt-0.5 truncate">
+            ৳{Number(summary.total_bdt_earn || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
         </div>
 
-        {/* Card 6: Total BDT Earn */}
+        {/* Card 4: Today Earnings (USD / BDT) */}
         <div className="p-4 rounded-2xl bg-[#0c1015]/80 border border-white/5 shadow-sm">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total BDT</span>
-          <div className="mt-2 text-xl sm:text-2xl font-black text-cyan-300 font-mono truncate">
-            ৳{Number(summary.total_bdt_earn || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Today Earnings</span>
+          <div className="mt-2 text-lg sm:text-xl font-black text-brand-400 font-mono truncate">
+            ${Number(summary.today_usd_earn || 0).toFixed(2)}
           </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Converted snapshot</p>
+          <p className="text-[11px] text-slate-400 mt-0.5 truncate">
+            ৳{Number(summary.today_bdt_earn || 0).toFixed(2)} ({summary.today_completed_offers || 0} offers)
+          </p>
+        </div>
+
+        {/* Card 5: Chargebacks (count & effect) */}
+        <div className="p-4 rounded-2xl bg-[#0c1015]/80 border border-white/5 shadow-sm">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Chargebacks</span>
+          <div className="mt-2 text-xl sm:text-2xl font-black text-rose-400 flex items-center gap-1.5 font-mono">
+            <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0" />
+            <span>{summary.chargebacks_count || 0}</span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            {summary.chargebacks_amount ? `-${Number(summary.chargebacks_amount).toLocaleString()} coins` : '0 effect'}
+          </p>
+        </div>
+
+        {/* Card 6: My ID Info */}
+        <div className="p-4 rounded-2xl bg-[#0c1015]/80 border border-white/5 shadow-sm">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">My ID Code</span>
+          <div className="mt-2 text-xl sm:text-2xl font-black text-white font-mono truncate">
+            {data.my_id ? `#${data.my_id}` : 'None'}
+          </div>
+          <p className="text-[11px] text-brand-400 truncate mt-0.5">
+            {data.friendly_name || 'Standard Account'}
+          </p>
         </div>
       </div>
 
-      {/* OFFER SUMMARY TABLE (AGGREGATE PER OFFER) */}
+      {/* 8-COLUMN OFFER SUMMARY TABLE */}
       <div className="rounded-2xl bg-[#0c1015]/80 border border-white/5 overflow-hidden shadow-xl">
         <div className="p-4 border-b border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
               <Layers className="w-4 h-4 text-brand-400" />
-              <span>Offer Summary — {formatMonthLabel(data.selected_month)}</span>
+              <span>Offer Summary Table — {formatMonthLabel(data.selected_month)}</span>
             </h2>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              Aggregated completions and earnings grouped by offer and provider for your My ID.
+              Strictly isolated breakdown per offer &amp; provider for your My ID with UTC today tracking.
             </p>
           </div>
 
@@ -344,52 +365,94 @@ export default function ModeratorDashboardPage() {
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-white/[0.02] border-b border-white/5 text-[11px] uppercase font-bold tracking-wider text-slate-400">
-                <th className="py-3 px-4">Offer Name</th>
-                <th className="py-3 px-4">Provider</th>
-                <th className="py-3 px-4 text-center">Total Completed</th>
-                <th className="py-3 px-4 text-right">Earnings (USD)</th>
-                <th className="py-3 px-4 text-right">Earnings (BDT)</th>
+                <th className="py-3 px-3">Provider</th>
+                <th className="py-3 px-3">Offer Name</th>
+                <th className="py-3 px-3 text-right">Coin</th>
+                <th className="py-3 px-3 text-center">Today Offers</th>
+                <th className="py-3 px-3 text-center">Total Offers</th>
+                <th className="py-3 px-3 text-right">Offer Price (USD)</th>
+                <th className="py-3 px-3 text-right">Net Result (USD)</th>
+                <th className="py-3 px-3 text-right">Net Result (BDT)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 text-slate-300">
               {loading && offerSummary.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="py-8 text-center text-slate-500">
+                  <td colSpan="8" className="py-8 text-center text-slate-500">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto text-brand-400 mb-1" />
                     <span>Loading offer summary...</span>
                   </td>
                 </tr>
               ) : offerSummary.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="py-8 text-center text-slate-500">
+                  <td colSpan="8" className="py-8 text-center text-slate-500">
                     <Coins className="w-7 h-7 mx-auto mb-1 text-slate-600 opacity-40" />
                     <p className="font-semibold text-slate-400">No earnings recorded for this period</p>
                   </td>
                 </tr>
               ) : (
                 offerSummary.map((row, idx) => (
-                  <tr key={`${row.provider}_${row.offer_name}_${idx}`} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="py-3 px-4 font-semibold text-white">
-                      {row.offer_name}
-                    </td>
-                    <td className="py-3 px-4">
+                  <tr key={`${row.provider}_${row.offer_name}_${row.coin}_${idx}`} className="hover:bg-white/[0.02] transition-colors">
+                    {/* 1. Provider */}
+                    <td className="py-3 px-3">
                       <span className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-bold text-[11px]">
                         {row.provider}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-center font-bold text-amber-400">
-                      {row.total_completed.toLocaleString()}
+                    {/* 2. Offer Name */}
+                    <td className="py-3 px-3 font-semibold text-white max-w-[220px] truncate" title={row.offer_name}>
+                      {row.offer_name || 'Standard Offer'}
                     </td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-emerald-400">
-                      ${Number(row.earnings_usd).toFixed(2)}
+                    {/* 3. Coin */}
+                    <td className="py-3 px-3 text-right font-mono font-bold text-amber-400">
+                      {Number(row.coin || 0).toLocaleString()}
                     </td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-cyan-300">
-                      ৳{Number(row.earnings_bdt).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {/* 4. Today Offers */}
+                    <td className="py-3 px-3 text-center font-mono font-bold text-brand-400">
+                      {Number(row.today_offers || 0).toLocaleString()}
+                    </td>
+                    {/* 5. Total Offers */}
+                    <td className="py-3 px-3 text-center font-mono font-bold text-white">
+                      {Number(row.total_offers || row.total_completed || 0).toLocaleString()}
+                    </td>
+                    {/* 6. Offer Price (USD) */}
+                    <td className="py-3 px-3 text-right font-mono text-slate-300">
+                      ${Number(row.offer_price || 0).toFixed(4)}
+                    </td>
+                    {/* 7. Net Result (USD) */}
+                    <td className="py-3 px-3 text-right font-mono font-bold text-emerald-400">
+                      ${Number(row.net_usd ?? row.earnings_usd ?? 0).toFixed(2)}
+                    </td>
+                    {/* 8. Net Result (BDT) */}
+                    <td className="py-3 px-3 text-right font-mono font-bold text-cyan-300">
+                      ৳{Number(row.net_bdt ?? row.earnings_bdt ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                   </tr>
                 ))
               )}
             </tbody>
+            {offerSummary.length > 0 && (
+              <tfoot className="border-t-2 border-white/10 bg-white/[0.03] font-bold">
+                <tr>
+                  <td colSpan="3" className="py-3 px-3 text-white uppercase text-[11px]">
+                    Total ({offerSummary.length} {offerSummary.length === 1 ? 'Offer' : 'Offers'})
+                  </td>
+                  <td className="py-3 px-3 text-center font-mono text-brand-400">
+                    {offerSummaryTotals.today_offers.toLocaleString()}
+                  </td>
+                  <td className="py-3 px-3 text-center font-mono text-white">
+                    {offerSummaryTotals.total_offers.toLocaleString()}
+                  </td>
+                  <td className="py-3 px-3 text-right text-slate-500">—</td>
+                  <td className="py-3 px-3 text-right font-mono text-emerald-400">
+                    ${offerSummaryTotals.net_usd.toFixed(2)}
+                  </td>
+                  <td className="py-3 px-3 text-right font-mono text-cyan-300">
+                    ৳{offerSummaryTotals.net_bdt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>

@@ -184,6 +184,7 @@ export const api = {
       raw: res,
     };
   },
+  updateAdminUser: (id, data) => apiRequest(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   getAdminCompletedTasks: (params = {}) => {
     return apiRequest(`/admin/completed-tasks${cleanQueryParams(params)}`);
   },

@@ -46,7 +46,7 @@ class AdminMyIdController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'my_id_code' => ['required', 'string', 'max:50', 'unique:my_ids,my_id_code'],
+            'my_id_code' => ['required', 'string', 'max:50', 'unique:my_ids,my_id_code', 'regex:/^[a-zA-Z0-9_\-]+$/'],
             'label' => ['nullable', 'string', 'max:255'],
             'friendly_name' => ['nullable', 'string', 'max:255'],
             'is_active' => ['nullable', 'boolean'],
@@ -54,6 +54,7 @@ class AdminMyIdController extends Controller
             'my_id_code.required' => 'My ID code is required.',
             'my_id_code.unique' => 'This My ID already exists.',
             'my_id_code.max' => 'My ID code cannot exceed 50 characters.',
+            'my_id_code.regex' => 'My ID code may only contain letters, numbers, underscores, and hyphens (no spaces).',
         ]);
 
         $createData = [

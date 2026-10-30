@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, ShieldCheck, Ban, CheckCircle2, User, RefreshCw, AlertCircle, Copy, Check, Eye, X, Coins, FileSpreadsheet, Wallet, RotateCcw, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, ShieldCheck, Ban, CheckCircle2, User, RefreshCw, AlertCircle, Copy, Check, Eye, X, Coins, FileSpreadsheet, Wallet, RotateCcw, Clock, ChevronLeft, ChevronRight, Hash } from 'lucide-react';
 import TableExport from '../components/TableExport';
 import { api, parseUsersResponse, getProviderUserId } from '../services/api';
 
@@ -21,6 +21,21 @@ export default function AdminUsersPage() {
   const [userChargebacks, setUserChargebacks] = useState([]);
   const [modalLoading, setModalLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('tasks'); // 'tasks' | 'withdrawals' | 'chargebacks'
+
+  // My ID Assignment State
+  const [availableMyIds, setAvailableMyIds] = useState([]);
+  const [selectedUserMyId, setSelectedUserMyId] = useState('');
+  const [updatingMyId, setUpdatingMyId] = useState(false);
+  const [myIdUpdateMsg, setMyIdUpdateMsg] = useState(null);
+
+  useEffect(() => {
+    api.getAdminMyIds()
+      .then((res) => {
+        const list = res.data || (Array.isArray(res) ? res : []);
+        setAvailableMyIds(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {});
+  }, []);
 
   const fetchUsers = useCallback(async (isBackground = false) => {
     if (!isBackground) setLoading(true);
@@ -90,6 +105,8 @@ export default function AdminUsersPage() {
   const handleInspectUser = async (u) => {
     const uid = getProviderUserId(u);
     setSelectedUser(u);
+    setSelectedUserMyId(u.my_id || '');
+    setMyIdUpdateMsg(null);
     setActiveTab('tasks');
     setModalLoading(true);
     try {
@@ -123,6 +140,34 @@ export default function AdminUsersPage() {
       console.warn('Failed to load user history:', e);
     } finally {
       setModalLoading(false);
+    }
+  };
+
+  const handleSaveUserMyId = async () => {
+    if (!selectedUser) return;
+    setUpdatingMyId(true);
+    setMyIdUpdateMsg(null);
+    try {
+      const codeToSend = selectedUserMyId.trim();
+      const res = await api.updateAdminUser(selectedUser.id, { my_id: codeToSend || '' });
+      if (res && (res.success || res.user || res.status === 'success' || res.data)) {
+        const updatedCode = codeToSend || null;
+        setSelectedUser((prev) => (prev ? { ...prev, my_id: updatedCode } : prev));
+        setUsers((prev) => prev.map((usr) => (usr.id === selectedUser.id ? { ...usr, my_id: updatedCode } : usr)));
+        setMyIdUpdateMsg({
+          type: 'success',
+          text: updatedCode ? `User successfully assigned to My ID ${updatedCode}.` : 'User My ID unassigned.',
+        });
+      }
+    } catch (err) {
+      console.error('Failed to update user My ID:', err);
+      const valMsg = err.errors?.my_id?.[0] || (err.errors ? Object.values(err.errors).flat().join(' ') : null);
+      setMyIdUpdateMsg({
+        type: 'error',
+        text: valMsg || err.message || 'Failed to update user My ID.',
+      });
+    } finally {
+      setUpdatingMyId(false);
     }
   };
 
@@ -201,6 +246,72 @@ export default function AdminUsersPage() {
               <span className="text-slate-200 font-mono">{selectedUser.ip || '—'} ({selectedUser.country || '—'})</span>
             </div>
           </div>
+
+          {/* My ID Assignment Control */}
+          <div className="p-4 rounded-2xl bg-brand-500/[0.04] border border-brand-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="space-y-1">
+              <span className="font-bold text-white flex items-center gap-1.5">
+                <Hash className="w-4 h-4 text-brand-400" />
+                <span>Assigned My ID:</span>
+                {selectedUser.my_id ? (
+                  <span className="px-2 py-0.5 rounded bg-brand-500/15 text-brand-400 font-mono font-bold border border-brand-500/30">
+                    {selectedUser.my_id}
+                  </span>
+                ) : (
+                  <span className="text-slate-400 italic">None (Unassigned)</span>
+                )}
+              </span>
+              <p className="text-slate-400 text-[11px]">
+                Assign or change this user's My ID code. Only active My IDs are selectable.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedUserMyId}
+                onChange={(e) => {
+                  setSelectedUserMyId(e.target.value);
+                  setMyIdUpdateMsg(null);
+                }}
+                disabled={updatingMyId}
+                className="bg-[#0c1015] border border-white/10 text-xs font-semibold text-white rounded-xl px-3 py-2 focus:outline-none cursor-pointer font-mono"
+              >
+                <option value="">-- No My ID (Unassigned) --</option>
+                {availableMyIds.map((m) => (
+                  <option key={m.my_id_code} value={m.my_id_code} disabled={!m.is_active}>
+                    {m.my_id_code} {m.friendly_name ? `(${m.friendly_name})` : ''} {!m.is_active ? '[Inactive]' : ''}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={handleSaveUserMyId}
+                disabled={updatingMyId || (selectedUserMyId === (selectedUser.my_id || ''))}
+                className="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+              >
+                {updatingMyId ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Save My ID</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {myIdUpdateMsg && (
+            <div className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+              myIdUpdateMsg.type === 'success' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300' : 'bg-rose-500/10 border border-rose-500/20 text-rose-300'
+            }`}>
+              {myIdUpdateMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" /> : <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />}
+              <span>{myIdUpdateMsg.text}</span>
+            </div>
+          )}
 
           {/* SECTION B: Coin & Activity Summary Cards (No USD/Revenue) */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
@@ -409,6 +520,7 @@ export default function AdminUsersPage() {
               <tr className="bg-white/[0.04] text-slate-300 font-semibold border-b border-white/10 whitespace-nowrap">
                 <th className="py-2.5 px-3 border-r border-white/5 text-center">S.L</th>
                 <th className="py-2.5 px-3 border-r border-white/5">User ID</th>
+                <th className="py-2.5 px-3 border-r border-white/5 text-center">My ID</th>
                 <th className="py-2.5 px-3 border-r border-white/5">Name / Username</th>
                 <th className="py-2.5 px-3 border-r border-white/5">Email</th>
                 <th className="py-2.5 px-3 border-r border-white/5 text-right">Balance / Coins</th>
@@ -425,7 +537,7 @@ export default function AdminUsersPage() {
             <tbody className="divide-y divide-white/5 font-mono text-[11px]">
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="py-8 text-center text-slate-500 font-sans">
+                  <td colSpan={14} className="py-8 text-center text-slate-500 font-sans">
                     {loading ? 'Loading users from database...' : (parseError || 'No registered user accounts found.')}
                   </td>
                 </tr>
@@ -452,6 +564,15 @@ export default function AdminUsersPage() {
                             {copiedId === `uid-${uid}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                           </button>
                         </div>
+                      </td>
+                      <td className="py-2.5 px-3 border-r border-white/5 text-center font-mono">
+                        {u.my_id ? (
+                          <span className="px-2 py-0.5 rounded bg-brand-500/10 text-brand-400 font-bold border border-brand-500/20 text-[10px]">
+                            {u.my_id}
+                          </span>
+                        ) : (
+                          <span className="text-slate-600">—</span>
+                        )}
                       </td>
                       <td className="py-2.5 px-3 border-r border-white/5 font-sans font-medium text-slate-100">
                         {u.name || u.username || 'User'}

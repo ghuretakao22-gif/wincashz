@@ -10,6 +10,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Models\UserNotification;
 use App\Services\IpCountryResolver;
+use App\Services\MyIdEarningService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -236,11 +237,14 @@ class AuthController extends Controller
 
     public function register(Request $request): JsonResponse
     {
+        $isSystemEnabled = MyIdEarningService::isSystemEnabled();
+
         $validated = $request->validate([
             'username' => ['required', 'string', 'max:255', 'unique:users,username'],
             'email' => ['required', 'string', 'email', 'min:5', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', Password::defaults()],
             'my_id' => ['nullable', 'string', 'max:50'],
+            'my_id_code' => ['nullable', 'string', 'max:50'],
         ], [
             'username.required' => 'Please provide a username.',
             'username.unique' => 'This username is already taken. Please choose another.',
@@ -249,21 +253,24 @@ class AuthController extends Controller
 
         $username = trim((string) $validated['username']);
 
-        $myIdInput = trim((string) $request->input('my_id', ''));
+        $myIdInput = trim((string) ($request->input('my_id_code') ?? $request->input('my_id') ?? ''));
+
+        if ($isSystemEnabled && $myIdInput === '') {
+            throw ValidationException::withMessages([
+                'my_id_code' => ['Invalid or inactive My ID code.'],
+                'my_id' => ['Invalid or inactive My ID code.'],
+            ]);
+        }
+
         $myIdCode = null;
 
         if ($myIdInput !== '') {
-            $myIdRecord = MyId::where('my_id_code', $myIdInput)->first();
+            $myIdRecord = MyId::where('my_id_code', $myIdInput)->first(['my_id_code', 'is_active']);
 
-            if (! $myIdRecord) {
+            if (! $myIdRecord || ! $myIdRecord->is_active) {
                 throw ValidationException::withMessages([
-                    'my_id' => ['The provided My ID does not exist.'],
-                ]);
-            }
-
-            if (! $myIdRecord->is_active) {
-                throw ValidationException::withMessages([
-                    'my_id' => ['The provided My ID is currently inactive.'],
+                    'my_id_code' => ['Invalid or inactive My ID code.'],
+                    'my_id' => ['Invalid or inactive My ID code.'],
                 ]);
             }
 
