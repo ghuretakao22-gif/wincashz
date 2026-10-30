@@ -319,27 +319,21 @@ class MyIdPhase10DashboardLeaderboardTest extends TestCase
 
         $res->assertStatus(200);
 
-        $top5 = $res->json('data.leaderboard.top_5');
-        $this->assertCount(5, $top5);
+        // My Rank check (1007 is rank #7 of 7 teams!)
+        $myRank = $res->json('data.my_rank');
+        $this->assertNotNull($myRank);
+        $this->assertEquals(7, $myRank['rank']);
+        $this->assertEquals(7, $myRank['total_teams']);
+        $this->assertEquals('1007', $myRank['my_id_code']);
+        $this->assertEquals(2.0, (float) $myRank['monthly_usd']);
 
-        // Check Top 5 rankings
-        $this->assertEquals(1, $top5[0]['rank']);
-        $this->assertEquals('1001', $top5[0]['my_id_code']);
-        $this->assertEquals('WorkerName_1', $top5[0]['friendly_name']);
-        $this->assertEquals(5000.0, (float) $top5[0]['total_bdt']);
-
-        $this->assertEquals(5, $top5[4]['rank']);
-        $this->assertEquals('1005', $top5[4]['my_id_code']);
-        $this->assertEquals(1000.0, (float) $top5[4]['total_bdt']);
-
-        // Check Own Rank (1007 is rank #7, outside Top 5!)
-        $ownRank = $res->json('data.leaderboard.own_rank');
-        $this->assertNotNull($ownRank);
-        $this->assertEquals(7, $ownRank['rank']);
-        $this->assertEquals('1007', $ownRank['my_id_code']);
-        $this->assertEquals('WorkerName_7', $ownRank['friendly_name']);
-        $this->assertEquals(1, $ownRank['completed_offers']);
-        $this->assertEquals(200.0, (float) $ownRank['total_bdt']);
+        // Check Top Workers strictly scoped to own My ID
+        $topWorkers = $res->json('data.top_workers');
+        $this->assertIsArray($topWorkers);
+        $this->assertCount(1, $topWorkers);
+        $this->assertEquals(1, $topWorkers[0]['rank']);
+        $this->assertEquals(1, $topWorkers[0]['completed_offers']);
+        $this->assertEquals(2.0, (float) $topWorkers[0]['payout_usd']);
     }
 
     public function test_moderator_my_id_strict_isolation_and_no_leak_of_private_data(): void

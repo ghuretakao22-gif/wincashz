@@ -303,4 +303,185 @@ class ModeratorUpgradeTest extends TestCase
         $modFresh = User::findOrFail($mod->id);
         $this->assertTrue(Hash::check('new_secure_password_123', $modFresh->password));
     }
+
+    public function test_leaderboard_returns_top_5_own_my_id_workers_for_current_month(): void
+    {
+        $mod = $this->createModerator('TEAM_ALPHA');
+        $currentMonth = now()->format('Y-m');
+
+        // Create 6 workers under TEAM_ALPHA
+        for ($i = 1; $i <= 6; $i++) {
+            $w = User::forceCreate([
+                'name' => "Alpha Worker {$i}",
+                'username' => "alpha_worker_{$i}",
+                'email' => "w{$i}@alpha.com",
+                'role' => 'user',
+                'my_id' => 'TEAM_ALPHA',
+                'password' => Hash::make('secret'),
+            ]);
+
+            // Worker $i completes $i * 2 offers
+            for ($k = 1; $k <= ($i * 2); $k++) {
+                DB::table('my_id_earnings')->insert([
+                    'user_id' => $w->id,
+                    'my_id_code' => 'TEAM_ALPHA',
+                    'provider' => 'Torox',
+                    'offer_id' => "off_{$i}_{$k}",
+                    'offer_name' => "Task {$k}",
+                    'coin_amount' => 100,
+                    'payout_usd' => 0.50,
+                    'usd_bdt_rate' => 120.00,
+                    'payout_bdt' => 60.00,
+                    'completed_at' => "{$currentMonth}-10 10:00:00",
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        }
+
+        $res = $this->actingAs($mod, 'api')->getJson('/api/moderator/dashboard');
+        $res->assertOk()
+            ->assertJsonPath('status', 'success');
+
+        $topWorkers = $res->json('data.top_workers');
+        $this->assertCount(5, $topWorkers);
+
+        // Worker 6 completed 12 offers (Rank 1)
+        $this->assertEquals(1, $topWorkers[0]['rank']);
+        $this->assertEquals('alpha_worker_6', $topWorkers[0]['username']);
+        $this->assertEquals(12, $topWorkers[0]['completed_offers']);
+        $this->assertEquals(6.00, $topWorkers[0]['payout_usd']);
+
+        // Worker 2 is Rank 5 (4 offers)
+        $this->assertEquals(5, $topWorkers[4]['rank']);
+        $this->assertEquals('alpha_worker_2', $topWorkers[4]['username']);
+        $this->assertEquals(4, $topWorkers[4]['completed_offers']);
+    }
+
+    public function test_my_rank_returns_correct_position_among_multiple_my_ids_by_monthly_earnings(): void
+    {
+        $mod = $this->createModerator('TEAM_BETA');
+        $currentMonth = now()->format('Y-m');
+
+        // Create 3 active teams: TEAM_GAMMA, TEAM_BETA, TEAM_DELTA
+        DB::table('my_ids')->insert([
+            ['my_id_code' => 'TEAM_GAMMA', 'friendly_name' => 'Gamma', 'is_active' => true, 'created_at' => now(), 'updated_at' => now()],
+            ['my_id_code' => 'TEAM_DELTA', 'friendly_name' => 'Delta', 'is_active' => true, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        // Seed earnings:
+        // TEAM_GAMMA: $50 USD (Rank 1)
+        DB::table('my_id_earnings')->insert([
+            'my_id_code' => 'TEAM_GAMMA',
+            'user_id' => 99,
+            'provider' => 'RevU',
+            'coin_amount' => 5000,
+            'payout_usd' => 50.00,
+            'payout_bdt' => 6000.00,
+            'completed_at' => "{$currentMonth}-12 12:00:00",
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // TEAM_BETA (mod): $30 USD (Rank 2)
+        DB::table('my_id_earnings')->insert([
+            'my_id_code' => 'TEAM_BETA',
+            'user_id' => 101,
+            'provider' => 'Torox',
+            'coin_amount' => 3000,
+            'payout_usd' => 30.00,
+            'payout_bdt' => 3600.00,
+            'completed_at' => "{$currentMonth}-12 12:00:00",
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // TEAM_DELTA: $10 USD (Rank 3)
+        DB::table('my_id_earnings')->insert([
+            'my_id_code' => 'TEAM_DELTA',
+            'user_id' => 102,
+            'provider' => 'AdGate',
+            'coin_amount' => 1000,
+            'payout_usd' => 10.00,
+            'payout_bdt' => 1200.00,
+            'completed_at' => "{$currentMonth}-12 12:00:00",
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $res = $this->actingAs($mod, 'api')->getJson('/api/moderator/dashboard');
+        $res->assertOk();
+
+        $myRank = $res->json('data.my_rank');
+        $this->assertEquals(2, $myRank['rank']); // Position 2 of 3
+        $this->assertEquals(3, $myRank['total_teams']);
+        $this->assertEquals('TEAM_BETA', $myRank['my_id_code']);
+        $this->assertEquals(30.00, $myRank['monthly_usd']);
+
+        // Check privacy: response must NOT contain other teams' names or codes in leaderboard
+        $json = $res->getContent();
+        $this->assertStringNotContainsString('TEAM_GAMMA', $json);
+        $this->assertStringNotContainsString('TEAM_DELTA', $json);
+        $this->assertStringNotContainsString('Gamma', $json);
+        $this->assertStringNotContainsString('Delta', $json);
+    }
+
+    public function test_moderator_cannot_see_other_my_id_workers_in_leaderboard(): void
+    {
+        $mod = $this->createModerator('TEAM_ONE');
+        $currentMonth = now()->format('Y-m');
+
+        $workerOwn = User::forceCreate([
+            'name' => 'Own Worker',
+            'username' => 'own_worker_alice',
+            'email' => 'alice@teamone.com',
+            'role' => 'user',
+            'my_id' => 'TEAM_ONE',
+            'password' => Hash::make('secret'),
+        ]);
+
+        $workerOther = User::forceCreate([
+            'name' => 'Foreign Worker',
+            'username' => 'foreign_worker_bob',
+            'email' => 'bob@teamtwo.com',
+            'role' => 'user',
+            'my_id' => 'TEAM_TWO',
+            'password' => Hash::make('secret'),
+        ]);
+
+        DB::table('my_id_earnings')->insert([
+            'user_id' => $workerOwn->id,
+            'my_id_code' => 'TEAM_ONE',
+            'provider' => 'Torox',
+            'coin_amount' => 500,
+            'payout_usd' => 5.00,
+            'payout_bdt' => 600.00,
+            'completed_at' => "{$currentMonth}-05 10:00:00",
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('my_id_earnings')->insert([
+            'user_id' => $workerOther->id,
+            'my_id_code' => 'TEAM_TWO',
+            'provider' => 'Torox',
+            'coin_amount' => 1000,
+            'payout_usd' => 10.00,
+            'payout_bdt' => 1200.00,
+            'completed_at' => "{$currentMonth}-05 10:00:00",
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $res = $this->actingAs($mod, 'api')->getJson('/api/moderator/dashboard');
+        $res->assertOk();
+
+        $topWorkers = $res->json('data.top_workers');
+        $this->assertCount(1, $topWorkers);
+        $this->assertEquals('own_worker_alice', $topWorkers[0]['username']);
+
+        // foreign worker bob must NOT appear in leaderboard
+        $usernames = collect($topWorkers)->pluck('username')->all();
+        $this->assertNotContains('foreign_worker_bob', $usernames);
+    }
 }

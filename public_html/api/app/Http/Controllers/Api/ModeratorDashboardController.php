@@ -90,9 +90,31 @@ class ModeratorDashboardController extends Controller
                     ],
                     'offer_summary' => [],
                     'items' => [],
+                    'top_workers' => [],
+                    'my_rank' => [
+                        'rank' => 1,
+                        'total_teams' => 1,
+                        'my_id_code' => $myIdCode !== '' ? $myIdCode : null,
+                        'monthly_usd' => 0.0,
+                        'monthly_bdt' => 0.0,
+                    ],
                     'leaderboard' => [
+                        'top_workers' => [],
                         'top_5' => [],
-                        'own_rank' => null,
+                        'my_rank' => [
+                            'rank' => 1,
+                            'total_teams' => 1,
+                            'my_id_code' => $myIdCode !== '' ? $myIdCode : null,
+                            'monthly_usd' => 0.0,
+                            'monthly_bdt' => 0.0,
+                        ],
+                        'own_rank' => [
+                            'rank' => 1,
+                            'total_teams' => 1,
+                            'my_id_code' => $myIdCode !== '' ? $myIdCode : null,
+                            'monthly_usd' => 0.0,
+                            'monthly_bdt' => 0.0,
+                        ],
                     ],
                 ],
             ]);
@@ -256,61 +278,111 @@ class ModeratorDashboardController extends Controller
         }
         unset($item);
 
-        // 3. Leaderboard calculation across all My IDs for current month (or selected month)
-        $leaderboardMonth = ($selectedMonth !== '' && $selectedMonth !== 'all' && $selectedMonth !== 'today') ? $selectedMonth : $currentMonth;
-        $leaderboardQuery = DB::table('my_id_earnings');
-        $leaderboardQuery->where(function ($q) use ($leaderboardMonth) {
-            $q->where('completed_at', 'like', $leaderboardMonth . '%')
-              ->orWhere(function ($q2) use ($leaderboardMonth) {
-                  $q2->whereNull('completed_at')->where('created_at', 'like', $leaderboardMonth . '%');
-              });
-        });
+        // 3. Top 5 Workers strictly scoped to this moderator's My ID for CURRENT MONTH (UTC)
+        $workersSub = DB::table('my_id_earnings')
+            ->leftJoin('users', 'users.id', '=', 'my_id_earnings.user_id')
+            ->where('my_id_earnings.my_id_code', $myIdCode)
+            ->where(function ($q) use ($currentMonth) {
+                $q->where('my_id_earnings.completed_at', 'like', $currentMonth . '%')
+                  ->orWhere(function ($q2) use ($currentMonth) {
+                      $q2->whereNull('my_id_earnings.completed_at')->where('my_id_earnings.created_at', 'like', $currentMonth . '%');
+                  });
+            })
+            ->selectRaw("
+                COALESCE(my_id_earnings.user_id, 0) as w_user_id,
+                COALESCE(NULLIF(TRIM(users.username), ''), 'Worker') as w_username,
+                COALESCE(my_id_earnings.payout_usd, 0) as w_usd,
+                COALESCE(my_id_earnings.payout_bdt, 0) as w_bdt
+            ");
 
-        $aggregated = $leaderboardQuery
-            ->selectRaw('my_id_code, COUNT(*) as completed_offers, COALESCE(SUM(payout_bdt), 0) as total_bdt, COALESCE(SUM(payout_usd), 0) as total_usd')
-            ->groupBy('my_id_code')
-            ->orderByDesc('total_bdt')
+        $topWorkers = DB::query()
+            ->fromSub($workersSub, 'w_sub')
+            ->selectRaw("
+                w_user_id as user_id,
+                w_username as username,
+                COUNT(*) as completed_offers,
+                COALESCE(SUM(w_usd), 0) as total_usd,
+                COALESCE(SUM(w_bdt), 0) as total_bdt
+            ")
+            ->groupBy('w_user_id', 'w_username')
+            ->orderByDesc('completed_offers')
+            ->orderByDesc('total_usd')
+            ->limit(5)
+            ->get()
+            ->map(function ($row, $index) {
+                return [
+                    'rank' => $index + 1,
+                    'user_id' => (int) $row->user_id,
+                    'username' => (string) $row->username,
+                    'completed_offers' => (int) $row->completed_offers,
+                    'payout_usd' => round((float) $row->total_usd, 2),
+                    'payout_bdt' => round((float) $row->total_bdt, 2),
+                ];
+            })
+            ->values()
+            ->all();
+
+        // 4. "My Rank": Position of this My ID among ALL My IDs on the platform this month, ranked by monthly USD
+        $allTeamsSub = DB::table('my_id_earnings')
+            ->where(function ($q) use ($currentMonth) {
+                $q->where('completed_at', 'like', $currentMonth . '%')
+                  ->orWhere(function ($q2) use ($currentMonth) {
+                      $q2->whereNull('completed_at')->where('created_at', 'like', $currentMonth . '%');
+                  });
+            })
+            ->whereNotNull('my_id_code')
+            ->where('my_id_code', '!=', '')
+            ->selectRaw("
+                TRIM(my_id_code) as t_code,
+                COALESCE(payout_usd, 0) as t_usd,
+                COALESCE(payout_bdt, 0) as t_bdt
+            ");
+
+        $rankedTeams = DB::query()
+            ->fromSub($allTeamsSub, 't_sub')
+            ->selectRaw("
+                t_code as my_id_code,
+                COALESCE(SUM(t_usd), 0) as total_usd,
+                COALESCE(SUM(t_bdt), 0) as total_bdt,
+                COUNT(*) as completed_offers
+            ")
+            ->groupBy('t_code')
+            ->orderByDesc('total_usd')
             ->orderByDesc('completed_offers')
             ->get();
 
-        $myIdsMap = MyId::query()->pluck('friendly_name', 'my_id_code')->all();
+        $activeMyIdsCount = 0;
+        if (Schema::hasTable('my_ids')) {
+            $activeMyIdsCount = DB::table('my_ids')->where('is_active', true)->count();
+        }
+        $totalTeamsCount = max($activeMyIdsCount, $rankedTeams->count(), 1);
 
-        $rankedList = [];
-        $ownRankData = null;
-        $rankCounter = 1;
+        $myRankPosition = null;
+        $myMonthlyUsd = 0.0;
+        $myMonthlyBdt = 0.0;
+        $teamIndex = 1;
 
-        foreach ($aggregated as $agg) {
-            $code = $agg->my_id_code;
-            $entry = [
-                'rank' => $rankCounter,
-                'my_id_code' => $code,
-                'friendly_name' => $myIdsMap[$code] ?? null,
-                'completed_offers' => (int) $agg->completed_offers,
-                'total_bdt' => round((float) $agg->total_bdt, 2),
-                'total_usd' => round((float) $agg->total_usd, 2),
-            ];
-
-            if ($code === $myIdCode) {
-                $ownRankData = $entry;
+        foreach ($rankedTeams as $team) {
+            if ($team->my_id_code === $myIdCode) {
+                $myRankPosition = $teamIndex;
+                $myMonthlyUsd = (float) $team->total_usd;
+                $myMonthlyBdt = (float) $team->total_bdt;
+                break;
             }
-
-            if ($rankCounter <= 5) {
-                $rankedList[] = $entry;
-            }
-
-            $rankCounter++;
+            $teamIndex++;
         }
 
-        if ($ownRankData === null) {
-            $ownRankData = [
-                'rank' => $rankCounter,
-                'my_id_code' => $myIdCode,
-                'friendly_name' => $friendlyName,
-                'completed_offers' => 0,
-                'total_bdt' => 0.0,
-                'total_usd' => 0.0,
-            ];
+        if ($myRankPosition === null) {
+            $myRankPosition = min($totalTeamsCount, $rankedTeams->count() + 1);
         }
+
+        $myRankData = [
+            'rank' => $myRankPosition,
+            'total_teams' => $totalTeamsCount,
+            'my_id_code' => $myIdCode,
+            'monthly_usd' => round($myMonthlyUsd, 2),
+            'monthly_bdt' => round($myMonthlyBdt, 2),
+        ];
 
         // Today stats for this My ID (always computed for today UTC)
         $todayStats = DB::table('my_id_earnings')
@@ -371,9 +443,13 @@ class ModeratorDashboardController extends Controller
                 ],
                 'offer_summary' => $offerSummary,
                 'items' => $items,
+                'top_workers' => $topWorkers,
+                'my_rank' => $myRankData,
                 'leaderboard' => [
-                    'top_5' => $rankedList,
-                    'own_rank' => $ownRankData,
+                    'top_workers' => $topWorkers,
+                    'top_5' => $topWorkers,
+                    'my_rank' => $myRankData,
+                    'own_rank' => $myRankData,
                 ],
             ],
         ]);
