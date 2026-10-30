@@ -12,7 +12,14 @@ import {
   X, 
   Check, 
   ArrowLeft, 
-  Filter 
+  Sliders, 
+  Calendar, 
+  Save, 
+  ChevronLeft, 
+  ChevronRight,
+  TrendingUp,
+  Clock,
+  Layers
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../services/api';
@@ -22,8 +29,38 @@ export default function AdminPayoutRulesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [providerFilter, setProviderFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [actionLoading, setActionLoading] = useState(null);
   const [msg, setMsg] = useState(null);
+
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(20);
+  const [pagination, setPagination] = useState({
+    current_page: 1,
+    last_page: 1,
+    perPage: 20,
+    total: 0,
+  });
+
+  // Summary counts across all rules
+  const [summary, setSummary] = useState({
+    total_rules: 0,
+    active_rules: 0,
+    disabled_rules: 0,
+    today_completions: 0,
+    total_completions: 0,
+  });
+
+  // Settings State
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [systemEnabled, setSystemEnabled] = useState(false);
+  const [payoutEnabled, setPayoutEnabled] = useState(false);
+  const [startDate, setStartDate] = useState('');
+  const [usdBdtRate, setUsdBdtRate] = useState('122.00');
+  const [settingsMsg, setSettingsMsg] = useState(null);
 
   // Add Modal State
   const [showAddModal, setShowAddModal] = useState(false);
@@ -47,16 +84,42 @@ export default function AdminPayoutRulesPage() {
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState(null);
 
-  const fetchRules = useCallback(async (searchQuery = search, provFilter = providerFilter) => {
+  // Fetch Rules from Backend API
+  const fetchRules = useCallback(async (
+    searchQuery = search,
+    provFilter = providerFilter,
+    statFilter = statusFilter,
+    pageNumber = page,
+    limit = perPage
+  ) => {
     setLoading(true);
     setMsg(null);
     try {
       const res = await api.getAdminPayoutRules({
         search: searchQuery,
         provider: provFilter || undefined,
+        status: statFilter !== 'all' ? statFilter : undefined,
+        page: pageNumber,
+        per_page: limit,
       });
+
       const list = res.data || (Array.isArray(res) ? res : []);
       setRules(Array.isArray(list) ? list : []);
+
+      if (res.pagination) {
+        setPagination(res.pagination);
+      } else {
+        setPagination({
+          current_page: 1,
+          last_page: 1,
+          perPage: limit,
+          total: list.length,
+        });
+      }
+
+      if (res.summary) {
+        setSummary(res.summary);
+      }
     } catch (err) {
       console.error('Failed to load payout rules:', err);
       setMsg({ type: 'error', text: err.message || 'Failed to connect to backend Payout Rules API.' });
@@ -64,21 +127,46 @@ export default function AdminPayoutRulesPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, providerFilter]);
+  }, [search, providerFilter, statusFilter, page, perPage]);
+
+  // Fetch Global System Settings
+  const fetchSettings = useCallback(async () => {
+    setSettingsLoading(true);
+    try {
+      const res = await api.getAdminMyIdSettings();
+      if (res && res.data) {
+        setSystemEnabled(!!res.data.my_id_system_enabled);
+        setPayoutEnabled(!!res.data.my_id_payout_enabled);
+        setStartDate(res.data.my_id_start_date || '');
+        setUsdBdtRate(String(res.data.my_id_usd_bdt_rate || '122.00'));
+      }
+    } catch (err) {
+      console.error('Failed to load My ID settings:', err);
+    } finally {
+      setSettingsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    fetchRules();
-  }, [fetchRules]);
+    fetchRules(search, providerFilter, statusFilter, page, perPage);
+  }, [fetchRules, page, perPage]);
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    fetchRules(search, providerFilter);
+    setPage(1);
+    fetchRules(search, providerFilter, statusFilter, 1, perPage);
   };
 
   const handleClearFilters = () => {
     setSearch('');
     setProviderFilter('');
-    fetchRules('', '');
+    setStatusFilter('all');
+    setPage(1);
+    fetchRules('', '', 'all', 1, perPage);
   };
 
   // Toggle active/disabled
@@ -90,6 +178,11 @@ export default function AdminPayoutRulesPage() {
       const res = await api.updateAdminPayoutRule(rule.id, { is_active: nextStatus });
       if (res.success) {
         setRules(prev => prev.map(r => r.id === rule.id ? { ...r, is_active: nextStatus } : r));
+        setSummary(prev => ({
+          ...prev,
+          active_rules: nextStatus ? prev.active_rules + 1 : prev.active_rules - 1,
+          disabled_rules: nextStatus ? prev.disabled_rules - 1 : prev.disabled_rules + 1,
+        }));
         setMsg({ 
           type: 'success', 
           text: `Rule for ${rule.provider} (${rule.coin_amount} coins) successfully ${nextStatus ? 'enabled' : 'disabled'}.` 
@@ -118,6 +211,7 @@ export default function AdminPayoutRulesPage() {
       if (res.success) {
         setRules(prev => prev.filter(r => r.id !== rule.id));
         setMsg({ type: 'success', text: 'Payout rule deleted successfully.' });
+        fetchRules(search, providerFilter, statusFilter, page, perPage);
       }
     } catch (err) {
       setMsg({ type: 'error', text: err.message || 'Failed to delete rule.' });
@@ -147,11 +241,13 @@ export default function AdminPayoutRulesPage() {
       return;
     }
 
+    const cleanOfferId = offerId.trim();
+
     setSubmitting(true);
     try {
       const res = await api.createAdminPayoutRule({
         provider: cleanProvider,
-        offer_id: offerId.trim() || null,
+        offer_id: cleanOfferId && cleanOfferId !== '-' ? cleanOfferId : null,
         offer_name: offerName.trim() || null,
         coin_amount: Number(coinAmount),
         user_payout_usd: Number(userPayoutUsd),
@@ -167,7 +263,7 @@ export default function AdminPayoutRulesPage() {
         setUserPayoutUsd('');
         setIsActive(true);
         setMsg({ type: 'success', text: `Payout rule for ${cleanProvider} created successfully.` });
-        fetchRules();
+        fetchRules(search, providerFilter, statusFilter, 1, perPage);
       }
     } catch (err) {
       const validationMsgs = err.errors ? Object.values(err.errors).flat().join(' ') : null;
@@ -211,11 +307,13 @@ export default function AdminPayoutRulesPage() {
       return;
     }
 
+    const cleanOfferId = editOfferId.trim();
+
     setEditSubmitting(true);
     try {
       const res = await api.updateAdminPayoutRule(editingRule.id, {
         provider: cleanProvider,
-        offer_id: editOfferId.trim() || null,
+        offer_id: cleanOfferId && cleanOfferId !== '-' ? cleanOfferId : null,
         offer_name: editOfferName.trim() || null,
         coin_amount: Number(editCoinAmount),
         user_payout_usd: Number(editUserPayoutUsd),
@@ -223,7 +321,7 @@ export default function AdminPayoutRulesPage() {
       });
 
       if (res.success) {
-        setRules(prev => prev.map(r => r.id === editingRule.id ? res.data : r));
+        setRules(prev => prev.map(r => r.id === editingRule.id ? { ...r, ...res.data } : r));
         setEditingRule(null);
         setMsg({ type: 'success', text: `Payout rule #${editingRule.id} updated successfully.` });
       }
@@ -235,11 +333,45 @@ export default function AdminPayoutRulesPage() {
     }
   };
 
-  // Stats
-  const totalCount = rules.length;
-  const activeCount = rules.filter(r => r.is_active).length;
-  const disabledCount = totalCount - activeCount;
-  const uniqueProviders = new Set(rules.map(r => (r.provider || '').toLowerCase()).filter(Boolean)).size;
+  // Save Global Settings
+  const handleSaveSettings = async (e) => {
+    e.preventDefault();
+    setSettingsMsg(null);
+
+    const numericRate = parseFloat(usdBdtRate);
+    if (isNaN(numericRate) || numericRate <= 0) {
+      setSettingsMsg({ type: 'error', text: 'USD→BDT rate must be a valid positive number.' });
+      return;
+    }
+
+    setSavingSettings(true);
+    try {
+      const res = await api.updateAdminMyIdSettings({
+        my_id_system_enabled: systemEnabled,
+        my_id_payout_enabled: payoutEnabled,
+        my_id_start_date: startDate.trim(),
+        my_id_usd_bdt_rate: numericRate,
+      });
+
+      if (res.success) {
+        setSystemEnabled(!!res.data.my_id_system_enabled);
+        setPayoutEnabled(!!res.data.my_id_payout_enabled);
+        setStartDate(res.data.my_id_start_date || '');
+        setUsdBdtRate(String(res.data.my_id_usd_bdt_rate));
+        setSettingsMsg({ type: 'success', text: 'My ID system settings successfully saved!' });
+      }
+    } catch (err) {
+      setSettingsMsg({ type: 'error', text: err.message || 'Failed to save My ID settings.' });
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const handleSetCurrentUtc = () => {
+    const now = new Date();
+    const utcStr = now.toISOString().replace('T', ' ').substring(0, 19);
+    setStartDate(utcStr);
+  };
 
   return (
     <div className="space-y-6">
@@ -255,7 +387,7 @@ export default function AdminPayoutRulesPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Link
             to="/admin/my-ids"
             className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-slate-300 hover:text-white transition-all flex items-center gap-1.5"
@@ -265,7 +397,19 @@ export default function AdminPayoutRulesPage() {
           </Link>
 
           <button
-            onClick={() => fetchRules()}
+            onClick={() => setShowSettings(!showSettings)}
+            className={`px-3.5 py-2 rounded-xl border text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+              showSettings 
+                ? 'bg-brand-500/20 border-brand-500/40 text-brand-300' 
+                : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-300 hover:text-white'
+            }`}
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            <span>{showSettings ? 'Hide Settings' : 'System Settings'}</span>
+          </button>
+
+          <button
+            onClick={() => fetchRules(search, providerFilter, statusFilter, page, perPage)}
             disabled={loading}
             className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-slate-300 hover:text-white transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
             title="Refresh rules"
@@ -293,6 +437,140 @@ export default function AdminPayoutRulesPage() {
         </div>
       </div>
 
+      {/* Global Settings Collapsible Card */}
+      {showSettings && (
+        <div className="glass-card p-5 rounded-2xl border border-brand-500/20 bg-brand-500/[0.02] shadow-xl space-y-4">
+          <div className="flex items-center justify-between border-b border-white/5 pb-3">
+            <div className="flex items-center gap-2">
+              <Sliders className="w-4 h-4 text-brand-400" />
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Global My ID Settings</h3>
+            </div>
+            <span className="text-[11px] text-slate-400">Settings affect all My ID accounts platform-wide</span>
+          </div>
+
+          {settingsMsg && (
+            <div className={`p-3 rounded-xl flex items-center gap-2 text-xs border ${
+              settingsMsg.type === 'success'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+            }`}>
+              {settingsMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+              <span>{settingsMsg.text}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSaveSettings} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* System Enabled */}
+            <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-white">My ID System</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  systemEnabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-slate-500/10 text-slate-400 border border-white/10'
+                }`}>
+                  {systemEnabled ? 'ON' : 'OFF'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400">Master switch for earning recording</p>
+              <button
+                type="button"
+                onClick={() => setSystemEnabled(!systemEnabled)}
+                className={`w-full py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  systemEnabled 
+                    ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30' 
+                    : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                }`}
+              >
+                <Power className="w-3.5 h-3.5" />
+                <span>{systemEnabled ? 'Turn OFF System' : 'Turn ON System'}</span>
+              </button>
+            </div>
+
+            {/* Payout Enabled */}
+            <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-white">Monthly Payouts</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  payoutEnabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-slate-500/10 text-slate-400 border border-white/10'
+                }`}>
+                  {payoutEnabled ? 'ON' : 'OFF'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400">Allow moderator payout requests</p>
+              <button
+                type="button"
+                onClick={() => setPayoutEnabled(!payoutEnabled)}
+                className={`w-full py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  payoutEnabled 
+                    ? 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30' 
+                    : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                }`}
+              >
+                <Power className="w-3.5 h-3.5" />
+                <span>{payoutEnabled ? 'Disable Payouts' : 'Enable Payouts'}</span>
+              </button>
+            </div>
+
+            {/* USD -> BDT Rate */}
+            <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 space-y-1.5">
+              <label className="text-xs font-semibold text-white block">USD → BDT Rate</label>
+              <p className="text-[11px] text-slate-400">Used for BDT conversion snapshot</p>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs font-mono">৳</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={usdBdtRate}
+                  onChange={(e) => setUsdBdtRate(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 rounded-lg glass-input text-xs font-mono"
+                  placeholder="122.00"
+                />
+              </div>
+            </div>
+
+            {/* Start Date (UTC) */}
+            <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-white">Start Date (UTC)</label>
+                <button
+                  type="button"
+                  onClick={handleSetCurrentUtc}
+                  className="text-[10px] text-brand-400 hover:text-brand-300 font-semibold"
+                >
+                  Set Now
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-400">Earnings before this are ignored</p>
+              <input
+                type="text"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                placeholder="YYYY-MM-DD HH:MM:SS"
+                className="w-full px-3 py-1.5 rounded-lg glass-input text-xs font-mono"
+              />
+            </div>
+
+            <div className="md:col-span-2 lg:col-span-4 flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setStartDate('')}
+                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-xs"
+              >
+                Clear Start Date
+              </button>
+              <button
+                type="submit"
+                disabled={savingSettings}
+                className="px-4 py-1.5 rounded-xl bg-brand-400 hover:bg-brand-300 text-slate-950 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>{savingSettings ? 'Saving...' : 'Save Settings'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* Alert banner */}
       {msg && (
         <div className={`p-4 rounded-2xl flex items-center gap-3 text-xs border ${
@@ -305,29 +583,39 @@ export default function AdminPayoutRulesPage() {
         </div>
       )}
 
-      {/* Stats Cards */}
+      {/* 4 Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="glass-card p-4 rounded-2xl border border-white/5">
           <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Total Rules</span>
-          <span className="text-2xl font-black text-white mt-1 block">{totalCount}</span>
+          <span className="text-2xl font-black text-white mt-1 block">{summary.total_rules || rules.length}</span>
+          <span className="text-[11px] text-slate-500 mt-0.5 block">{summary.active_rules || 0} Active, {summary.disabled_rules || 0} Disabled</span>
         </div>
         <div className="glass-card p-4 rounded-2xl border border-white/5">
           <span className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider block">Active Rules</span>
-          <span className="text-2xl font-black text-emerald-400 mt-1 block">{activeCount}</span>
+          <span className="text-2xl font-black text-emerald-400 mt-1 block">{summary.active_rules || 0}</span>
+          <span className="text-[11px] text-slate-500 mt-0.5 block">Currently matching postbacks</span>
         </div>
         <div className="glass-card p-4 rounded-2xl border border-white/5">
-          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Disabled</span>
-          <span className="text-2xl font-black text-slate-400 mt-1 block">{disabledCount}</span>
+          <span className="text-[11px] font-semibold text-cyan-400 uppercase tracking-wider block">Today Completions</span>
+          <span className="text-2xl font-black text-cyan-400 mt-1 block flex items-center gap-1.5">
+            <Clock className="w-5 h-5 text-cyan-400" />
+            <span>{summary.today_completions || 0}</span>
+          </span>
+          <span className="text-[11px] text-slate-500 mt-0.5 block">Matched earnings today (UTC)</span>
         </div>
         <div className="glass-card p-4 rounded-2xl border border-white/5">
-          <span className="text-[11px] font-semibold text-cyan-400 uppercase tracking-wider block">Providers Covered</span>
-          <span className="text-2xl font-black text-cyan-400 mt-1 block">{uniqueProviders}</span>
+          <span className="text-[11px] font-semibold text-brand-400 uppercase tracking-wider block">Total Completions</span>
+          <span className="text-2xl font-black text-brand-400 mt-1 block flex items-center gap-1.5">
+            <TrendingUp className="w-5 h-5 text-brand-400" />
+            <span>{summary.total_completions || 0}</span>
+          </span>
+          <span className="text-[11px] text-slate-500 mt-0.5 block">All-time matched earnings</span>
         </div>
       </div>
 
       {/* Search & Filter Bar */}
       <div className="glass-card p-4 rounded-2xl border border-white/5">
-        <form onSubmit={handleSearchSubmit} className="flex flex-col sm:flex-row gap-2">
+        <form onSubmit={handleSearchSubmit} className="flex flex-col sm:flex-row gap-2.5">
           <div className="relative flex-1">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
             <input
@@ -348,6 +636,37 @@ export default function AdminPayoutRulesPage() {
             )}
           </div>
 
+          {/* Status Filter */}
+          <select
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setPage(1);
+              fetchRules(search, providerFilter, e.target.value, 1, perPage);
+            }}
+            className="px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-300 focus:outline-none"
+          >
+            <option value="all" className="bg-[#0c1015] text-white">All Statuses</option>
+            <option value="active" className="bg-[#0c1015] text-white">Active Only</option>
+            <option value="inactive" className="bg-[#0c1015] text-white">Disabled Only</option>
+          </select>
+
+          {/* Per Page */}
+          <select
+            value={perPage}
+            onChange={(e) => {
+              const newPer = Number(e.target.value);
+              setPerPage(newPer);
+              setPage(1);
+              fetchRules(search, providerFilter, statusFilter, 1, newPer);
+            }}
+            className="px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-300 focus:outline-none"
+          >
+            <option value={20} className="bg-[#0c1015] text-white">20 / page</option>
+            <option value={50} className="bg-[#0c1015] text-white">50 / page</option>
+            <option value={100} className="bg-[#0c1015] text-white">100 / page</option>
+          </select>
+
           <button
             type="submit"
             className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-slate-200 hover:text-white transition-all cursor-pointer"
@@ -355,7 +674,7 @@ export default function AdminPayoutRulesPage() {
             Filter
           </button>
 
-          {(search || providerFilter) && (
+          {(search || providerFilter || statusFilter !== 'all') && (
             <button
               type="button"
               onClick={handleClearFilters}
@@ -374,25 +693,27 @@ export default function AdminPayoutRulesPage() {
             <thead>
               <tr className="border-b border-white/5 bg-white/[0.02] text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
                 <th className="py-3.5 px-4">Provider</th>
-                <th className="py-3.5 px-4">Offer ID / Name</th>
-                <th className="py-3.5 px-4">Coins Credited</th>
-                <th className="py-3.5 px-4">Worker Payout (USD)</th>
+                <th className="py-3.5 px-4">Offer ID</th>
+                <th className="py-3.5 px-4">Offer Name</th>
+                <th className="py-3.5 px-4">Coin</th>
+                <th className="py-3.5 px-4">Payout (USD)</th>
+                <th className="py-3.5 px-4 text-center">Today Count</th>
+                <th className="py-3.5 px-4 text-center">Total Count</th>
                 <th className="py-3.5 px-4">Status</th>
-                <th className="py-3.5 px-4">Created Date</th>
                 <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 text-slate-300">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-500">
+                  <td colSpan={9} className="py-12 text-center text-slate-500">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-brand-400" />
                     <span>Loading Payout Rules...</span>
                   </td>
                 </tr>
               ) : rules.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-500">
+                  <td colSpan={9} className="py-12 text-center text-slate-500">
                     <Coins className="w-8 h-8 mx-auto mb-2 opacity-30" />
                     <p className="font-medium text-slate-400">No payout rules found</p>
                     <p className="text-[11px] text-slate-600 mt-1">
@@ -402,9 +723,8 @@ export default function AdminPayoutRulesPage() {
                 </tr>
               ) : (
                 rules.map((rule) => {
-                  const isActive = !!rule.is_active;
+                  const isRuleActive = !!rule.is_active;
                   const isActioning = actionLoading === rule.id;
-                  const createdDate = rule.created_at ? new Date(rule.created_at).toLocaleDateString() : '-';
 
                   return (
                     <tr key={rule.id} className="hover:bg-white/[0.02] transition-colors">
@@ -415,33 +735,57 @@ export default function AdminPayoutRulesPage() {
                         </span>
                       </td>
 
-                      {/* Offer ID / Name */}
-                      <td className="py-3 px-4">
-                        <div>
-                          {rule.offer_name ? (
-                            <span className="font-semibold text-slate-200 block">{rule.offer_name}</span>
-                          ) : null}
-                          {rule.offer_id ? (
-                            <span className="font-mono text-[11px] text-slate-400 block">ID: {rule.offer_id}</span>
-                          ) : (
-                            <span className="text-[11px] text-slate-500 italic">All Offers (Wildcard)</span>
-                          )}
-                        </div>
+                      {/* Offer ID */}
+                      <td className="py-3 px-4 font-mono text-slate-300">
+                        {rule.offer_id ? (
+                          <span className="px-2 py-0.5 rounded bg-white/5 text-[11px] border border-white/10 font-bold">
+                            {rule.offer_id}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 font-bold">-</span>
+                        )}
                       </td>
 
-                      {/* Coins */}
+                      {/* Offer Name */}
+                      <td className="py-3 px-4 font-medium text-slate-200">
+                        {rule.offer_name || <span className="text-slate-500 italic text-[11px]">(All Offers)</span>}
+                      </td>
+
+                      {/* Coin */}
                       <td className="py-3 px-4 font-mono font-bold text-amber-400">
-                        {Number(rule.coin_amount).toLocaleString()} coins
+                        {Number(rule.coin_amount).toLocaleString()}
                       </td>
 
-                      {/* Payout USD */}
+                      {/* Payout (USD) */}
                       <td className="py-3 px-4 font-mono font-black text-emerald-400 text-sm">
-                        ${Number(rule.user_payout_usd).toFixed(2)} USD
+                        ${Number(rule.user_payout_usd).toFixed(2)}
+                      </td>
+
+                      {/* Today Count */}
+                      <td className="py-3 px-4 text-center">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold font-mono ${
+                          (rule.today_count || 0) > 0 
+                            ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' 
+                            : 'bg-white/5 text-slate-500 border border-white/5'
+                        }`}>
+                          {rule.today_count || 0}
+                        </span>
+                      </td>
+
+                      {/* Total Count */}
+                      <td className="py-3 px-4 text-center">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold font-mono ${
+                          (rule.total_count || 0) > 0 
+                            ? 'bg-brand-500/15 text-brand-300 border border-brand-500/30' 
+                            : 'bg-white/5 text-slate-500 border border-white/5'
+                        }`}>
+                          {rule.total_count || 0}
+                        </span>
                       </td>
 
                       {/* Status */}
                       <td className="py-3 px-4">
-                        {isActive ? (
+                        {isRuleActive ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                             Active
@@ -449,14 +793,9 @@ export default function AdminPayoutRulesPage() {
                         ) : (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-rose-500/10 border border-rose-500/30 text-rose-400">
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-                            Disabled
+                            Inactive
                           </span>
                         )}
-                      </td>
-
-                      {/* Date */}
-                      <td className="py-3 px-4 text-slate-400 text-[11px]">
-                        {createdDate}
                       </td>
 
                       {/* Actions */}
@@ -478,14 +817,14 @@ export default function AdminPayoutRulesPage() {
                             onClick={() => handleToggleStatus(rule)}
                             disabled={isActioning}
                             className={`px-2 py-1 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 ${
-                              isActive
+                              isRuleActive
                                 ? 'bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/30 text-rose-400'
                                 : 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
                             }`}
-                            title={isActive ? 'Disable Rule' : 'Enable Rule'}
+                            title={isRuleActive ? 'Disable Rule' : 'Enable Rule'}
                           >
                             <Power className={`w-3 h-3 ${isActioning ? 'animate-spin' : ''}`} />
-                            <span className="text-[11px]">{isActive ? 'Disable' : 'Enable'}</span>
+                            <span className="text-[11px]">{isRuleActive ? 'Disable' : 'Enable'}</span>
                           </button>
 
                           {/* Delete */}
@@ -507,152 +846,182 @@ export default function AdminPayoutRulesPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Footer */}
+        {pagination.last_page > 1 && (
+          <div className="p-4 border-t border-white/5 flex items-center justify-between text-xs text-slate-400">
+            <span>
+              Showing {((pagination.current_page - 1) * perPage) + 1} to {Math.min(pagination.current_page * perPage, pagination.total)} of {pagination.total} rules
+            </span>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage(prev => Math.max(1, prev - 1))}
+                disabled={page <= 1 || loading}
+                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed border border-white/10 flex items-center gap-1"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Previous</span>
+              </button>
+
+              <span className="px-3 py-1 font-semibold text-white">
+                Page {pagination.current_page} of {pagination.last_page}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setPage(prev => Math.min(pagination.last_page, prev + 1))}
+                disabled={page >= pagination.last_page || loading}
+                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed border border-white/10 flex items-center gap-1"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ADD RULE MODAL */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-card border border-white/10 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Coins className="w-5 h-5 text-brand-400" />
-                <h3 className="text-lg font-bold text-white">Add New Payout Rule</h3>
-              </div>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="text-slate-500 hover:text-white transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="glass-card w-full max-w-lg p-6 rounded-3xl border border-white/10 shadow-2xl relative space-y-5">
+            <button
+              onClick={() => setShowAddModal(false)}
+              className="absolute right-5 top-5 text-slate-400 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Plus className="w-5 h-5 text-brand-400" />
+                <span>Add Payout Rule</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Define the worker USD payout when a user under a My ID completes this offer.
+              </p>
             </div>
 
             {modalError && (
-              <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
                 <span>{modalError}</span>
               </div>
             )}
 
-            <form onSubmit={handleAddSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                    Provider <span className="text-rose-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={provider}
-                    onChange={(e) => setProvider(e.target.value)}
-                    placeholder="e.g. Vortex"
-                    autoFocus
-                    className="w-full px-4 py-2.5 rounded-xl glass-input text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                    Offer ID (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={offerId}
-                    onChange={(e) => setOfferId(e.target.value)}
-                    placeholder="e.g. prime_video_101"
-                    className="w-full px-4 py-2.5 rounded-xl glass-input text-xs font-mono"
-                  />
-                </div>
+            <form onSubmit={handleAddSubmit} className="space-y-4 text-xs">
+              {/* Provider */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Provider <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={provider}
+                  onChange={(e) => setProvider(e.target.value)}
+                  placeholder="e.g. Vortex, Torox, RevU, CPALead"
+                  className="w-full px-3.5 py-2.5 rounded-xl glass-input"
+                />
               </div>
 
+              {/* Offer ID */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                  Offer Name (Optional label)
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Offer ID <span className="text-slate-500 font-normal">(Optional — Leave empty or '-' to match all offers)</span>
+                </label>
+                <input
+                  type="text"
+                  value={offerId}
+                  onChange={(e) => setOfferId(e.target.value)}
+                  placeholder="e.g. prime_video_101 or leave empty"
+                  className="w-full px-3.5 py-2.5 rounded-xl glass-input font-mono"
+                />
+              </div>
+
+              {/* Offer Name */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Offer Name <span className="text-slate-500 font-normal">(Optional descriptive label)</span>
                 </label>
                 <input
                   type="text"
                   value={offerName}
                   onChange={(e) => setOfferName(e.target.value)}
-                  placeholder="e.g. Prime Video"
-                  className="w-full px-4 py-2.5 rounded-xl glass-input text-xs"
+                  placeholder="e.g. Prime Video 30-Day Free Trial"
+                  className="w-full px-3.5 py-2.5 rounded-xl glass-input"
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Coin Amount & Payout USD */}
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                    Credited Coins <span className="text-rose-400">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    required
-                    value={coinAmount}
-                    onChange={(e) => setCoinAmount(e.target.value)}
-                    placeholder="e.g. 350"
-                    className="w-full px-4 py-2.5 rounded-xl glass-input text-xs font-mono font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                    User Payout USD <span className="text-rose-400">*</span>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    Coins Credited <span className="text-rose-400">*</span>
                   </label>
                   <input
                     type="number"
                     step="0.0001"
+                    min="0"
                     required
-                    value={userPayoutUsd}
-                    onChange={(e) => setUserPayoutUsd(e.target.value)}
-                    placeholder="e.g. 0.70"
-                    className="w-full px-4 py-2.5 rounded-xl glass-input text-xs font-mono font-bold text-emerald-400"
+                    value={coinAmount}
+                    onChange={(e) => setCoinAmount(e.target.value)}
+                    placeholder="e.g. 500"
+                    className="w-full px-3.5 py-2.5 rounded-xl glass-input font-mono"
                   />
                 </div>
-              </div>
 
-              <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03] border border-white/5">
                 <div>
-                  <span className="text-xs font-semibold text-slate-200 block">Initial Status</span>
-                  <span className="text-[11px] text-slate-500">Enable this rule immediately for completion matching</span>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    Worker Payout (USD) <span className="text-rose-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono">$</span>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      min="0"
+                      required
+                      value={userPayoutUsd}
+                      onChange={(e) => setUserPayoutUsd(e.target.value)}
+                      placeholder="e.g. 0.70"
+                      className="w-full pl-7 pr-3.5 py-2.5 rounded-xl glass-input font-mono"
+                    />
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsActive(!isActive)}
-                  className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
-                    isActive ? 'bg-brand-500' : 'bg-slate-700'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-1 w-4 h-4 rounded-full bg-slate-950 transition-transform ${
-                      isActive ? 'right-1' : 'left-1'
-                    }`}
-                  />
-                </button>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              {/* Status */}
+              <div className="flex items-center gap-3 pt-1">
+                <input
+                  type="checkbox"
+                  id="rule-active"
+                  checked={isActive}
+                  onChange={(e) => setIsActive(e.target.checked)}
+                  className="w-4 h-4 rounded text-brand-400 focus:ring-brand-400 cursor-pointer"
+                />
+                <label htmlFor="rule-active" className="text-slate-300 font-medium cursor-pointer">
+                  Activate rule immediately upon creation
+                </label>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-3 pt-3">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 hover:text-white transition-all cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all cursor-pointer font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-400 to-cyan-400 hover:brightness-110 text-slate-950 text-xs font-bold transition-all shadow-glow-emerald disabled:opacity-50 cursor-pointer flex items-center gap-2"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-400 to-cyan-400 hover:brightness-110 text-slate-950 font-bold transition-all shadow-glow-emerald cursor-pointer disabled:opacity-50"
                 >
-                  {submitting ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Saving...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Save Rule</span>
-                    </>
-                  )}
+                  {submitting ? 'Creating Rule...' : 'Create Payout Rule'}
                 </button>
               </div>
             </form>
@@ -662,147 +1031,140 @@ export default function AdminPayoutRulesPage() {
 
       {/* EDIT RULE MODAL */}
       {editingRule && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-card border border-white/10 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="glass-card w-full max-w-lg p-6 rounded-3xl border border-white/10 shadow-2xl relative space-y-5">
+            <button
+              onClick={() => setEditingRule(null)}
+              className="absolute right-5 top-5 text-slate-400 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <Pencil className="w-5 h-5 text-brand-400" />
-                <h3 className="text-lg font-bold text-white">Edit Payout Rule #{editingRule.id}</h3>
-              </div>
-              <button
-                onClick={() => setEditingRule(null)}
-                className="text-slate-500 hover:text-white transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+                <span>Edit Payout Rule #{editingRule.id}</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Updating will apply to future earned completions. Existing snapshot earnings in ledger will remain unchanged.
+              </p>
             </div>
 
             {editError && (
-              <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
                 <span>{editError}</span>
               </div>
             )}
 
-            <form onSubmit={handleEditSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                    Provider <span className="text-rose-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={editProvider}
-                    onChange={(e) => setEditProvider(e.target.value)}
-                    placeholder="e.g. Vortex"
-                    className="w-full px-4 py-2.5 rounded-xl glass-input text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                    Offer ID (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={editOfferId}
-                    onChange={(e) => setEditOfferId(e.target.value)}
-                    placeholder="e.g. prime_video_101"
-                    className="w-full px-4 py-2.5 rounded-xl glass-input text-xs font-mono"
-                  />
-                </div>
+            <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
+              {/* Provider */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Provider <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editProvider}
+                  onChange={(e) => setEditProvider(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl glass-input"
+                />
               </div>
 
+              {/* Offer ID */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                  Offer Name (Optional label)
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Offer ID <span className="text-slate-500 font-normal">(Leave empty or '-' to match all offers)</span>
+                </label>
+                <input
+                  type="text"
+                  value={editOfferId}
+                  onChange={(e) => setEditOfferId(e.target.value)}
+                  placeholder="e.g. prime_video_101 or empty"
+                  className="w-full px-3.5 py-2.5 rounded-xl glass-input font-mono"
+                />
+              </div>
+
+              {/* Offer Name */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Offer Name <span className="text-slate-500 font-normal">(Optional descriptive label)</span>
                 </label>
                 <input
                   type="text"
                   value={editOfferName}
                   onChange={(e) => setEditOfferName(e.target.value)}
-                  placeholder="e.g. Prime Video"
-                  className="w-full px-4 py-2.5 rounded-xl glass-input text-xs"
+                  placeholder="e.g. Prime Video 30-Day Free Trial"
+                  className="w-full px-3.5 py-2.5 rounded-xl glass-input"
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Coin Amount & Payout USD */}
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                    Credited Coins <span className="text-rose-400">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    step="any"
-                    required
-                    value={editCoinAmount}
-                    onChange={(e) => setEditCoinAmount(e.target.value)}
-                    placeholder="e.g. 350"
-                    className="w-full px-4 py-2.5 rounded-xl glass-input text-xs font-mono font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                    User Payout USD <span className="text-rose-400">*</span>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    Coins Credited <span className="text-rose-400">*</span>
                   </label>
                   <input
                     type="number"
                     step="0.0001"
+                    min="0"
                     required
-                    value={editUserPayoutUsd}
-                    onChange={(e) => setEditUserPayoutUsd(e.target.value)}
-                    placeholder="e.g. 0.70"
-                    className="w-full px-4 py-2.5 rounded-xl glass-input text-xs font-mono font-bold text-emerald-400"
+                    value={editCoinAmount}
+                    onChange={(e) => setEditCoinAmount(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl glass-input font-mono"
                   />
                 </div>
-              </div>
 
-              <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03] border border-white/5">
                 <div>
-                  <span className="text-xs font-semibold text-slate-200 block">Status</span>
-                  <span className="text-[11px] text-slate-500">Active rules are applied during completion resolution</span>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    Worker Payout (USD) <span className="text-rose-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono">$</span>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      min="0"
+                      required
+                      value={editUserPayoutUsd}
+                      onChange={(e) => setEditUserPayoutUsd(e.target.value)}
+                      className="w-full pl-7 pr-3.5 py-2.5 rounded-xl glass-input font-mono"
+                    />
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setEditIsActive(!editIsActive)}
-                  className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
-                    editIsActive ? 'bg-brand-500' : 'bg-slate-700'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-1 w-4 h-4 rounded-full bg-slate-950 transition-transform ${
-                      editIsActive ? 'right-1' : 'left-1'
-                    }`}
-                  />
-                </button>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              {/* Status */}
+              <div className="flex items-center gap-3 pt-1">
+                <input
+                  type="checkbox"
+                  id="edit-rule-active"
+                  checked={editIsActive}
+                  onChange={(e) => setEditIsActive(e.target.checked)}
+                  className="w-4 h-4 rounded text-brand-400 focus:ring-brand-400 cursor-pointer"
+                />
+                <label htmlFor="edit-rule-active" className="text-slate-300 font-medium cursor-pointer">
+                  Rule is active
+                </label>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-3 pt-3">
                 <button
                   type="button"
                   onClick={() => setEditingRule(null)}
-                  className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 hover:text-white transition-all cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all cursor-pointer font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={editSubmitting}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-400 to-cyan-400 hover:brightness-110 text-slate-950 text-xs font-bold transition-all shadow-glow-emerald disabled:opacity-50 cursor-pointer flex items-center gap-2"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-400 to-cyan-400 hover:brightness-110 text-slate-950 font-bold transition-all shadow-glow-emerald cursor-pointer disabled:opacity-50"
                 >
-                  {editSubmitting ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Saving...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Update Rule</span>
-                    </>
-                  )}
+                  {editSubmitting ? 'Saving Changes...' : 'Save Changes'}
                 </button>
               </div>
             </form>

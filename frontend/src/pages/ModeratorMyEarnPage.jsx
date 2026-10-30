@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Coins, 
   Calendar, 
@@ -10,7 +10,8 @@ import {
   ShieldCheck,
   CheckCircle2,
   Lock,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Clock
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -98,56 +99,70 @@ function createZipArchive(files) {
   eocdView.setUint32(16, centralDirOffset, true);
   eocdView.setUint16(20, 0, true);
 
-  const totalZipSize = offset + cdTotalLength + 22;
-  const result = new Uint8Array(totalZipSize);
-  let pos = 0;
+  const totalSize = offset + cdTotalLength + 22;
+  const zipBuffer = new Uint8Array(totalSize);
 
+  let pos = 0;
   fileEntries.forEach(entry => {
-    result.set(entry.header, pos);
+    zipBuffer.set(entry.header, pos);
     pos += entry.header.length;
-    result.set(entry.data, pos);
+    zipBuffer.set(entry.data, pos);
     pos += entry.data.length;
   });
 
   centralEntries.forEach(cd => {
-    result.set(cd, pos);
+    zipBuffer.set(cd, pos);
     pos += cd.length;
   });
 
-  result.set(eocd, pos);
-  return result;
+  zipBuffer.set(eocd, pos);
+  return zipBuffer;
 }
 
 function generateMyEarnXLSXBlob(data) {
-  const items = Array.isArray(data.items) ? data.items : [];
+  const items = data.items || [];
   const summary = data.summary || { total_offers: 0, total_coins: 0, total_usd: 0, total_bdt: 0 };
-  
-  const headers = ['Provider', 'Offer', 'Coins', 'Quantity', 'Rate / Offer USD', 'Total USD', 'Total BDT'];
+  const periodLabel = data.selected_month || 'Current';
 
-  let sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\n<sheetData>\n<row r="1">`;
-  headers.forEach(h => {
-    sheetXml += `<c t="inlineStr"><is><t>${escapeXml(h)}</t></is></c>`;
-  });
-  sheetXml += `</row>\n`;
+  let sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData>
+<row r="1">
+<c t="inlineStr"><is><t>My Earn Report</t></is></c>
+<c t="inlineStr"><is><t>My ID: ${escapeXml(data.my_id || 'N/A')}</t></is></c>
+<c t="inlineStr"><is><t>Period: ${escapeXml(periodLabel)}</t></is></c>
+</row>
+<row r="2"/>
+<row r="3">
+<c t="inlineStr"><is><t>SL</t></is></c>
+<c t="inlineStr"><is><t>Wall / Provider</t></is></c>
+<c t="inlineStr"><is><t>Offer Name</t></is></c>
+<c t="inlineStr"><is><t>Coins</t></is></c>
+<c t="inlineStr"><is><t>Quantity</t></is></c>
+<c t="inlineStr"><is><t>Rate (USD)</t></is></c>
+<c t="inlineStr"><is><t>Rate (BDT)</t></is></c>
+<c t="inlineStr"><is><t>Total USD</t></is></c>
+<c t="inlineStr"><is><t>Total BDT</t></is></c>
+</row>\n`;
 
-  let rowNum = 2;
-  items.forEach((item) => {
+  let rowNum = 4;
+  items.forEach((item, idx) => {
     sheetXml += `<row r="${rowNum}">`;
+    sheetXml += `<c><v>${idx + 1}</v></c>`;
     sheetXml += `<c t="inlineStr"><is><t>${escapeXml(item.provider)}</t></is></c>`;
     sheetXml += `<c t="inlineStr"><is><t>${escapeXml(item.offer)}</t></is></c>`;
     sheetXml += `<c><v>${item.coins}</v></c>`;
     sheetXml += `<c><v>${item.quantity}</v></c>`;
     sheetXml += `<c><v>${Number(item.rate_usd).toFixed(2)}</v></c>`;
+    sheetXml += `<c><v>${Number(item.rate_bdt).toFixed(2)}</v></c>`;
     sheetXml += `<c><v>${Number(item.total_usd).toFixed(2)}</v></c>`;
     sheetXml += `<c><v>${Number(item.total_bdt).toFixed(2)}</v></c>`;
     sheetXml += `</row>\n`;
     rowNum++;
   });
 
-  // Empty separator row
   rowNum++;
-
-  // Bottom summary section
+  // Summary section
   sheetXml += `<row r="${rowNum}">`;
   sheetXml += `<c t="inlineStr"><is><t>Total Offers</t></is></c>`;
   sheetXml += `<c><v>${summary.total_offers}</v></c>`;
@@ -214,6 +229,7 @@ export default function ModeratorMyEarnPage() {
   const [data, setData] = useState({
     my_id: null,
     has_my_id: false,
+    active_period: 'this_month',
     selected_month: '',
     months: [],
     summary: {
@@ -222,6 +238,7 @@ export default function ModeratorMyEarnPage() {
       total_usd: 0,
       total_bdt: 0,
     },
+    offer_summary: [],
     items: [],
   });
 
@@ -231,7 +248,9 @@ export default function ModeratorMyEarnPage() {
 
   // Helper to format YYYY-MM into human-readable e.g. "October 2026"
   const formatMonthLabel = (monthStr) => {
-    if (!monthStr || monthStr === 'all') return 'All Time';
+    if (!monthStr || monthStr === 'this_month') return 'This Month';
+    if (monthStr === 'today') return 'Today';
+    if (monthStr === 'all') return 'All Time';
     const [year, month] = monthStr.split('-');
     if (!year || !month) return monthStr;
     const date = new Date(parseInt(year, 10), parseInt(month, 10) - 1, 1);
@@ -287,9 +306,13 @@ export default function ModeratorMyEarnPage() {
     URL.revokeObjectURL(url);
   };
 
+  const offerSummary = useMemo(() => Array.isArray(data.offer_summary) ? data.offer_summary : [], [data.offer_summary]);
+  const items = useMemo(() => Array.isArray(data.items) ? data.items : [], [data.items]);
+  const activePeriod = data.active_period || (selectedMonth === 'today' ? 'today' : (selectedMonth === 'all' ? 'all' : 'this_month'));
+
   return (
     <div className="space-y-6">
-      {/* Top Header: Title, My ID Badge, Read-Only Notice, Month Selector */}
+      {/* Top Header: Title, My ID Badge, Quick Filters, Month Selector */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/5">
         <div>
           <div className="flex items-center gap-3">
@@ -316,8 +339,46 @@ export default function ModeratorMyEarnPage() {
           </p>
         </div>
 
-        {/* Month Selector Controls */}
-        <div className="flex items-center gap-3">
+        {/* Quick Filter Tabs & Month Selector Controls */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Quick Filter Buttons: Today, This Month, All Time */}
+          <div className="flex items-center bg-[#0c1015] border border-white/10 rounded-xl p-1 shadow-sm text-xs font-semibold">
+            <button
+              onClick={() => setSelectedMonth('today')}
+              disabled={loading}
+              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                activePeriod === 'today'
+                  ? 'bg-brand-400 text-slate-950 font-bold shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Today
+            </button>
+            <button
+              onClick={() => setSelectedMonth('')}
+              disabled={loading}
+              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                activePeriod === 'this_month'
+                  ? 'bg-brand-400 text-slate-950 font-bold shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              This Month
+            </button>
+            <button
+              onClick={() => setSelectedMonth('all')}
+              disabled={loading}
+              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                activePeriod === 'all'
+                  ? 'bg-brand-400 text-slate-950 font-bold shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              All Time
+            </button>
+          </div>
+
+          {/* Historical Month Selector */}
           <div className="flex items-center gap-2 bg-[#0c1015] border border-white/10 rounded-xl px-3 py-1.5 shadow-sm">
             <Calendar className="w-4 h-4 text-brand-400 shrink-0" />
             <select
@@ -327,6 +388,7 @@ export default function ModeratorMyEarnPage() {
               className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer pr-2"
               aria-label="Select month"
             >
+              <option value="today" className="bg-[#0c1015] text-white">Today</option>
               {data.months && data.months.length > 0 ? (
                 data.months.map((m) => (
                   <option key={m} value={m} className="bg-[#0c1015] text-white">
@@ -338,6 +400,7 @@ export default function ModeratorMyEarnPage() {
                   {formatMonthLabel(data.selected_month)}
                 </option>
               )}
+              <option value="all" className="bg-[#0c1015] text-white">All Time</option>
             </select>
           </div>
 
@@ -379,7 +442,7 @@ export default function ModeratorMyEarnPage() {
         </div>
       )}
 
-      {/* Top Summary Cards (Requirement 7) */}
+      {/* Top Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Card 1: Total Offers */}
         <div className="p-4 rounded-2xl bg-[#0c1015]/80 border border-white/5 relative overflow-hidden">
@@ -438,101 +501,152 @@ export default function ModeratorMyEarnPage() {
         </div>
       </div>
 
-      {/* Main Table Card (Requirement 5 & 6) */}
+      {/* OFFER SUMMARY TABLE (AGGREGATE PER OFFER) */}
       <div className="rounded-2xl bg-[#0c1015]/80 border border-white/5 overflow-hidden shadow-xl">
         <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-bold text-white">Monthly Offer Earnings Breakdown</h2>
+            <Layers className="w-4 h-4 text-brand-400" />
+            <h2 className="text-sm font-bold text-white">Offer Summary Table — {formatMonthLabel(data.selected_month)}</h2>
             <span className="text-xs text-slate-500">
-              ({data.items?.length || 0} {data.items?.length === 1 ? 'group' : 'groups'})
+              ({offerSummary.length} {offerSummary.length === 1 ? 'offer' : 'offers'})
             </span>
           </div>
           <span className="text-xs text-slate-400">
-            {formatMonthLabel(selectedMonth || data.selected_month)}
+            Grouped by Offer &amp; Provider
           </span>
         </div>
 
-        {/* Table Container */}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-white/[0.02] border-b border-white/5 text-[11px] uppercase font-bold tracking-wider text-slate-400">
+                <th className="py-3 px-4">Offer Name</th>
                 <th className="py-3 px-4">Provider</th>
-                <th className="py-3 px-4">Offer</th>
+                <th className="py-3 px-4 text-center">Total Completed</th>
+                <th className="py-3 px-4 text-right">Earnings (USD)</th>
+                <th className="py-3 px-4 text-right">Earnings (BDT)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5 text-slate-300">
+              {loading && offerSummary.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="py-8 text-center text-slate-500">
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto text-brand-400 mb-1" />
+                    <span>Loading offer summary...</span>
+                  </td>
+                </tr>
+              ) : offerSummary.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="py-8 text-center text-slate-500">
+                    <Coins className="w-7 h-7 mx-auto mb-1 text-slate-600 opacity-40" />
+                    <p className="font-semibold text-slate-400">No offer earnings recorded for this period</p>
+                  </td>
+                </tr>
+              ) : (
+                offerSummary.map((row, idx) => (
+                  <tr key={`${row.provider}_${row.offer_name}_${idx}`} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="py-3 px-4 font-semibold text-white">
+                      {row.offer_name}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-bold text-[11px]">
+                        {row.provider}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-center font-bold text-amber-400">
+                      {row.total_completed.toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono font-bold text-emerald-400">
+                      ${Number(row.earnings_usd).toFixed(2)}
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono font-bold text-cyan-300">
+                      ৳{Number(row.earnings_bdt).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Main Grouped Detail Table Card */}
+      <div className="rounded-2xl bg-[#0c1015]/80 border border-white/5 overflow-hidden shadow-xl">
+        <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Coins className="w-4 h-4 text-brand-400" />
+            <h2 className="text-sm font-bold text-white">Detailed Offer Breakdown Table</h2>
+            <span className="text-xs text-slate-500">
+              ({items.length} {items.length === 1 ? 'group' : 'groups'})
+            </span>
+          </div>
+          <span className="text-xs text-slate-400">
+            Immutable snapshot rates
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="bg-white/[0.02] border-b border-white/5 text-[11px] uppercase font-bold tracking-wider text-slate-400">
+                <th className="py-3 px-4 w-12 text-center">SL</th>
+                <th className="py-3 px-4">Wall / Provider</th>
+                <th className="py-3 px-4">Offer Name / ID</th>
                 <th className="py-3 px-4 text-right">Coins</th>
                 <th className="py-3 px-4 text-center">Quantity</th>
-                <th className="py-3 px-4 text-right">Rate / Offer (USD)</th>
+                <th className="py-3 px-4 text-right">Rate (USD)</th>
+                <th className="py-3 px-4 text-right">Rate (BDT)</th>
                 <th className="py-3 px-4 text-right">Total USD</th>
                 <th className="py-3 px-4 text-right">Total BDT</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 text-slate-300">
-              {loading && data.items.length === 0 ? (
+              {loading && items.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="py-12 text-center text-slate-500">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-brand-400 mb-2" />
-                    <span>Loading earnings breakdown...</span>
+                  <td colSpan="9" className="py-8 text-center text-slate-500">
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto text-brand-400 mb-1" />
+                    <span>Loading detailed earnings...</span>
                   </td>
                 </tr>
-              ) : !data.has_my_id ? (
+              ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="py-12 text-center text-slate-400">
-                    <ShieldCheck className="w-8 h-8 text-amber-400 mx-auto mb-2 opacity-80" />
-                    <div className="font-semibold text-slate-200">No My ID Linked</div>
-                    <div className="text-[11px] text-slate-500 mt-1">
-                      Your moderator account is not currently linked to a My ID.
-                    </div>
-                  </td>
-                </tr>
-              ) : data.items.length === 0 ? (
-                <tr>
-                  <td colSpan="7" className="py-12 text-center text-slate-400">
-                    <Coins className="w-8 h-8 text-slate-600 mx-auto mb-2 opacity-60" />
-                    <div className="font-semibold text-slate-200">No earnings recorded</div>
-                    <div className="text-[11px] text-slate-500 mt-1">
-                      No matching completed tasks were recorded for this My ID in {formatMonthLabel(selectedMonth || data.selected_month)}.
-                    </div>
+                  <td colSpan="9" className="py-8 text-center text-slate-500">
+                    <Coins className="w-7 h-7 mx-auto mb-1 text-slate-600 opacity-40" />
+                    <p className="font-semibold text-slate-400">No earnings recorded for this period</p>
                   </td>
                 </tr>
               ) : (
-                data.items.map((row, idx) => (
-                  <tr key={`${row.provider}-${row.offer}-${row.coins}-${row.rate_usd}-${idx}`} className="hover:bg-white/[0.02] transition-colors">
-                    {/* Provider */}
-                    <td className="py-3.5 px-4 font-semibold text-white">
-                      <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-brand-300">
+                items.map((row) => (
+                  <tr key={`${row.provider}_${row.offer}_${row.coins}_${row.sl}`} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="py-3 px-4 text-center font-mono text-slate-500">
+                      {row.sl}
+                    </td>
+                    <td className="py-3 px-4 font-bold text-white">
+                      <span className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
                         {row.provider}
                       </span>
                     </td>
-
-                    {/* Offer */}
-                    <td className="py-3.5 px-4 font-medium text-slate-200 max-w-[240px] truncate" title={row.offer}>
+                    <td className="py-3 px-4 font-semibold text-white">
                       {row.offer}
                     </td>
-
-                    {/* Coins */}
-                    <td className="py-3.5 px-4 text-right font-mono font-semibold text-amber-400">
-                      {Number(row.coins).toLocaleString()} Coins
+                    <td className="py-3 px-4 text-right font-mono font-bold text-amber-400">
+                      {Number(row.coins).toLocaleString()}
                     </td>
-
-                    {/* Quantity */}
-                    <td className="py-3.5 px-4 text-center">
-                      <span className="inline-block px-2.5 py-0.5 rounded-full bg-brand-500/10 text-brand-400 font-bold text-[11px] border border-brand-500/20">
-                        {row.quantity} {row.quantity === 1 ? 'Offer' : 'Offers'}
+                    <td className="py-3 px-4 text-center font-mono font-bold text-white">
+                      <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
+                        {row.quantity}
                       </span>
                     </td>
-
-                    {/* Rate / Offer (USD) */}
-                    <td className="py-3.5 px-4 text-right font-mono text-slate-400">
-                      ${Number(row.rate_usd).toFixed(2)} each
+                    <td className="py-3 px-4 text-right font-mono text-slate-300">
+                      ${Number(row.rate_usd).toFixed(2)}
                     </td>
-
-                    {/* Total USD */}
-                    <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-400">
+                    <td className="py-3 px-4 text-right font-mono text-slate-300">
+                      ৳{Number(row.rate_bdt).toFixed(2)}
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono font-bold text-emerald-400">
                       ${Number(row.total_usd).toFixed(2)}
                     </td>
-
-                    {/* Total BDT */}
-                    <td className="py-3.5 px-4 text-right font-mono font-bold text-cyan-400">
+                    <td className="py-3 px-4 text-right font-mono font-bold text-cyan-300">
                       ৳{Number(row.total_bdt).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                   </tr>

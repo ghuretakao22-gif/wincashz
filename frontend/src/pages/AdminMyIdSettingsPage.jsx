@@ -20,6 +20,7 @@ export default function AdminMyIdSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [systemEnabled, setSystemEnabled] = useState(false);
+  const [payoutEnabled, setPayoutEnabled] = useState(false);
   const [startDate, setStartDate] = useState('');
   const [usdBdtRate, setUsdBdtRate] = useState('122.00');
   const [msg, setMsg] = useState(null);
@@ -31,6 +32,7 @@ export default function AdminMyIdSettingsPage() {
       const res = await api.getAdminMyIdSettings();
       if (res.success && res.data) {
         setSystemEnabled(!!res.data.my_id_system_enabled);
+        setPayoutEnabled(!!res.data.my_id_payout_enabled);
         setStartDate(res.data.my_id_start_date || '');
         setUsdBdtRate(String(res.data.my_id_usd_bdt_rate || '122.00'));
       }
@@ -60,12 +62,14 @@ export default function AdminMyIdSettingsPage() {
     try {
       const res = await api.updateAdminMyIdSettings({
         my_id_system_enabled: systemEnabled,
+        my_id_payout_enabled: payoutEnabled,
         my_id_start_date: startDate.trim(),
         my_id_usd_bdt_rate: numericRate,
       });
 
       if (res.success) {
         setSystemEnabled(!!res.data.my_id_system_enabled);
+        setPayoutEnabled(!!res.data.my_id_payout_enabled);
         setStartDate(res.data.my_id_start_date || '');
         setUsdBdtRate(String(res.data.my_id_usd_bdt_rate));
         setMsg({ type: 'success', text: 'My ID system settings successfully saved!' });
@@ -196,10 +200,57 @@ export default function AdminMyIdSettingsPage() {
             </div>
           </div>
 
+          {/* Card 1b: Monthly Payouts Switch */}
+          <div className="glass-card p-6 rounded-3xl border border-white/5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-bold text-white block">2. Moderator Monthly Payouts Switch</span>
+                <span className="text-xs text-slate-400 block mt-0.5">
+                  When turned OFF, moderators cannot submit monthly payout withdrawal requests.
+                </span>
+              </div>
+              <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                payoutEnabled 
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+              }`}>
+                {payoutEnabled ? 'PAYOUTS ACTIVE' : 'PAYOUTS DISABLED'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.02] border border-white/5">
+              <div className="flex items-center gap-3">
+                <Power className={`w-5 h-5 ${payoutEnabled ? 'text-emerald-400' : 'text-slate-500'}`} />
+                <div>
+                  <span className="text-xs font-semibold text-slate-200 block">
+                    {payoutEnabled ? 'Monthly Payout Requests Enabled' : 'Monthly Payout Requests Disabled'}
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    Toggle to immediately enable or disable monthly payout request submissions by moderators.
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setPayoutEnabled(!payoutEnabled)}
+                className={`w-14 h-7 rounded-full transition-colors relative cursor-pointer ${
+                  payoutEnabled ? 'bg-brand-500 shadow-glow-emerald' : 'bg-slate-700'
+                }`}
+              >
+                <span
+                  className={`absolute top-1 w-5 h-5 rounded-full bg-slate-950 transition-all ${
+                    payoutEnabled ? 'right-1' : 'left-1'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
           {/* Card 2: Start Date */}
           <div className="glass-card p-6 rounded-3xl border border-white/5 space-y-4">
             <div>
-              <span className="text-sm font-bold text-white block">2. Earning Start Date Filter</span>
+              <span className="text-sm font-bold text-white block">3. Earning Start Date Filter</span>
               <span className="text-xs text-slate-400 block mt-0.5">
                 Completed tasks created before this timestamp are strictly excluded from My ID worker calculations.
               </span>
@@ -249,10 +300,10 @@ export default function AdminMyIdSettingsPage() {
             </div>
           </div>
 
-          {/* Card 3: Global USD to BDT Rate */}
+          {/* Card 4: Global USD to BDT Rate */}
           <div className="glass-card p-6 rounded-3xl border border-white/5 space-y-4">
             <div>
-              <span className="text-sm font-bold text-white block">3. Global USD → BDT Conversion Rate</span>
+              <span className="text-sm font-bold text-white block">4. Global USD → BDT Conversion Rate</span>
               <span className="text-xs text-slate-400 block mt-0.5">
                 Exchange rate applied when displaying worker earnings in Bangladeshi Taka (BDT).
               </span>

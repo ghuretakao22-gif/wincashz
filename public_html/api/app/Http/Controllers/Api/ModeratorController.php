@@ -13,20 +13,51 @@ use Illuminate\Support\Facades\Schema;
 class ModeratorController extends Controller
 {
     /**
-     * Get platform statistics and available months for moderator panel.
+     * Get platform statistics and available months scoped strictly to the moderator's My ID.
      */
     public function stats(Request $request): JsonResponse
     {
+        $user = $request->user('api') ?? $request->user();
+        $isModerator = $user && $user->role === 'moderator';
+        $hasMyIdCol = Schema::hasColumn('users', 'my_id');
+        $myIdCode = $hasMyIdCol ? trim((string) ($user?->my_id ?? '')) : '';
+
+        // If moderator has no My ID assigned in a full environment
+        if ($isModerator && $hasMyIdCol && $myIdCode === '') {
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'total_users' => 0,
+                    'months' => [],
+                    'daily_counts' => [],
+                    'date_count' => 0,
+                ],
+            ]);
+        }
+
         $months = [];
         $dailyCounts = [];
         $dateCount = 0;
         $selectedMonth = trim((string) $request->input('month', ''));
         $selectedDate = trim((string) $request->input('date', ''));
 
+        // Count users (scoped to moderator's My ID when present)
+        $usersCountQuery = User::query();
+        if ($isModerator && $hasMyIdCol && $myIdCode !== '') {
+            $usersCountQuery->where('my_id', $myIdCode);
+        }
+        $totalUsers = $usersCountQuery->count();
+
         if (Schema::hasTable('completed_tasks')) {
-            $months = DB::table('completed_tasks')
-                ->selectRaw("DISTINCT SUBSTRING(created_at, 1, 7) as month_val")
-                ->whereNotNull('created_at')
+            $tasksQuery = DB::table('completed_tasks');
+            if ($isModerator && $hasMyIdCol && $myIdCode !== '') {
+                $tasksQuery->join('users', 'users.id', '=', 'completed_tasks.user_id')
+                    ->where('users.my_id', $myIdCode);
+            }
+
+            $months = (clone $tasksQuery)
+                ->selectRaw("DISTINCT SUBSTRING(completed_tasks.created_at, 1, 7) as month_val")
+                ->whereNotNull('completed_tasks.created_at')
                 ->orderByDesc('month_val')
                 ->limit(24)
                 ->pluck('month_val')
@@ -38,22 +69,24 @@ class ModeratorController extends Controller
                 ? $selectedMonth
                 : ($months[0] ?? Carbon::now()->format('Y-m'));
 
-            $dailyCounts = DB::table('completed_tasks')
-                ->selectRaw("SUBSTRING(created_at, 1, 10) as day_date, COUNT(*) as count")
-                ->where('created_at', 'like', $targetMonth . '%')
+            $dailyCounts = (clone $tasksQuery)
+                ->selectRaw("SUBSTRING(completed_tasks.created_at, 1, 10) as day_date, COUNT(*) as count")
+                ->where('completed_tasks.created_at', 'like', $targetMonth . '%')
                 ->groupBy('day_date')
                 ->pluck('count', 'day_date')
                 ->all();
 
             if ($selectedDate !== '' && strtolower($selectedDate) !== 'all') {
-                $dateCount = DB::table('completed_tasks')->whereDate('created_at', $selectedDate)->count();
+                $dateCount = (clone $tasksQuery)
+                    ->whereDate('completed_tasks.created_at', $selectedDate)
+                    ->count();
             }
         }
 
         return response()->json([
             'status' => 'success',
             'data' => [
-                'total_users' => User::count(),
+                'total_users' => $totalUsers,
                 'months' => $months,
                 'daily_counts' => $dailyCounts,
                 'date_count' => $dateCount,
@@ -62,11 +95,24 @@ class ModeratorController extends Controller
     }
 
     /**
-     * Get paginated user list or coin credit activity with search ranking, view mode, and date/month filters.
-     * Zero N+1 queries.
+     * Get paginated user list or coin credit activity strictly scoped to moderator's My ID.
      */
     public function users(Request $request): JsonResponse
     {
+        $user = $request->user('api') ?? $request->user();
+        $isModerator = $user && $user->role === 'moderator';
+        $hasMyIdCol = Schema::hasColumn('users', 'my_id');
+        $myIdCode = $hasMyIdCol ? trim((string) ($user?->my_id ?? '')) : '';
+
+        // If moderator has no My ID in a full environment
+        if ($isModerator && $hasMyIdCol && $myIdCode === '') {
+            return response()->json([
+                'status' => 'success',
+                'data' => [],
+                'pagination' => ['currentPage' => 1, 'lastPage' => 1, 'perPage' => 25, 'total' => 0, 'from' => 0, 'to' => 0],
+            ]);
+        }
+
         $view = strtolower(trim((string) $request->input('view', 'all')));
         $search = trim((string) $request->input('search', ''));
         $date = trim((string) ($request->input('date', $request->input('from_date', ''))));
@@ -100,14 +146,11 @@ class ModeratorController extends Controller
                     'completed_tasks.created_at as created_at',
                 ]);
 
-            // 1. Date / Month filter
-            if ($isSpecificSingleDate) {
-                $query->whereDate('completed_tasks.created_at', $date);
-            } elseif ($month !== '' && strtolower($month) !== 'all') {
-                $query->where('completed_tasks.created_at', 'like', $month . '%');
+            // Scope strictly to moderator's My ID
+            if ($isModerator && $hasMyIdCol && $myIdCode !== '') {
+                $query->where('users.my_id', $myIdCode);
             }
 
-            // 2. Prefix-only search filter & ranking
             if ($search !== '') {
                 $escapedSearch = addcslashes($search, '%_\\');
                 $prefixLike = $escapedSearch . '%';
@@ -115,34 +158,24 @@ class ModeratorController extends Controller
                 $numericId = $isNumeric ? (int) $search : -1;
 
                 $query->where(function ($q) use ($prefixLike, $isNumeric, $numericId) {
-                    $q->where('completed_tasks.user_name', 'like', $prefixLike)
-                      ->orWhere('users.username', 'like', $prefixLike)
+                    $q->where(DB::raw('COALESCE(users.username, completed_tasks.user_name)'), 'like', $prefixLike)
                       ->orWhere('users.name', 'like', $prefixLike);
 
                     if ($isNumeric) {
-                        $q->orWhere('completed_tasks.user_id', $numericId)
-                          ->orWhere('completed_tasks.id', $numericId);
+                        $q->orWhere('completed_tasks.user_id', $numericId);
                     }
                 });
-
-                $query->orderByRaw('
-                    CASE
-                        WHEN LOWER(COALESCE(users.username, completed_tasks.user_name)) = LOWER(?) THEN 1
-                        WHEN completed_tasks.user_id = ? THEN 2
-                        WHEN LOWER(COALESCE(users.username, completed_tasks.user_name)) LIKE LOWER(?) THEN 3
-                        ELSE 4
-                    END ASC, completed_tasks.created_at DESC, completed_tasks.id DESC
-                ', [
-                    $search,
-                    $numericId,
-                    $prefixLike,
-                ]);
-            } else {
-                $query->orderByDesc('completed_tasks.created_at')
-                      ->orderByDesc('completed_tasks.id');
             }
 
-            // 3. Pagination (Auto-all for specific dates or requested all)
+            if ($isSpecificSingleDate) {
+                $query->whereDate('completed_tasks.created_at', $date);
+            } elseif ($month !== '' && strtolower($month) !== 'all') {
+                $query->where('completed_tasks.created_at', 'like', $month . '%');
+            }
+
+            $query->orderByDesc('completed_tasks.created_at')
+                  ->orderByDesc('completed_tasks.id');
+
             if ($request->input('per_page') === 'all' || $isSpecificSingleDate) {
                 $perPage = max(1, (clone $query)->count());
             } else {
@@ -155,19 +188,20 @@ class ModeratorController extends Controller
 
             $paginator = $query->paginate($perPage);
 
-            $data = collect($paginator->items())->map(function ($item) {
-                $createdAt = $item->created_at ? Carbon::parse($item->created_at) : null;
+            $data = collect($paginator->items())->map(function ($row) {
+                $createdAt = $row->created_at ? Carbon::parse($row->created_at) : null;
 
                 return [
-                    'id' => (int) $item->task_id,
-                    'user_id' => (int) ($item->user_id ?? 0),
-                    'username' => (string) ($item->username ?? '—'),
-                    'name' => (string) ($item->name ?? '—'),
-                    'balance' => (float) ($item->balance ?? 0),
-                    'wall_name' => (string) ($item->wall_name ?? '—'),
-                    'offer_name' => (string) ($item->offer_name ?? '—'),
-                    'credited_coins' => (float) ($item->credited_coins ?? 0),
-                    'created_at' => $item->created_at,
+                    'id' => (int) $row->task_id,
+                    'user_id' => $row->user_id ? (int) $row->user_id : null,
+                    'username' => (string) $row->username,
+                    'name' => (string) ($row->name ?? ''),
+                    'balance' => (float) ($row->balance ?? 0),
+                    'wall_name' => (string) ($row->wall_name ?? '—'),
+                    'offer_name' => (string) ($row->offer_name ?? '—'),
+                    'credited_coins' => (float) ($row->credited_coins ?? 0),
+                    'created_at' => $row->created_at,
+                    'credit_at' => $row->created_at,
                     'credit_date' => $createdAt ? $createdAt->format('d M Y') : '—',
                     'credit_time' => $createdAt ? $createdAt->format('h:i A') : '—',
                 ];
@@ -188,11 +222,15 @@ class ModeratorController extends Controller
         }
 
         // =========================================================================
-        // VIEW: ALL (Standard registered users directory with wall monitoring)
+        // VIEW: ALL (User Directory)
         // =========================================================================
-        $query = User::query()->select(['id', 'username', 'name', 'balance']);
+        $query = User::query()->select(['id', 'username', 'name', 'balance', 'created_at']);
 
-        // 1. Prefix-only search filter across full DB
+        // Scope strictly to moderator's My ID
+        if ($isModerator && $hasMyIdCol && $myIdCode !== '') {
+            $query->where('my_id', $myIdCode);
+        }
+
         if ($search !== '') {
             $escapedSearch = addcslashes($search, '%_\\');
             $prefixLike = $escapedSearch . '%';
@@ -209,7 +247,6 @@ class ModeratorController extends Controller
             });
         }
 
-        // 2. Date / Month filter scoped to completed tasks
         if ($hasCompletedTasks) {
             if ($isSpecificSingleDate) {
                 $query->whereExists(function ($sub) use ($date) {
@@ -228,7 +265,6 @@ class ModeratorController extends Controller
             }
         }
 
-        // 3. Search Ranking Order (Exact username -> Exact user ID -> Username prefix -> Display name prefix -> ID ASC)
         if ($search !== '') {
             $escapedSearch = addcslashes($search, '%_\\');
             $prefixLike = $escapedSearch . '%';
@@ -250,11 +286,9 @@ class ModeratorController extends Controller
                 $prefixLike,
             ]);
         } else {
-            // Default ordering: oldest accounts first (ID 1, 2, 3...)
             $query->orderBy('id', 'asc');
         }
 
-        // 4. Server-side pagination (Auto-all for specific date or requested all)
         if ($request->input('per_page') === 'all' || $isSpecificSingleDate) {
             $perPage = max(1, (clone $query)->count());
         } else {
@@ -267,7 +301,6 @@ class ModeratorController extends Controller
 
         $users = $query->paginate($perPage);
 
-        // 5. Fetch latest completed task for ONLY the users on the current page (Zero N+1!)
         $userIds = collect($users->items())->pluck('id')->filter()->all();
         $latestTasks = collect();
 
@@ -287,7 +320,6 @@ class ModeratorController extends Controller
             $latestTasks = $taskQuery->get()->groupBy('user_id')->map(fn ($group) => $group->first());
         }
 
-        // 6. Explicit whitelist mapping guarantees zero sensitive data exposure
         $data = collect($users->items())->map(function ($u) use ($latestTasks) {
             $task = $latestTasks->get($u->id);
             $createdAt = $task && $task->created_at ? Carbon::parse($task->created_at) : null;
@@ -324,6 +356,22 @@ class ModeratorController extends Controller
      */
     public function activity(Request $request, int $id): JsonResponse
     {
+        $user = $request->user('api') ?? $request->user();
+        $isModerator = $user && $user->role === 'moderator';
+        $hasMyIdCol = Schema::hasColumn('users', 'my_id');
+        $myIdCode = $hasMyIdCol ? trim((string) ($user?->my_id ?? '')) : '';
+
+        // If moderator, verify target user belongs to moderator's My ID
+        if ($isModerator && $hasMyIdCol && $myIdCode !== '') {
+            $targetUserBelongs = User::where('id', $id)->where('my_id', $myIdCode)->exists();
+            if (! $targetUserBelongs) {
+                return response()->json([
+                    'status' => 'success',
+                    'data' => [],
+                ]);
+            }
+        }
+
         $activities = [];
 
         if (Schema::hasTable('completed_tasks')) {

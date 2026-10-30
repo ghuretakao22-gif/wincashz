@@ -16,10 +16,10 @@ class ModeratorDashboardController extends Controller
     /**
      * Get Moderator Dashboard data:
      * - Top cards: My ID, Friendly Name, Linked Users, Completed Offers, Total USD Earn, Total BDT Earn
-     * - Month filter (current month default, previous months from earning ledger)
-     * - Grouped Earning Table (SL, Wall/Provider, Offer, Coins, Quantity, USD Rate, BDT Rate, Total BDT)
-     * - Leaderboard: Top 5 My IDs by Total BDT (with friendly names and offers)
-     * - Moderator's own rank card (even if outside Top 5)
+     * - Period filter: 'today', 'this_month', 'all' OR month string 'YYYY-MM'
+     * - Offer Summary Table: aggregated by (offer_name, provider) for this My ID
+     * - Grouped Earning Table: detailed breakdown
+     * - Leaderboard: Top 5 My IDs by Total BDT + own rank
      */
     public function index(Request $request): JsonResponse
     {
@@ -27,6 +27,7 @@ class ModeratorDashboardController extends Controller
         $myIdCode = trim((string) ($user?->my_id ?? ''));
 
         $currentMonth = Carbon::now('UTC')->format('Y-m');
+        $todayDate = Carbon::now('UTC')->format('Y-m-d');
 
         // Available months from snapshot earnings across the ledger
         $rawMonths = [];
@@ -44,10 +45,23 @@ class ModeratorDashboardController extends Controller
         $allMonths = array_values(array_unique(array_merge([$currentMonth], $rawMonths)));
         rsort($allMonths);
 
+        $requestedPeriod = strtolower(trim((string) $request->input('period', '')));
         $requestedMonth = trim((string) $request->input('month', ''));
-        $selectedMonth = ($requestedMonth !== '' && (in_array($requestedMonth, $allMonths, true) || $requestedMonth === 'all'))
-            ? $requestedMonth
-            : $currentMonth;
+
+        // Determine active filter mode: 'today', 'this_month', 'all', or custom 'YYYY-MM'
+        $activePeriod = 'this_month';
+        $selectedMonth = $currentMonth;
+
+        if ($requestedPeriod === 'today' || $requestedMonth === 'today') {
+            $activePeriod = 'today';
+            $selectedMonth = 'today';
+        } elseif ($requestedPeriod === 'all' || $requestedMonth === 'all') {
+            $activePeriod = 'all';
+            $selectedMonth = 'all';
+        } elseif ($requestedMonth !== '' && in_array($requestedMonth, $allMonths, true)) {
+            $activePeriod = ($requestedMonth === $currentMonth) ? 'this_month' : 'custom';
+            $selectedMonth = $requestedMonth;
+        }
 
         // If user has no My ID or my_id_earnings table does not exist
         if ($myIdCode === '' || !Schema::hasTable('my_id_earnings')) {
@@ -58,6 +72,7 @@ class ModeratorDashboardController extends Controller
                     'friendly_name' => null,
                     'has_my_id' => $myIdCode !== '',
                     'total_linked_users' => 0,
+                    'active_period' => $activePeriod,
                     'selected_month' => $selectedMonth,
                     'months' => $allMonths,
                     'summary' => [
@@ -66,6 +81,7 @@ class ModeratorDashboardController extends Controller
                         'total_usd_earn' => 0.0,
                         'total_bdt_earn' => 0.0,
                     ],
+                    'offer_summary' => [],
                     'items' => [],
                     'leaderboard' => [
                         'top_5' => [],
@@ -82,17 +98,55 @@ class ModeratorDashboardController extends Controller
         // Total linked users assigned to this My ID
         $totalLinkedUsers = User::query()->where('my_id', $myIdCode)->count();
 
-        // Query earnings strictly isolated to this My ID
+        // Query earnings strictly isolated to this My ID with period filter
         $earningsQuery = DB::table('my_id_earnings')->where('my_id_code', $myIdCode);
-        if ($selectedMonth !== 'all') {
-            $earningsQuery->where(function ($q) use ($selectedMonth) {
-                $q->where('completed_at', 'like', $selectedMonth . '%')
-                  ->orWhere(function ($q2) use ($selectedMonth) {
-                      $q2->whereNull('completed_at')->where('created_at', 'like', $selectedMonth . '%');
+
+        if ($activePeriod === 'today') {
+            $earningsQuery->where(function ($q) use ($todayDate) {
+                $q->where('completed_at', 'like', $todayDate . '%')
+                  ->orWhere(function ($q2) use ($todayDate) {
+                      $q2->whereNull('completed_at')->where('created_at', 'like', $todayDate . '%');
+                  });
+            });
+        } elseif ($activePeriod === 'all') {
+            // No date limit
+        } else {
+            // Filter by selectedMonth (e.g. current month or specific historical month)
+            $targetMonth = ($selectedMonth !== '' && $selectedMonth !== 'all') ? $selectedMonth : $currentMonth;
+            $earningsQuery->where(function ($q) use ($targetMonth) {
+                $q->where('completed_at', 'like', $targetMonth . '%')
+                  ->orWhere(function ($q2) use ($targetMonth) {
+                      $q2->whereNull('completed_at')->where('created_at', 'like', $targetMonth . '%');
                   });
             });
         }
 
+        // 1. Offer Summary Table: Grouped by (offer_name, provider) for this My ID only
+        $offerSummary = (clone $earningsQuery)
+            ->selectRaw("
+                COALESCE(NULLIF(TRIM(offer_name), ''), NULLIF(TRIM(offer_id), ''), 'Standard Offer') as offer_name,
+                COALESCE(NULLIF(TRIM(provider), ''), 'Unknown Provider') as provider,
+                COUNT(*) as total_completed,
+                COALESCE(SUM(payout_usd), 0) as earnings_usd,
+                COALESCE(SUM(payout_bdt), 0) as earnings_bdt
+            ")
+            ->groupBy('offer_name', 'provider')
+            ->orderByDesc('total_completed')
+            ->orderByDesc('earnings_usd')
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'offer_name' => (string) $row->offer_name,
+                    'provider' => (string) $row->provider,
+                    'total_completed' => (int) $row->total_completed,
+                    'earnings_usd' => round((float) $row->earnings_usd, 2),
+                    'earnings_bdt' => round((float) $row->earnings_bdt, 2),
+                ];
+            })
+            ->values()
+            ->all();
+
+        // 2. Detailed grouped items
         $records = $earningsQuery->get([
             'id',
             'provider',
@@ -126,7 +180,6 @@ class ModeratorDashboardController extends Controller
             $rateUsd = (float) ($r->payout_usd ?? 0);
             $payoutBdt = (float) ($r->payout_bdt ?? 0);
 
-            // Grouping key: Provider + Offer + Coins + Payout Rate (USD)
             $groupKey = $provider . '___' . $offer . '___' . number_format($coinAmount, 4, '.', '') . '___' . number_format($rateUsd, 4, '.', '');
 
             if (!isset($grouped[$groupKey])) {
@@ -150,7 +203,6 @@ class ModeratorDashboardController extends Controller
             $totalBdtEarn += $payoutBdt;
         }
 
-        // Sort items: Provider ASC, Offer ASC, Coins ASC
         $items = array_values($grouped);
         usort($items, function ($a, $b) {
             $cmpProvider = strcasecmp($a['provider'], $b['provider']);
@@ -164,7 +216,6 @@ class ModeratorDashboardController extends Controller
             return $a['coins'] <=> $b['coins'];
         });
 
-        // Add SL and format amounts
         $sl = 1;
         foreach ($items as &$item) {
             $item['sl'] = $sl++;
@@ -176,16 +227,15 @@ class ModeratorDashboardController extends Controller
         }
         unset($item);
 
-        // Leaderboard calculation across all My IDs for the selected month
+        // 3. Leaderboard calculation across all My IDs for current month (or selected month)
+        $leaderboardMonth = ($selectedMonth !== '' && $selectedMonth !== 'all' && $selectedMonth !== 'today') ? $selectedMonth : $currentMonth;
         $leaderboardQuery = DB::table('my_id_earnings');
-        if ($selectedMonth !== 'all') {
-            $leaderboardQuery->where(function ($q) use ($selectedMonth) {
-                $q->where('completed_at', 'like', $selectedMonth . '%')
-                  ->orWhere(function ($q2) use ($selectedMonth) {
-                      $q2->whereNull('completed_at')->where('created_at', 'like', $selectedMonth . '%');
-                  });
-            });
-        }
+        $leaderboardQuery->where(function ($q) use ($leaderboardMonth) {
+            $q->where('completed_at', 'like', $leaderboardMonth . '%')
+              ->orWhere(function ($q2) use ($leaderboardMonth) {
+                  $q2->whereNull('completed_at')->where('created_at', 'like', $leaderboardMonth . '%');
+              });
+        });
 
         $aggregated = $leaderboardQuery
             ->selectRaw('my_id_code, COUNT(*) as completed_offers, COALESCE(SUM(payout_bdt), 0) as total_bdt, COALESCE(SUM(payout_usd), 0) as total_usd')
@@ -198,40 +248,38 @@ class ModeratorDashboardController extends Controller
 
         $rankedList = [];
         $ownRankData = null;
+        $rankCounter = 1;
 
-        foreach ($aggregated as $idx => $row) {
-            $code = (string) $row->my_id_code;
-            $offers = (int) $row->completed_offers;
-            $bdt = round((float) $row->total_bdt, 2);
-            $rankNum = $idx + 1;
-            $fn = $myIdsMap[$code] ?? null;
-
-            $item = [
-                'rank' => $rankNum,
+        foreach ($aggregated as $agg) {
+            $code = $agg->my_id_code;
+            $entry = [
+                'rank' => $rankCounter,
                 'my_id_code' => $code,
-                'friendly_name' => $fn,
-                'completed_offers' => $offers,
-                'total_bdt' => $bdt,
+                'friendly_name' => $myIdsMap[$code] ?? null,
+                'completed_offers' => (int) $agg->completed_offers,
+                'total_bdt' => round((float) $agg->total_bdt, 2),
+                'total_usd' => round((float) $agg->total_usd, 2),
             ];
 
-            $rankedList[] = $item;
-
             if ($code === $myIdCode) {
-                $ownRankData = $item;
+                $ownRankData = $entry;
             }
+
+            if ($rankCounter <= 5) {
+                $rankedList[] = $entry;
+            }
+
+            $rankCounter++;
         }
 
-        $top5 = array_slice($rankedList, 0, 5);
-
-        // If current moderator has 0 earnings in the selected month
-        if (!$ownRankData) {
+        if ($ownRankData === null) {
             $ownRankData = [
-                'rank' => count($rankedList) + 1,
+                'rank' => $rankCounter,
                 'my_id_code' => $myIdCode,
                 'friendly_name' => $friendlyName,
                 'completed_offers' => 0,
                 'total_bdt' => 0.0,
-                'is_unranked' => count($rankedList) > 0,
+                'total_usd' => 0.0,
             ];
         }
 
@@ -242,6 +290,7 @@ class ModeratorDashboardController extends Controller
                 'friendly_name' => $friendlyName,
                 'has_my_id' => true,
                 'total_linked_users' => $totalLinkedUsers,
+                'active_period' => $activePeriod,
                 'selected_month' => $selectedMonth,
                 'months' => $allMonths,
                 'summary' => [
@@ -252,9 +301,10 @@ class ModeratorDashboardController extends Controller
                     'total_usd_earn' => round($totalUsdEarn, 2),
                     'total_bdt_earn' => round($totalBdtEarn, 2),
                 ],
+                'offer_summary' => $offerSummary,
                 'items' => $items,
                 'leaderboard' => [
-                    'top_5' => $top5,
+                    'top_5' => $rankedList,
                     'own_rank' => $ownRankData,
                 ],
             ],

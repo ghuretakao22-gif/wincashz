@@ -14,7 +14,9 @@ import {
   Award, 
   Lock, 
   UserCheck,
-  Sparkles
+  Sparkles,
+  Layers,
+  Clock
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -24,6 +26,7 @@ export default function ModeratorDashboardPage() {
     friendly_name: null,
     has_my_id: false,
     total_linked_users: 0,
+    active_period: 'this_month',
     selected_month: '',
     months: [],
     summary: {
@@ -34,6 +37,7 @@ export default function ModeratorDashboardPage() {
       total_usd_earn: 0,
       total_bdt_earn: 0,
     },
+    offer_summary: [],
     items: [],
     leaderboard: {
       top_5: [],
@@ -47,7 +51,9 @@ export default function ModeratorDashboardPage() {
 
   // Month label formatter: '2026-10' -> 'October 2026'
   const formatMonthLabel = (m) => {
-    if (!m || m === 'all') return 'All Time';
+    if (!m || m === 'this_month') return 'This Month';
+    if (m === 'today') return 'Today';
+    if (m === 'all') return 'All Time';
     const [year, month] = m.split('-');
     if (!year || !month) return m;
     const date = new Date(parseInt(year, 10), parseInt(month, 10) - 1, 1);
@@ -90,6 +96,7 @@ export default function ModeratorDashboardPage() {
     total_bdt_earn: 0,
   };
 
+  const offerSummary = useMemo(() => Array.isArray(data.offer_summary) ? data.offer_summary : [], [data.offer_summary]);
   const items = useMemo(() => Array.isArray(data.items) ? data.items : [], [data.items]);
   const top5 = useMemo(() => Array.isArray(data.leaderboard?.top_5) ? data.leaderboard.top_5 : [], [data.leaderboard]);
   const ownRank = data.leaderboard?.own_rank;
@@ -98,48 +105,52 @@ export default function ModeratorDashboardPage() {
   const getRankBadge = (rank) => {
     if (rank === 1) {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm">
-          <Trophy className="w-3.5 h-3.5 text-amber-400" />
-          <span>#1</span>
+        <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-amber-400/20 text-amber-400 border border-amber-400/30 font-black text-xs">
+          🥇 1
         </span>
       );
     }
     if (rank === 2) {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-slate-300/20 text-slate-200 border border-slate-300/40 shadow-sm">
-          <Award className="w-3.5 h-3.5 text-slate-300" />
-          <span>#2</span>
+        <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-300/20 text-slate-300 border border-slate-300/30 font-black text-xs">
+          🥈 2
         </span>
       );
     }
     if (rank === 3) {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-700/20 text-amber-400 border border-amber-700/40 shadow-sm">
-          <Award className="w-3.5 h-3.5 text-amber-500" />
-          <span>#3</span>
+        <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-amber-600/20 text-amber-500 border border-amber-600/30 font-black text-xs">
+          🥉 3
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center justify-center font-mono font-bold text-xs text-slate-400 px-2 py-0.5 rounded-md bg-white/5 border border-white/10">
+      <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-white/5 text-slate-400 font-bold text-xs border border-white/5">
         #{rank}
       </span>
     );
   };
 
+  const activePeriod = data.active_period || (selectedMonth === 'today' ? 'today' : (selectedMonth === 'all' ? 'all' : 'this_month'));
+
   return (
     <div className="space-y-6">
-      {/* Top Header: Title, Subtitle, Month Filter & Refresh */}
+      {/* Top Header: Title, My ID info, Time Filter */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/5">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
               <LayoutDashboard className="w-6 h-6 text-brand-400" />
-              <span>My Dashboard</span>
+              <span>Moderator Dashboard</span>
             </h1>
-            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-white/5 text-slate-400 border border-white/10 flex items-center gap-1">
+            {data.my_id && (
+              <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-brand-500/15 text-brand-400 border border-brand-500/30 font-mono">
+                My ID: {data.my_id}
+              </span>
+            )}
+            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md bg-white/5 text-slate-400 border border-white/10">
               <Lock className="w-3 h-3 text-slate-500" />
-              <span>Personal Performance</span>
+              <span>Read-Only</span>
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
@@ -147,8 +158,46 @@ export default function ModeratorDashboardPage() {
           </p>
         </div>
 
-        {/* Month Selector & Refresh Button */}
-        <div className="flex items-center gap-3">
+        {/* Quick Filter Tabs & Month Selector */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Quick Filter Buttons: Today, This Month, All Time */}
+          <div className="flex items-center bg-[#0c1015] border border-white/10 rounded-xl p-1 shadow-sm text-xs font-semibold">
+            <button
+              onClick={() => setSelectedMonth('today')}
+              disabled={loading}
+              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                activePeriod === 'today'
+                  ? 'bg-brand-400 text-slate-950 font-bold shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Today
+            </button>
+            <button
+              onClick={() => setSelectedMonth('')}
+              disabled={loading}
+              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                activePeriod === 'this_month'
+                  ? 'bg-brand-400 text-slate-950 font-bold shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              This Month
+            </button>
+            <button
+              onClick={() => setSelectedMonth('all')}
+              disabled={loading}
+              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                activePeriod === 'all'
+                  ? 'bg-brand-400 text-slate-950 font-bold shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              All Time
+            </button>
+          </div>
+
+          {/* Historical Month Dropdown */}
           <div className="flex items-center gap-2 bg-[#0c1015] border border-white/10 rounded-xl px-3 py-1.5 shadow-sm">
             <Calendar className="w-4 h-4 text-brand-400 shrink-0" />
             <select
@@ -158,6 +207,7 @@ export default function ModeratorDashboardPage() {
               className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer pr-2"
               aria-label="Filter dashboard by month"
             >
+              <option value="today" className="bg-[#0c1015] text-white">Today</option>
               {data.months && data.months.length > 0 ? (
                 data.months.map((m) => (
                   <option key={m} value={m} className="bg-[#0c1015] text-white">
@@ -169,6 +219,7 @@ export default function ModeratorDashboardPage() {
                   {formatMonthLabel(data.selected_month)}
                 </option>
               )}
+              <option value="all" className="bg-[#0c1015] text-white">All Time</option>
             </select>
           </div>
 
@@ -234,12 +285,12 @@ export default function ModeratorDashboardPage() {
 
         {/* Card 3: Total Linked Users */}
         <div className="p-4 rounded-2xl bg-[#0c1015]/80 border border-white/5 shadow-sm">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Linked Users</span>
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Users</span>
           <div className="mt-2 text-xl sm:text-2xl font-black text-cyan-400 flex items-center gap-1.5">
             <Users className="w-5 h-5 text-cyan-400 shrink-0" />
             <span>{summary.total_linked_users || 0}</span>
           </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Active members</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">Linked to your My ID</p>
         </div>
 
         {/* Card 4: Total Completed Offers */}
@@ -249,7 +300,7 @@ export default function ModeratorDashboardPage() {
             <CheckCircle2 className="w-5 h-5 text-amber-400 shrink-0" />
             <span>{summary.total_completed_offers || 0}</span>
           </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">In {formatMonthLabel(data.selected_month)}</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">{formatMonthLabel(data.selected_month)}</p>
         </div>
 
         {/* Card 5: Total USD Earn */}
@@ -268,6 +319,78 @@ export default function ModeratorDashboardPage() {
             ৳{Number(summary.total_bdt_earn || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <p className="text-[11px] text-slate-500 mt-0.5">Converted snapshot</p>
+        </div>
+      </div>
+
+      {/* OFFER SUMMARY TABLE (AGGREGATE PER OFFER) */}
+      <div className="rounded-2xl bg-[#0c1015]/80 border border-white/5 overflow-hidden shadow-xl">
+        <div className="p-4 border-b border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <Layers className="w-4 h-4 text-brand-400" />
+              <span>Offer Summary — {formatMonthLabel(data.selected_month)}</span>
+            </h2>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Aggregated completions and earnings grouped by offer and provider for your My ID.
+            </p>
+          </div>
+
+          <span className="text-xs text-slate-400 self-start sm:self-auto font-medium">
+            Distinct Offers: <span className="text-white font-bold">{offerSummary.length}</span>
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="bg-white/[0.02] border-b border-white/5 text-[11px] uppercase font-bold tracking-wider text-slate-400">
+                <th className="py-3 px-4">Offer Name</th>
+                <th className="py-3 px-4">Provider</th>
+                <th className="py-3 px-4 text-center">Total Completed</th>
+                <th className="py-3 px-4 text-right">Earnings (USD)</th>
+                <th className="py-3 px-4 text-right">Earnings (BDT)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5 text-slate-300">
+              {loading && offerSummary.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="py-8 text-center text-slate-500">
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto text-brand-400 mb-1" />
+                    <span>Loading offer summary...</span>
+                  </td>
+                </tr>
+              ) : offerSummary.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="py-8 text-center text-slate-500">
+                    <Coins className="w-7 h-7 mx-auto mb-1 text-slate-600 opacity-40" />
+                    <p className="font-semibold text-slate-400">No earnings recorded for this period</p>
+                  </td>
+                </tr>
+              ) : (
+                offerSummary.map((row, idx) => (
+                  <tr key={`${row.provider}_${row.offer_name}_${idx}`} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="py-3 px-4 font-semibold text-white">
+                      {row.offer_name}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-bold text-[11px]">
+                        {row.provider}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-center font-bold text-amber-400">
+                      {row.total_completed.toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono font-bold text-emerald-400">
+                      ${Number(row.earnings_usd).toFixed(2)}
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono font-bold text-cyan-300">
+                      ৳{Number(row.earnings_bdt).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -450,105 +573,64 @@ export default function ModeratorDashboardPage() {
               <tr className="bg-white/[0.02] border-b border-white/5 text-[11px] uppercase font-bold tracking-wider text-slate-400">
                 <th className="py-3 px-4 w-12 text-center">SL</th>
                 <th className="py-3 px-4">Wall / Provider</th>
-                <th className="py-3 px-4">Offer</th>
-                <th className="py-3 px-4 text-center">Coins</th>
+                <th className="py-3 px-4">Offer Name / ID</th>
+                <th className="py-3 px-4 text-right">Coins</th>
                 <th className="py-3 px-4 text-center">Quantity</th>
-                <th className="py-3 px-4 text-right">USD Rate / Offer</th>
-                <th className="py-3 px-4 text-right">BDT / Offer</th>
+                <th className="py-3 px-4 text-right">USD Rate</th>
+                <th className="py-3 px-4 text-right">BDT Rate</th>
                 <th className="py-3 px-4 text-right">Total BDT</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 text-slate-300">
               {loading && items.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="py-12 text-center text-slate-500">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-brand-400 mb-2" />
-                    <span>Loading completed offers breakdown...</span>
+                  <td colSpan="8" className="py-8 text-center text-slate-500">
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto text-brand-400 mb-1" />
+                    <span>Loading earnings...</span>
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="py-12 text-center text-slate-500">
-                    <Coins className="w-8 h-8 mx-auto mb-2 text-slate-600 opacity-50" />
-                    <p className="font-semibold text-slate-400">No earnings recorded for this month</p>
-                    <p className="text-[11px] text-slate-600 mt-0.5">
-                      Completed tasks by linked users will automatically appear here.
-                    </p>
+                  <td colSpan="8" className="py-8 text-center text-slate-500">
+                    <Coins className="w-7 h-7 mx-auto mb-1 text-slate-600 opacity-40" />
+                    <p className="font-semibold text-slate-400">No completed offers found for this period</p>
                   </td>
                 </tr>
               ) : (
-                items.map((item) => (
-                  <tr key={`${item.sl}-${item.provider}-${item.offer}`} className="hover:bg-white/[0.02] transition-colors">
-                    {/* SL */}
-                    <td className="py-3 px-4 text-center font-mono text-slate-400">
-                      {item.sl}
+                items.map((row) => (
+                  <tr key={`${row.provider}_${row.offer}_${row.coins}_${row.sl}`} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="py-3 px-4 text-center font-mono text-slate-500">
+                      {row.sl}
                     </td>
-
-                    {/* Wall / Provider */}
                     <td className="py-3 px-4 font-bold text-white">
-                      <span className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-200">
-                        {item.provider}
+                      <span className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+                        {row.provider}
                       </span>
                     </td>
-
-                    {/* Offer */}
-                    <td className="py-3 px-4 font-medium text-slate-200 max-w-[240px] truncate" title={item.offer}>
-                      {item.offer}
+                    <td className="py-3 px-4 font-semibold text-white">
+                      {row.offer}
                     </td>
-
-                    {/* Coins */}
-                    <td className="py-3 px-4 text-center font-mono font-bold text-amber-400">
-                      {item.coins}
+                    <td className="py-3 px-4 text-right font-mono font-bold text-amber-400">
+                      {Number(row.coins).toLocaleString()}
                     </td>
-
-                    {/* Quantity */}
-                    <td className="py-3 px-4 text-center">
-                      <span className="px-2 py-0.5 rounded-full bg-white/5 font-bold text-slate-200 border border-white/10">
-                        {item.quantity}
+                    <td className="py-3 px-4 text-center font-mono font-bold text-white">
+                      <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
+                        {row.quantity}
                       </span>
                     </td>
-
-                    {/* USD Rate / Offer */}
-                    <td className="py-3 px-4 text-right font-mono text-emerald-400 font-semibold">
-                      ${Number(item.rate_usd).toFixed(2)}
+                    <td className="py-3 px-4 text-right font-mono text-slate-300">
+                      ${Number(row.rate_usd).toFixed(2)}
                     </td>
-
-                    {/* BDT / Offer */}
-                    <td className="py-3 px-4 text-right font-mono text-cyan-400 font-semibold">
-                      ৳{Number(item.rate_bdt).toFixed(2)}
+                    <td className="py-3 px-4 text-right font-mono text-slate-300">
+                      ৳{Number(row.rate_bdt).toFixed(2)}
                     </td>
-
-                    {/* Total BDT */}
-                    <td className="py-3 px-4 text-right font-mono font-black text-cyan-300">
-                      ৳{Number(item.total_bdt).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <td className="py-3 px-4 text-right font-mono font-bold text-cyan-300">
+                      ৳{Number(row.total_bdt).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                   </tr>
                 ))
               )}
             </tbody>
-
-            {/* Bottom Total Summary Footer */}
-            {items.length > 0 && (
-              <tfoot>
-                <tr className="bg-white/[0.04] border-t-2 border-white/10 font-bold text-white text-xs">
-                  <td colSpan="4" className="py-3.5 px-4 uppercase tracking-wider text-slate-300">
-                    Month Total Summary
-                  </td>
-                  <td className="py-3.5 px-4 text-center font-bold text-amber-400">
-                    {summary.total_completed_offers}
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-emerald-400">
-                    ${Number(summary.total_usd_earn).toFixed(2)}
-                  </td>
-                  <td className="py-3.5 px-4 text-right text-slate-400 text-[11px]">
-                    —
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono text-cyan-300 font-black">
-                    ৳{Number(summary.total_bdt_earn).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </td>
-                </tr>
-              </tfoot>
-            )}
           </table>
         </div>
       </div>

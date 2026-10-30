@@ -12,16 +12,17 @@ use Illuminate\Support\Facades\Schema;
 class ModeratorMyEarnController extends Controller
 {
     /**
-     * Get read-only monthly earnings grouped by provider, offer, coins, and payout rate
+     * Get read-only earnings grouped by provider, offer, coins, and payout rate
      * strictly isolated to the authenticated moderator's My ID.
+     * Supports quick filters: 'today', 'this_month', 'all' or month string 'YYYY-MM'.
      */
     public function index(Request $request): JsonResponse
     {
         $user = $request->user('api') ?? $request->user();
-
         $myIdCode = trim((string) ($user?->my_id ?? ''));
 
         $currentMonth = Carbon::now('UTC')->format('Y-m');
+        $todayDate = Carbon::now('UTC')->format('Y-m-d');
 
         if ($myIdCode === '' || !Schema::hasTable('my_id_earnings')) {
             return response()->json([
@@ -29,6 +30,7 @@ class ModeratorMyEarnController extends Controller
                 'data' => [
                     'my_id' => $myIdCode !== '' ? $myIdCode : null,
                     'has_my_id' => $myIdCode !== '',
+                    'active_period' => 'this_month',
                     'selected_month' => $currentMonth,
                     'months' => [$currentMonth],
                     'summary' => [
@@ -37,6 +39,7 @@ class ModeratorMyEarnController extends Controller
                         'total_usd' => 0.0,
                         'total_bdt' => 0.0,
                     ],
+                    'offer_summary' => [],
                     'items' => [],
                 ],
             ]);
@@ -56,24 +59,72 @@ class ModeratorMyEarnController extends Controller
         $allMonths = array_values(array_unique(array_merge([$currentMonth], $rawMonths)));
         rsort($allMonths);
 
+        $requestedPeriod = strtolower(trim((string) $request->input('period', '')));
         $requestedMonth = trim((string) $request->input('month', ''));
-        $selectedMonth = ($requestedMonth !== '' && (in_array($requestedMonth, $allMonths, true) || $requestedMonth === 'all'))
-            ? $requestedMonth
-            : $currentMonth;
 
-        // Query ONLY snapshot fields from my_id_earnings (never use completed_tasks.revenue or current payout rules)
-        $query = DB::table('my_id_earnings')
-            ->where('my_id_code', $myIdCode);
+        // Determine active filter: 'today', 'this_month', 'all', or custom 'YYYY-MM'
+        $activePeriod = 'this_month';
+        $selectedMonth = $currentMonth;
 
-        if ($selectedMonth !== 'all') {
-            $query->where(function ($q) use ($selectedMonth) {
-                $q->where('completed_at', 'like', $selectedMonth . '%')
-                  ->orWhere(function ($q2) use ($selectedMonth) {
-                      $q2->whereNull('completed_at')->where('created_at', 'like', $selectedMonth . '%');
+        if ($requestedPeriod === 'today' || $requestedMonth === 'today') {
+            $activePeriod = 'today';
+            $selectedMonth = 'today';
+        } elseif ($requestedPeriod === 'all' || $requestedMonth === 'all') {
+            $activePeriod = 'all';
+            $selectedMonth = 'all';
+        } elseif ($requestedMonth !== '' && in_array($requestedMonth, $allMonths, true)) {
+            $activePeriod = ($requestedMonth === $currentMonth) ? 'this_month' : 'custom';
+            $selectedMonth = $requestedMonth;
+        }
+
+        // Query ONLY snapshot fields from my_id_earnings strictly scoped to this My ID
+        $query = DB::table('my_id_earnings')->where('my_id_code', $myIdCode);
+
+        if ($activePeriod === 'today') {
+            $query->where(function ($q) use ($todayDate) {
+                $q->where('completed_at', 'like', $todayDate . '%')
+                  ->orWhere(function ($q2) use ($todayDate) {
+                      $q2->whereNull('completed_at')->where('created_at', 'like', $todayDate . '%');
+                  });
+            });
+        } elseif ($activePeriod === 'all') {
+            // No date limit
+        } else {
+            $targetMonth = ($selectedMonth !== '' && $selectedMonth !== 'all') ? $selectedMonth : $currentMonth;
+            $query->where(function ($q) use ($targetMonth) {
+                $q->where('completed_at', 'like', $targetMonth . '%')
+                  ->orWhere(function ($q2) use ($targetMonth) {
+                      $q2->whereNull('completed_at')->where('created_at', 'like', $targetMonth . '%');
                   });
             });
         }
 
+        // 1. Offer Summary Table: aggregated by (offer_name, provider) for this My ID
+        $offerSummary = (clone $query)
+            ->selectRaw("
+                COALESCE(NULLIF(TRIM(offer_name), ''), NULLIF(TRIM(offer_id), ''), 'Standard Offer') as offer_name,
+                COALESCE(NULLIF(TRIM(provider), ''), 'Unknown Provider') as provider,
+                COUNT(*) as total_completed,
+                COALESCE(SUM(payout_usd), 0) as earnings_usd,
+                COALESCE(SUM(payout_bdt), 0) as earnings_bdt
+            ")
+            ->groupBy('offer_name', 'provider')
+            ->orderByDesc('total_completed')
+            ->orderByDesc('earnings_usd')
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'offer_name' => (string) $row->offer_name,
+                    'provider' => (string) $row->provider,
+                    'total_completed' => (int) $row->total_completed,
+                    'earnings_usd' => round((float) $row->earnings_usd, 2),
+                    'earnings_bdt' => round((float) $row->earnings_bdt, 2),
+                ];
+            })
+            ->values()
+            ->all();
+
+        // 2. Detailed grouped items
         $records = $query->get([
             'id',
             'provider',
@@ -108,7 +159,6 @@ class ModeratorMyEarnController extends Controller
             $rateUsd = (float) ($r->payout_usd ?? 0);
             $payoutBdt = (float) ($r->payout_bdt ?? 0);
 
-            // Grouping key: Provider + Offer + Coins + Payout Rate (USD)
             $groupKey = $provider . '___' . $offer . '___' . number_format($coinAmount, 4, '.', '') . '___' . number_format($rateUsd, 4, '.', '');
 
             if (!isset($grouped[$groupKey])) {
@@ -133,7 +183,6 @@ class ModeratorMyEarnController extends Controller
             $totalBdt += $payoutBdt;
         }
 
-        // Sorting: Provider ASC, Offer ASC, Coin Amount ASC
         $items = array_values($grouped);
         usort($items, function ($a, $b) {
             $cmpProvider = strcasecmp($a['provider'], $b['provider']);
@@ -147,10 +196,12 @@ class ModeratorMyEarnController extends Controller
             return $a['coins'] <=> $b['coins'];
         });
 
-        // Format numeric totals
+        $sl = 1;
         foreach ($items as &$item) {
+            $item['sl'] = $sl++;
             $item['coins'] = round($item['coins'], 2);
             $item['rate_usd'] = round($item['rate_usd'], 2);
+            $item['rate_bdt'] = $item['quantity'] > 0 ? round($item['total_bdt'] / $item['quantity'], 2) : 0.0;
             $item['total_usd'] = round($item['total_usd'], 2);
             $item['total_bdt'] = round($item['total_bdt'], 2);
         }
@@ -161,6 +212,7 @@ class ModeratorMyEarnController extends Controller
             'data' => [
                 'my_id' => $myIdCode,
                 'has_my_id' => true,
+                'active_period' => $activePeriod,
                 'selected_month' => $selectedMonth,
                 'months' => $allMonths,
                 'summary' => [
@@ -169,6 +221,7 @@ class ModeratorMyEarnController extends Controller
                     'total_usd' => round($totalUsd, 2),
                     'total_bdt' => round($totalBdt, 2),
                 ],
+                'offer_summary' => $offerSummary,
                 'items' => $items,
             ],
         ]);

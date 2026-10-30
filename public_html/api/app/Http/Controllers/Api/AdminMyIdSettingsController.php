@@ -11,8 +11,10 @@ use Illuminate\Support\Carbon;
 
 class AdminMyIdSettingsController extends Controller
 {
+    public const SETTING_PAYOUT_ENABLED = 'my_id_payout_enabled';
+
     /**
-     * Get current My ID system activation, start date, and USD/BDT rate.
+     * Get current My ID system activation, payout activation, start date, and USD/BDT rate.
      */
     public function getSettings(): JsonResponse
     {
@@ -20,6 +22,7 @@ class AdminMyIdSettingsController extends Controller
             'success' => true,
             'data' => [
                 'my_id_system_enabled' => MyIdEarningService::isSystemEnabled(),
+                'my_id_payout_enabled' => Setting::boolean(self::SETTING_PAYOUT_ENABLED, false),
                 'my_id_start_date' => Setting::value(MyIdEarningService::SETTING_START_DATE, ''),
                 'my_id_usd_bdt_rate' => MyIdEarningService::getUsdBdtRate(),
                 'timezone' => 'UTC',
@@ -34,6 +37,7 @@ class AdminMyIdSettingsController extends Controller
     {
         $validated = $request->validate([
             'my_id_system_enabled' => ['nullable', 'boolean'],
+            'my_id_payout_enabled' => ['nullable', 'boolean'],
             'my_id_start_date' => ['nullable', 'string'],
             'my_id_usd_bdt_rate' => ['nullable', 'numeric', 'min:0.01'],
         ]);
@@ -42,6 +46,13 @@ class AdminMyIdSettingsController extends Controller
             Setting::setBoolean(
                 MyIdEarningService::SETTING_SYSTEM_ENABLED,
                 (bool) $request->input('my_id_system_enabled')
+            );
+        }
+
+        if ($request->has('my_id_payout_enabled')) {
+            Setting::setBoolean(
+                self::SETTING_PAYOUT_ENABLED,
+                (bool) $request->input('my_id_payout_enabled')
             );
         }
 
@@ -66,6 +77,7 @@ class AdminMyIdSettingsController extends Controller
             'message' => 'My ID system settings updated successfully.',
             'data' => [
                 'my_id_system_enabled' => MyIdEarningService::isSystemEnabled(),
+                'my_id_payout_enabled' => Setting::boolean(self::SETTING_PAYOUT_ENABLED, false),
                 'my_id_start_date' => Setting::value(MyIdEarningService::SETTING_START_DATE, ''),
                 'my_id_usd_bdt_rate' => MyIdEarningService::getUsdBdtRate(),
                 'timezone' => 'UTC',

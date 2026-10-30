@@ -260,6 +260,7 @@ export default function App() {
                 <Route path="featured" element={<AdminFeaturedPage />} />
                 <Route path="withdrawals" element={<AdminWithdrawalsPage />} />
                 <Route path="pin" element={<AdminSitePinPage />} />
+                <Route path="my-id" element={<Navigate to="/admin/payout-rules" replace />} />
                 <Route path="my-ids" element={<AdminMyIdsPage />} />
                 <Route path="my-id-overview" element={<AdminMyIdOverviewPage />} />
                 <Route path="payout-rules" element={<AdminPayoutRulesPage />} />
