@@ -14,6 +14,8 @@ use App\Http\Controllers\Api\AdminMyIdSettingsController;
 use App\Http\Controllers\Api\AdminMyIdPayoutController;
 use App\Http\Controllers\Api\ModeratorNoticeController;
 use App\Http\Controllers\Api\ModeratorPayoutController;
+use App\Http\Controllers\Api\ModeratorCompletedOffersController;
+use App\Http\Controllers\Api\ModeratorSettingsController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/register', [AuthController::class, 'register']);
@@ -108,8 +110,11 @@ Route::prefix('moderator')
         Route::get('/stats', [ModeratorController::class, 'stats']);
         Route::get('/users', [ModeratorController::class, 'users']);
         Route::get('/users/{id}/activity', [ModeratorController::class, 'activity']);
+        Route::get('/completed-offers', [ModeratorCompletedOffersController::class, 'index']);
         Route::get('/my-earn', [ModeratorMyEarnController::class, 'index']);
         Route::get('/payouts', [ModeratorPayoutController::class, 'index']);
         Route::post('/payouts', [ModeratorPayoutController::class, 'store']);
+        Route::get('/settings', [ModeratorSettingsController::class, 'index']);
+        Route::match(['post', 'patch'], '/settings', [ModeratorSettingsController::class, 'update']);
     });
 

@@ -224,7 +224,7 @@ class ModeratorController extends Controller
         // =========================================================================
         // VIEW: ALL (User Directory)
         // =========================================================================
-        $query = User::query()->select(['id', 'username', 'name', 'balance', 'created_at']);
+        $query = User::query()->select(['id', 'username', 'name', 'email', 'balance', 'ban', 'created_at']);
 
         // Scope strictly to moderator's My ID
         if ($isModerator && $hasMyIdCol && $myIdCode !== '') {
@@ -239,7 +239,8 @@ class ModeratorController extends Controller
 
             $query->where(function ($q) use ($prefixLike, $isNumeric, $numericId) {
                 $q->where('username', 'like', $prefixLike)
-                  ->orWhere('name', 'like', $prefixLike);
+                  ->orWhere('name', 'like', $prefixLike)
+                  ->orWhere('email', 'like', $prefixLike);
 
                 if ($isNumeric) {
                     $q->orWhere('id', $numericId);
@@ -303,6 +304,7 @@ class ModeratorController extends Controller
 
         $userIds = collect($users->items())->pluck('id')->filter()->all();
         $latestTasks = collect();
+        $completedCounts = [];
 
         if (! empty($userIds) && $hasCompletedTasks) {
             $taskQuery = DB::table('completed_tasks')
@@ -318,16 +320,42 @@ class ModeratorController extends Controller
             }
 
             $latestTasks = $taskQuery->get()->groupBy('user_id')->map(fn ($group) => $group->first());
+
+            $completedCounts = DB::table('completed_tasks')
+                ->whereIn('user_id', $userIds)
+                ->groupBy('user_id')
+                ->selectRaw('user_id, COUNT(*) as cnt')
+                ->pluck('cnt', 'user_id')
+                ->all();
         }
 
-        $data = collect($users->items())->map(function ($u) use ($latestTasks) {
+        $data = collect($users->items())->map(function ($u) use ($latestTasks, $completedCounts) {
             $task = $latestTasks->get($u->id);
             $createdAt = $task && $task->created_at ? Carbon::parse($task->created_at) : null;
+            $userCreated = $u->created_at ? Carbon::parse($u->created_at) : null;
+
+            $rawEmail = trim((string) ($u->email ?? ''));
+            $maskedEmail = '—';
+            if ($rawEmail !== '' && str_contains($rawEmail, '@')) {
+                [$local, $domain] = explode('@', $rawEmail, 2);
+                $maskedEmail = (strlen($local) <= 2)
+                    ? substr($local, 0, 1) . '***@' . $domain
+                    : substr($local, 0, 2) . '***@' . $domain;
+            }
+
+            $isBanned = (bool) ($u->ban ?? false);
 
             return [
                 'id' => (int) $u->id,
                 'username' => (string) $u->username,
                 'name' => (string) ($u->name ?? ''),
+                'masked_email' => $maskedEmail,
+                'joined_at' => $userCreated ? $userCreated->format('d M Y') : '—',
+                'created_at' => $u->created_at,
+                'completed_offers' => (int) ($completedCounts[$u->id] ?? 0),
+                'completed_offers_count' => (int) ($completedCounts[$u->id] ?? 0),
+                'status' => $isBanned ? 'Banned' : 'Active',
+                'is_banned' => $isBanned,
                 'balance' => (float) ($u->balance ?? 0),
                 'latest_wall' => $task ? ($task->offer_wall_name ?? '—') : '—',
                 'latest_coins' => $task ? (float) ($task->currency_reward ?? 0) : null,

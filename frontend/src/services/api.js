@@ -225,10 +225,15 @@ export const api = {
   getModeratorDashboard: (params = {}) => {
     return apiRequest(`/moderator/dashboard${cleanQueryParams(params)}`);
   },
+  getModeratorCompletedOffers: (params = {}) => {
+    return apiRequest(`/moderator/completed-offers${cleanQueryParams(params)}`);
+  },
   getModeratorMyEarn: (params = {}) => {
     return apiRequest(`/moderator/my-earn${cleanQueryParams(params)}`);
   },
   getModeratorNotice: () => apiRequest('/moderator/notice'),
+  getModeratorSettings: () => apiRequest('/moderator/settings'),
+  updateModeratorSettings: (data) => apiRequest('/moderator/settings', { method: 'PATCH', body: JSON.stringify(data) }),
 
   // Site PIN Gate
   getSitePinStatus: () => apiRequest('/site-pin/status'),

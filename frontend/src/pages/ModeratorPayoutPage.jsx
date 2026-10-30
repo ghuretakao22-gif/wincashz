@@ -74,6 +74,23 @@ export default function ModeratorPayoutPage() {
 
   useEffect(() => {
     fetchPayoutDetails();
+
+    // Pre-fill payout default preferences from moderator settings if configured
+    api.getModeratorSettings()
+      .then((res) => {
+        const pref = res?.data?.payout_preferences;
+        if (pref) {
+          if (pref.default_method) setPaymentMethod(pref.default_method);
+          if (pref.account_number) {
+            setMobileNumber(pref.account_number);
+            setAccountNumber(pref.account_number);
+          }
+          if (pref.account_holder_name) setAccountHolderName(pref.account_holder_name);
+          if (pref.bank_name) setBankName(pref.bank_name);
+          if (pref.branch_name) setBranchName(pref.branch_name);
+        }
+      })
+      .catch(() => {});
   }, [fetchPayoutDetails]);
 
   const handleMonthChange = (e) => {

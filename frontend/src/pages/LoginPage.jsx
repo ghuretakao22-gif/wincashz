@@ -37,6 +37,8 @@ export default function LoginPage() {
     if (isAuthenticated) {
       if (user?.role === 'admin') {
         navigate('/admin', { replace: true });
+      } else if (user?.role === 'moderator') {
+        navigate('/moderator/dashboard', { replace: true });
       } else {
         navigate('/earn', { replace: true });
       }
@@ -59,6 +61,22 @@ export default function LoginPage() {
     api.getGoogleConfig()
       .then((res) => setGoogleEnabled(!!res?.enabled))
       .catch(() => {});
+
+    // Listen for Google OAuth popup messages
+    const handleGoogleMessage = (event) => {
+      if (event.data?.source === 'google-auth' && event.data?.payload?.token) {
+        const payload = event.data.payload;
+        if (payload.user?.role === 'moderator') {
+          navigate('/moderator/dashboard', { replace: true });
+        } else if (payload.user?.role === 'admin') {
+          navigate('/admin', { replace: true });
+        } else {
+          navigate('/earn', { replace: true });
+        }
+      }
+    };
+    window.addEventListener('message', handleGoogleMessage);
+    return () => window.removeEventListener('message', handleGoogleMessage);
   }, [isAuthenticated, user, navigate]);
 
   const handleSubmit = async (e) => {
@@ -93,6 +111,8 @@ export default function LoginPage() {
         // Standard login
         if (res.user?.role === 'admin') {
           navigate('/admin', { replace: true });
+        } else if (res.user?.role === 'moderator') {
+          navigate('/moderator/dashboard', { replace: true });
         } else {
           navigate('/earn', { replace: true });
         }

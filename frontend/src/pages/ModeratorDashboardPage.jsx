@@ -1,23 +1,21 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { 
-  LayoutDashboard, 
-  Calendar, 
-  DollarSign, 
   Users, 
-  Coins, 
-  TrendingUp, 
   CheckCircle2, 
-  AlertCircle, 
+  DollarSign, 
+  Coins, 
+  Clock, 
+  TrendingUp, 
+  ShieldAlert, 
   RefreshCw, 
-  Hash, 
-  Trophy, 
-  Award, 
-  Lock, 
-  UserCheck,
-  Sparkles,
+  Search, 
+  Calendar, 
+  ArrowRight,
+  Filter,
   Layers,
-  Clock,
-  ShieldAlert
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -37,44 +35,44 @@ export default function ModeratorDashboardPage() {
       total_completed_offers: 0,
       total_usd_earn: 0,
       total_bdt_earn: 0,
+      today_completed_offers: 0,
+      today_usd_earn: 0,
+      today_bdt_earn: 0,
+      chargebacks_count: 0,
+      chargebacks_amount: 0,
     },
     offer_summary: [],
-    items: [],
-    leaderboard: {
-      top_5: [],
-      own_rank: null,
-    },
   });
 
-  const [selectedMonth, setSelectedMonth] = useState('');
+  // Filter mode: 'today' | 'this_month' | 'all' | or custom YYYY-MM
+  const [activeFilter, setActiveFilter] = useState('this_month');
+  const [customMonth, setCustomMonth] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Month label formatter: '2026-10' -> 'October 2026'
-  const formatMonthLabel = (m) => {
-    if (!m || m === 'this_month') return 'This Month';
-    if (m === 'today') return 'Today';
-    if (m === 'all') return 'All Time';
-    const [year, month] = m.split('-');
-    if (!year || !month) return m;
-    const date = new Date(parseInt(year, 10), parseInt(month, 10) - 1, 1);
-    return date.toLocaleString('en-US', { month: 'long', year: 'numeric' });
-  };
+  // Pagination for Offer Summary Table
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
 
-  const fetchDashboard = useCallback(async () => {
+  const fetchDashboard = useCallback(async (filterMode = activeFilter, custom = customMonth) => {
     setLoading(true);
     setError(null);
     try {
       const params = {};
-      if (selectedMonth) params.month = selectedMonth;
+      if (custom && filterMode === 'custom') {
+        params.month = custom;
+      } else {
+        params.month = filterMode;
+        params.period = filterMode;
+      }
 
       const res = await api.getModeratorDashboard(params);
       if (res && (res.status === 'success' || res.data)) {
         const payload = res.data || res;
         setData(payload);
-        if (!selectedMonth && payload.selected_month) {
-          setSelectedMonth(payload.selected_month);
-        }
+      } else {
+        setError(res?.message || 'Failed to load Dashboard data');
       }
     } catch (err) {
       console.error('Failed to load moderator dashboard:', err);
@@ -82,24 +80,58 @@ export default function ModeratorDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedMonth]);
+  }, [activeFilter, customMonth]);
 
   useEffect(() => {
-    fetchDashboard();
-  }, [fetchDashboard]);
+    fetchDashboard(activeFilter, customMonth);
+  }, [activeFilter, customMonth, fetchDashboard]);
+
+  const handleFilterClick = (filter) => {
+    setActiveFilter(filter);
+    setCustomMonth('');
+    setCurrentPage(1);
+  };
+
+  const handleCustomMonthChange = (e) => {
+    const val = e.target.value;
+    setCustomMonth(val);
+    if (val) {
+      setActiveFilter('custom');
+    } else {
+      setActiveFilter('this_month');
+    }
+    setCurrentPage(1);
+  };
 
   const summary = data.summary || {
-    my_id: data.my_id,
-    friendly_name: data.friendly_name,
     total_linked_users: data.total_linked_users || 0,
     total_completed_offers: 0,
     total_usd_earn: 0,
     total_bdt_earn: 0,
+    today_completed_offers: 0,
+    today_usd_earn: 0,
+    today_bdt_earn: 0,
+    chargebacks_count: 0,
   };
 
-  const offerSummary = useMemo(() => Array.isArray(data.offer_summary) ? data.offer_summary : [], [data.offer_summary]);
-  const offerSummaryTotals = useMemo(() => {
-    return offerSummary.reduce(
+  const offerSummary = useMemo(() => {
+    return Array.isArray(data.offer_summary) ? data.offer_summary : [];
+  }, [data.offer_summary]);
+
+  // Filter offer summary table by search query
+  const filteredOfferSummary = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return offerSummary;
+    return offerSummary.filter((row) => {
+      const provider = String(row.provider || '').toLowerCase();
+      const offerName = String(row.offer_name || '').toLowerCase();
+      return provider.includes(query) || offerName.includes(query);
+    });
+  }, [offerSummary, searchQuery]);
+
+  // Totals across all rows in the filtered table
+  const totals = useMemo(() => {
+    return filteredOfferSummary.reduce(
       (acc, row) => ({
         today_offers: acc.today_offers + (Number(row.today_offers) || 0),
         total_offers: acc.total_offers + (Number(row.total_offers || row.total_completed) || 0),
@@ -108,100 +140,125 @@ export default function ModeratorDashboardPage() {
       }),
       { today_offers: 0, total_offers: 0, net_usd: 0, net_bdt: 0 }
     );
-  }, [offerSummary]);
-  const items = useMemo(() => Array.isArray(data.items) ? data.items : [], [data.items]);
-  const top5 = useMemo(() => Array.isArray(data.leaderboard?.top_5) ? data.leaderboard.top_5 : [], [data.leaderboard]);
-  const ownRank = data.leaderboard?.own_rank;
+  }, [filteredOfferSummary]);
 
-  // Rank badge styling helper
-  const getRankBadge = (rank) => {
-    if (rank === 1) {
-      return (
-        <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-amber-400/20 text-amber-400 border border-amber-400/30 font-black text-xs">
-          🥇 1
-        </span>
-      );
-    }
-    if (rank === 2) {
-      return (
-        <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-300/20 text-slate-300 border border-slate-300/30 font-black text-xs">
-          🥈 2
-        </span>
-      );
-    }
-    if (rank === 3) {
-      return (
-        <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-amber-600/20 text-amber-500 border border-amber-600/30 font-black text-xs">
-          🥉 3
-        </span>
-      );
-    }
-    return (
-      <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-white/5 text-slate-400 font-bold text-xs border border-white/5">
-        #{rank}
-      </span>
-    );
-  };
+  // Paginated slice
+  const paginatedRows = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredOfferSummary.slice(start, start + pageSize);
+  }, [filteredOfferSummary, currentPage]);
 
-  const activePeriod = data.active_period || (selectedMonth === 'today' ? 'today' : (selectedMonth === 'all' ? 'all' : 'this_month'));
+  const totalPages = Math.max(1, Math.ceil(filteredOfferSummary.length / pageSize));
+
+  // 8 Top Summary Cards
+  const summaryCards = [
+    {
+      label: 'Total Users',
+      value: (summary.total_linked_users || 0).toLocaleString(),
+      subtext: 'Assigned to your My ID',
+      icon: Users,
+      color: 'from-blue-500/20 to-indigo-500/10 text-blue-400 border-blue-500/30',
+    },
+    {
+      label: 'Completed Offers',
+      value: (summary.total_completed_offers || 0).toLocaleString(),
+      subtext: activeFilter === 'today' ? 'Completed today (UTC)' : 'Completed in selected period',
+      icon: CheckCircle2,
+      color: 'from-emerald-500/20 to-teal-500/10 text-emerald-400 border-emerald-500/30',
+    },
+    {
+      label: 'Total Earning USD',
+      value: `$${(Number(summary.total_usd_earn) || 0).toFixed(2)}`,
+      subtext: 'Your moderator payout',
+      icon: DollarSign,
+      color: 'from-emerald-500/20 to-cyan-500/10 text-brand-300 border-brand-500/30',
+    },
+    {
+      label: 'Total Earning BDT',
+      value: `৳${Math.round(Number(summary.total_bdt_earn) || 0).toLocaleString()}`,
+      subtext: 'At rule conversion rate',
+      icon: Coins,
+      color: 'from-cyan-500/20 to-blue-500/10 text-cyan-300 border-cyan-500/30',
+    },
+    {
+      label: 'Today Offers',
+      value: (summary.today_completed_offers || 0).toLocaleString(),
+      subtext: 'Completed today (UTC)',
+      icon: Clock,
+      color: 'from-amber-500/20 to-yellow-500/10 text-amber-400 border-amber-500/30',
+    },
+    {
+      label: 'Today Earning USD',
+      value: `$${(Number(summary.today_usd_earn) || 0).toFixed(2)}`,
+      subtext: 'Moderator payout today',
+      icon: TrendingUp,
+      color: 'from-emerald-500/20 to-brand-500/10 text-emerald-300 border-emerald-500/30',
+    },
+    {
+      label: 'Today Earning BDT',
+      value: `৳${Math.round(Number(summary.today_bdt_earn) || 0).toLocaleString()}`,
+      subtext: 'BDT converted today',
+      icon: Coins,
+      color: 'from-purple-500/20 to-pink-500/10 text-purple-300 border-purple-500/30',
+    },
+    {
+      label: 'Chargebacks',
+      value: (summary.chargebacks_count || 0).toLocaleString(),
+      subtext: summary.chargebacks_count > 0 ? 'Deducted/Reversed' : 'Zero chargebacks',
+      icon: ShieldAlert,
+      color: summary.chargebacks_count > 0
+        ? 'from-rose-500/20 to-red-500/10 text-rose-400 border-rose-500/30'
+        : 'from-slate-500/20 to-slate-500/10 text-slate-400 border-white/10',
+    },
+  ];
 
   return (
     <div className="space-y-6">
-      {/* Top Header: Title, My ID info, Time Filter */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/5">
+      {/* Header Bar */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2 border-b border-white/5">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
-              <LayoutDashboard className="w-6 h-6 text-brand-400" />
-              <span>Moderator Dashboard</span>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              Moderator Dashboard
             </h1>
-            {data.my_id && (
-              <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-brand-500/15 text-brand-400 border border-brand-500/30 font-mono">
-                My ID: {data.my_id}
-              </span>
-            )}
-            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-md bg-white/5 text-slate-400 border border-white/10">
-              <Lock className="w-3 h-3 text-slate-500" />
-              <span>Read-Only</span>
+            <span className="text-[10px] font-mono font-bold uppercase tracking-wider bg-brand-500/15 text-brand-300 border border-brand-500/30 px-2 py-0.5 rounded-md">
+              {data.my_id || 'MY ID'}
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Real-time monthly earnings ledger, linked worker performance, and system leaderboard.
+            Real-time performance metrics and offer summaries for your assigned My ID.
           </p>
         </div>
 
-        {/* Quick Filter Tabs & Month Selector */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Quick Filter Buttons: Today, This Month, All Time */}
-          <div className="flex items-center bg-[#0c1015] border border-white/10 rounded-xl p-1 shadow-sm text-xs font-semibold">
+        {/* Controls: Quick Filters, Month Picker, Refresh */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Quick Filter Buttons */}
+          <div className="inline-flex rounded-xl bg-white/[0.04] p-1 border border-white/10">
             <button
-              onClick={() => setSelectedMonth('today')}
-              disabled={loading}
-              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
-                activePeriod === 'today'
-                  ? 'bg-brand-400 text-slate-950 font-bold shadow-sm'
+              onClick={() => handleFilterClick('today')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeFilter === 'today'
+                  ? 'bg-brand-500 text-slate-950 shadow-glow-emerald'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
               Today
             </button>
             <button
-              onClick={() => setSelectedMonth('')}
-              disabled={loading}
-              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
-                activePeriod === 'this_month'
-                  ? 'bg-brand-400 text-slate-950 font-bold shadow-sm'
+              onClick={() => handleFilterClick('this_month')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeFilter === 'this_month'
+                  ? 'bg-brand-500 text-slate-950 shadow-glow-emerald'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
               This Month
             </button>
             <button
-              onClick={() => setSelectedMonth('all')}
-              disabled={loading}
-              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
-                activePeriod === 'all'
-                  ? 'bg-brand-400 text-slate-950 font-bold shadow-sm'
+              onClick={() => handleFilterClick('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeFilter === 'all'
+                  ? 'bg-brand-500 text-slate-950 shadow-glow-emerald'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
@@ -210,492 +267,239 @@ export default function ModeratorDashboardPage() {
           </div>
 
           {/* Historical Month Dropdown */}
-          <div className="flex items-center gap-2 bg-[#0c1015] border border-white/10 rounded-xl px-3 py-1.5 shadow-sm">
-            <Calendar className="w-4 h-4 text-brand-400 shrink-0" />
-            <select
-              value={selectedMonth || data.selected_month || ''}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              disabled={loading}
-              className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer pr-2"
-              aria-label="Filter dashboard by month"
-            >
-              <option value="today" className="bg-[#0c1015] text-white">Today</option>
-              {data.months && data.months.length > 0 ? (
-                data.months.map((m) => (
-                  <option key={m} value={m} className="bg-[#0c1015] text-white">
-                    {formatMonthLabel(m)}
+          {Array.isArray(data.months) && data.months.length > 0 && (
+            <div className="relative">
+              <select
+                value={customMonth}
+                onChange={handleCustomMonthChange}
+                className="appearance-none bg-[#0e141d] border border-white/10 text-slate-300 text-xs font-medium rounded-xl pl-3 pr-8 py-2 focus:outline-none focus:border-brand-500 cursor-pointer"
+              >
+                <option value="">Historical Month...</option>
+                {data.months.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
                   </option>
-                ))
-              ) : (
-                <option value={data.selected_month || ''} className="bg-[#0c1015] text-white">
-                  {formatMonthLabel(data.selected_month)}
-                </option>
-              )}
-              <option value="all" className="bg-[#0c1015] text-white">All Time</option>
-            </select>
-          </div>
+                ))}
+              </select>
+              <Calendar className="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          )}
 
+          {/* Refresh Button */}
           <button
-            onClick={fetchDashboard}
+            onClick={() => fetchDashboard(activeFilter, customMonth)}
             disabled={loading}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-colors disabled:opacity-50 cursor-pointer"
-            title="Refresh Dashboard"
+            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-all cursor-pointer disabled:opacity-50"
+            title="Refresh dashboard"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-brand-400' : ''}`} />
           </button>
         </div>
       </div>
 
-      {/* Error Alert */}
       {error && (
-        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-300 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>{error}</span>
-          </div>
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
+          <span>{error}</span>
           <button
-            onClick={fetchDashboard}
-            className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 font-semibold cursor-pointer"
+            onClick={() => fetchDashboard(activeFilter, customMonth)}
+            className="underline font-bold hover:text-white cursor-pointer ml-4"
           >
             Retry
           </button>
         </div>
       )}
 
-      {/* Unassigned Warning Notice */}
-      {!data.has_my_id && !loading && (
-        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-300 flex items-center gap-3 text-xs">
-          <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
-          <div>
-            <div className="font-bold text-white">No My ID Associated</div>
-            <p className="text-amber-300/80 mt-0.5">
-              Your moderator account is not currently linked to an active My ID. Please contact an administrator to assign your My ID.
-            </p>
+      {/* A) EXACTLY 8 TOP SUMMARY CARDS */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        {summaryCards.map((card, idx) => (
+          <div
+            key={idx}
+            className={`p-4 rounded-2xl bg-gradient-to-br ${card.color} bg-[#0c1015]/90 border backdrop-blur-sm transition-all hover:border-white/20`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-slate-400 truncate">
+                {card.label}
+              </span>
+              <div className="p-2 rounded-xl bg-white/5 border border-white/5 shrink-0">
+                <card.icon className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="text-xl sm:text-2xl font-black text-white tracking-tight">
+              {card.value}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1 truncate">
+              {card.subtext}
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* 6 TOP SUMMARY CARDS */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4">
-        {/* Card 1: Total Users */}
-        <div className="p-4 rounded-2xl bg-[#0c1015]/80 border border-white/5 shadow-sm">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Users</span>
-          <div className="mt-2 text-xl sm:text-2xl font-black text-cyan-400 flex items-center gap-1.5">
-            <Users className="w-5 h-5 text-cyan-400 shrink-0" />
-            <span>{(summary.total_linked_users || 0).toLocaleString()}</span>
-          </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">Linked to your My ID</p>
-        </div>
-
-        {/* Card 2: Total Completed Offers */}
-        <div className="p-4 rounded-2xl bg-[#0c1015]/80 border border-white/5 shadow-sm">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Completed Offers</span>
-          <div className="mt-2 text-xl sm:text-2xl font-black text-amber-400 flex items-center gap-1.5">
-            <CheckCircle2 className="w-5 h-5 text-amber-400 shrink-0" />
-            <span>{(summary.total_completed_offers || 0).toLocaleString()}</span>
-          </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">{formatMonthLabel(data.selected_month)}</p>
-        </div>
-
-        {/* Card 3: Total Earnings (USD / BDT) */}
-        <div className="p-4 rounded-2xl bg-[#0c1015]/80 border border-white/5 shadow-sm">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Earnings</span>
-          <div className="mt-2 text-lg sm:text-xl font-black text-emerald-400 font-mono truncate">
-            ${Number(summary.total_usd_earn || 0).toFixed(2)}
-          </div>
-          <p className="text-[11px] text-cyan-300 font-mono font-bold mt-0.5 truncate">
-            ৳{Number(summary.total_bdt_earn || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
-        </div>
-
-        {/* Card 4: Today Earnings (USD / BDT) */}
-        <div className="p-4 rounded-2xl bg-[#0c1015]/80 border border-white/5 shadow-sm">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Today Earnings</span>
-          <div className="mt-2 text-lg sm:text-xl font-black text-brand-400 font-mono truncate">
-            ${Number(summary.today_usd_earn || 0).toFixed(2)}
-          </div>
-          <p className="text-[11px] text-slate-400 mt-0.5 truncate">
-            ৳{Number(summary.today_bdt_earn || 0).toFixed(2)} ({summary.today_completed_offers || 0} offers)
-          </p>
-        </div>
-
-        {/* Card 5: Chargebacks (count & effect) */}
-        <div className="p-4 rounded-2xl bg-[#0c1015]/80 border border-white/5 shadow-sm">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Chargebacks</span>
-          <div className="mt-2 text-xl sm:text-2xl font-black text-rose-400 flex items-center gap-1.5 font-mono">
-            <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0" />
-            <span>{summary.chargebacks_count || 0}</span>
-          </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            {summary.chargebacks_amount ? `-${Number(summary.chargebacks_amount).toLocaleString()} coins` : '0 effect'}
-          </p>
-        </div>
-
-        {/* Card 6: My ID Info */}
-        <div className="p-4 rounded-2xl bg-[#0c1015]/80 border border-white/5 shadow-sm">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">My ID Code</span>
-          <div className="mt-2 text-xl sm:text-2xl font-black text-white font-mono truncate">
-            {data.my_id ? `#${data.my_id}` : 'None'}
-          </div>
-          <p className="text-[11px] text-brand-400 truncate mt-0.5">
-            {data.friendly_name || 'Standard Account'}
-          </p>
-        </div>
+        ))}
       </div>
 
-      {/* 8-COLUMN OFFER SUMMARY TABLE */}
-      <div className="rounded-2xl bg-[#0c1015]/80 border border-white/5 overflow-hidden shadow-xl">
-        <div className="p-4 border-b border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      {/* B) EXACTLY ONE MAIN TABLE: OFFER SUMMARY TABLE */}
+      <div className="bg-[#0c1015]/90 border border-white/5 rounded-3xl overflow-hidden shadow-xl">
+        {/* Table Header Controls */}
+        <div className="p-4 sm:p-6 border-b border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              <Layers className="w-4 h-4 text-brand-400" />
-              <span>Offer Summary Table — {formatMonthLabel(data.selected_month)}</span>
-            </h2>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              Strictly isolated breakdown per offer &amp; provider for your My ID with UTC today tracking.
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-black text-white tracking-tight">
+                Offer Summary Table
+              </h2>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/15 text-brand-300 border border-brand-500/30">
+                {filteredOfferSummary.length} Offers
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Breakdown by provider and offer name with moderator net earnings.
             </p>
           </div>
 
-          <span className="text-xs text-slate-400 self-start sm:self-auto font-medium">
-            Distinct Offers: <span className="text-white font-bold">{offerSummary.length}</span>
-          </span>
+          <div className="flex items-center gap-3">
+            {/* Search Input */}
+            <div className="relative min-w-[200px] sm:min-w-[240px]">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search offer or provider..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full bg-white/[0.03] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 transition-colors"
+              />
+            </div>
+
+            {/* Link to Completed Offers */}
+            <Link
+              to="/moderator/completed-offers"
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold transition-all shrink-0"
+            >
+              <span>Individual Logs</span>
+              <ArrowRight className="w-3.5 h-3.5 text-brand-400" />
+            </Link>
+          </div>
         </div>
 
+        {/* Responsive Table (8 Columns) */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
+          <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-white/[0.02] border-b border-white/5 text-[11px] uppercase font-bold tracking-wider text-slate-400">
-                <th className="py-3 px-3">Provider</th>
-                <th className="py-3 px-3">Offer Name</th>
-                <th className="py-3 px-3 text-right">Coin</th>
-                <th className="py-3 px-3 text-center">Today Offers</th>
-                <th className="py-3 px-3 text-center">Total Offers</th>
-                <th className="py-3 px-3 text-right">Offer Price (USD)</th>
-                <th className="py-3 px-3 text-right">Net Result (USD)</th>
-                <th className="py-3 px-3 text-right">Net Result (BDT)</th>
+              <tr className="border-b border-white/5 bg-white/[0.02] text-slate-400 uppercase text-[10px] font-bold tracking-wider">
+                <th className="py-3 px-4">Provider</th>
+                <th className="py-3 px-4">Offer Name</th>
+                <th className="py-3 px-4 text-right">Coin</th>
+                <th className="py-3 px-4 text-right">Today Offers</th>
+                <th className="py-3 px-4 text-right">Total Offers</th>
+                <th className="py-3 px-4 text-right">Offer Price (USD)</th>
+                <th className="py-3 px-4 text-right">Net USD</th>
+                <th className="py-3 px-4 text-right">Net BDT</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5 text-slate-300">
+            <tbody className="divide-y divide-white/5 font-medium">
               {loading && offerSummary.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="py-8 text-center text-slate-500">
-                    <RefreshCw className="w-5 h-5 animate-spin mx-auto text-brand-400 mb-1" />
-                    <span>Loading offer summary...</span>
+                  <td colSpan="8" className="py-12 text-center text-slate-500 font-medium">
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-brand-400" />
+                    Loading offer summary...
                   </td>
                 </tr>
-              ) : offerSummary.length === 0 ? (
+              ) : paginatedRows.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="py-8 text-center text-slate-500">
-                    <Coins className="w-7 h-7 mx-auto mb-1 text-slate-600 opacity-40" />
-                    <p className="font-semibold text-slate-400">No earnings recorded for this period</p>
+                  <td colSpan="8" className="py-12 text-center text-slate-500">
+                    No completed offers found for the selected period.
                   </td>
                 </tr>
               ) : (
-                offerSummary.map((row, idx) => (
-                  <tr key={`${row.provider}_${row.offer_name}_${row.coin}_${idx}`} className="hover:bg-white/[0.02] transition-colors">
-                    {/* 1. Provider */}
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-bold text-[11px]">
-                        {row.provider}
+                paginatedRows.map((row, idx) => (
+                  <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="py-3 px-4 font-semibold text-slate-200">
+                      <span className="inline-block px-2 py-0.5 rounded-md bg-white/5 border border-white/5 text-[11px]">
+                        {row.provider || '—'}
                       </span>
                     </td>
-                    {/* 2. Offer Name */}
-                    <td className="py-3 px-3 font-semibold text-white max-w-[220px] truncate" title={row.offer_name}>
-                      {row.offer_name || 'Standard Offer'}
+                    <td className="py-3 px-4 text-white font-medium max-w-xs truncate" title={row.offer_name}>
+                      {row.offer_name || '—'}
                     </td>
-                    {/* 3. Coin */}
-                    <td className="py-3 px-3 text-right font-mono font-bold text-amber-400">
+                    <td className="py-3 px-4 text-right font-mono text-amber-300">
                       {Number(row.coin || 0).toLocaleString()}
                     </td>
-                    {/* 4. Today Offers */}
-                    <td className="py-3 px-3 text-center font-mono font-bold text-brand-400">
+                    <td className="py-3 px-4 text-right font-mono font-bold text-slate-300">
                       {Number(row.today_offers || 0).toLocaleString()}
                     </td>
-                    {/* 5. Total Offers */}
-                    <td className="py-3 px-3 text-center font-mono font-bold text-white">
+                    <td className="py-3 px-4 text-right font-mono font-bold text-white">
                       {Number(row.total_offers || row.total_completed || 0).toLocaleString()}
                     </td>
-                    {/* 6. Offer Price (USD) */}
-                    <td className="py-3 px-3 text-right font-mono text-slate-300">
-                      ${Number(row.offer_price || 0).toFixed(4)}
+                    <td className="py-3 px-4 text-right font-mono text-slate-300">
+                      ${(Number(row.offer_price) || 0).toFixed(4)}
                     </td>
-                    {/* 7. Net Result (USD) */}
-                    <td className="py-3 px-3 text-right font-mono font-bold text-emerald-400">
-                      ${Number(row.net_usd ?? row.earnings_usd ?? 0).toFixed(2)}
+                    <td className="py-3 px-4 text-right font-mono font-bold text-brand-300">
+                      ${(Number(row.net_usd ?? row.earnings_usd) || 0).toFixed(2)}
                     </td>
-                    {/* 8. Net Result (BDT) */}
-                    <td className="py-3 px-3 text-right font-mono font-bold text-cyan-300">
-                      ৳{Number(row.net_bdt ?? row.earnings_bdt ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <td className="py-3 px-4 text-right font-mono font-bold text-cyan-300">
+                      ৳{Math.round(Number(row.net_bdt ?? row.earnings_bdt) || 0).toLocaleString()}
                     </td>
                   </tr>
                 ))
               )}
             </tbody>
-            {offerSummary.length > 0 && (
-              <tfoot className="border-t-2 border-white/10 bg-white/[0.03] font-bold">
-                <tr>
-                  <td colSpan="3" className="py-3 px-3 text-white uppercase text-[11px]">
-                    Total ({offerSummary.length} {offerSummary.length === 1 ? 'Offer' : 'Offers'})
+
+            {/* Footer Totals Row */}
+            {filteredOfferSummary.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-brand-500/30 bg-brand-500/[0.04] text-xs font-black text-white">
+                  <td colSpan="3" className="py-3.5 px-4 uppercase tracking-wider text-brand-300 font-bold">
+                    Total Summary ({filteredOfferSummary.length} Offers)
                   </td>
-                  <td className="py-3 px-3 text-center font-mono text-brand-400">
-                    {offerSummaryTotals.today_offers.toLocaleString()}
+                  <td className="py-3.5 px-4 text-right font-mono font-black text-white">
+                    {totals.today_offers.toLocaleString()}
                   </td>
-                  <td className="py-3 px-3 text-center font-mono text-white">
-                    {offerSummaryTotals.total_offers.toLocaleString()}
+                  <td className="py-3.5 px-4 text-right font-mono font-black text-white">
+                    {totals.total_offers.toLocaleString()}
                   </td>
-                  <td className="py-3 px-3 text-right text-slate-500">—</td>
-                  <td className="py-3 px-3 text-right font-mono text-emerald-400">
-                    ${offerSummaryTotals.net_usd.toFixed(2)}
+                  <td className="py-3.5 px-4 text-right text-slate-500 text-[11px]">
+                    —
                   </td>
-                  <td className="py-3 px-3 text-right font-mono text-cyan-300">
-                    ৳{offerSummaryTotals.net_bdt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <td className="py-3.5 px-4 text-right font-mono font-black text-brand-300">
+                    ${totals.net_usd.toFixed(2)}
+                  </td>
+                  <td className="py-3.5 px-4 text-right font-mono font-black text-cyan-300">
+                    ৳{Math.round(totals.net_bdt).toLocaleString()}
                   </td>
                 </tr>
               </tfoot>
             )}
           </table>
         </div>
-      </div>
 
-      {/* LEADERBOARD SECTION: Top 5 & Your Rank */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Top 5 Leaderboard Table (2 Columns Span) */}
-        <div className="lg:col-span-2 rounded-2xl bg-[#0c1015]/80 border border-white/5 overflow-hidden shadow-xl flex flex-col justify-between">
-          <div className="p-4 border-b border-white/5 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Trophy className="w-5 h-5 text-amber-400" />
-              <h2 className="text-sm font-bold text-white uppercase tracking-wider">
-                Top 5 Leaderboard — {formatMonthLabel(data.selected_month)}
-              </h2>
+        {/* Table Pagination */}
+        {totalPages > 1 && (
+          <div className="p-4 border-t border-white/5 flex items-center justify-between text-xs text-slate-400">
+            <div>
+              Showing {(currentPage - 1) * pageSize + 1} to{' '}
+              {Math.min(currentPage * pageSize, filteredOfferSummary.length)} of{' '}
+              {filteredOfferSummary.length} rows
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              Top Performers
-            </span>
-          </div>
 
-          <div className="overflow-x-auto flex-1">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-white/[0.02] border-b border-white/5 text-[11px] uppercase font-bold tracking-wider text-slate-400">
-                  <th className="py-3 px-4 w-16 text-center">Rank</th>
-                  <th className="py-3 px-4">My ID</th>
-                  <th className="py-3 px-4">Friendly Name</th>
-                  <th className="py-3 px-4 text-center">Completed Offers</th>
-                  <th className="py-3 px-4 text-right">Total BDT Earn</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5 text-slate-300">
-                {loading && top5.length === 0 ? (
-                  <tr>
-                    <td colSpan="5" className="py-8 text-center text-slate-500">
-                      <RefreshCw className="w-5 h-5 animate-spin mx-auto text-brand-400 mb-1" />
-                      <span>Loading leaderboard...</span>
-                    </td>
-                  </tr>
-                ) : top5.length === 0 ? (
-                  <tr>
-                    <td colSpan="5" className="py-8 text-center text-slate-500">
-                      <Trophy className="w-7 h-7 mx-auto mb-1 text-slate-600 opacity-40" />
-                      <p className="font-semibold text-slate-400">No earnings recorded this month</p>
-                    </td>
-                  </tr>
-                ) : (
-                  top5.map((row) => {
-                    const isCurrentUser = data.my_id && row.my_id_code === data.my_id;
-                    return (
-                      <tr 
-                        key={row.my_id_code} 
-                        className={`transition-colors ${
-                          isCurrentUser 
-                            ? 'bg-brand-500/10 border-l-2 border-brand-400' 
-                            : 'hover:bg-white/[0.02]'
-                        }`}
-                      >
-                        {/* Rank */}
-                        <td className="py-3 px-4 text-center">
-                          {getRankBadge(row.rank)}
-                        </td>
-
-                        {/* My ID */}
-                        <td className="py-3 px-4 font-mono font-bold text-white">
-                          <span className="px-2 py-0.5 rounded-lg bg-white/5 text-brand-300 border border-white/10">
-                            #{row.my_id_code}
-                          </span>
-                          {isCurrentUser && (
-                            <span className="ml-2 text-[10px] text-emerald-400 font-bold uppercase">(You)</span>
-                          )}
-                        </td>
-
-                        {/* Friendly Name */}
-                        <td className="py-3 px-4 font-semibold text-white">
-                          {row.friendly_name || <span className="text-slate-500 italic font-normal">Anonymous</span>}
-                        </td>
-
-                        {/* Completed Offers */}
-                        <td className="py-3 px-4 text-center font-bold text-amber-400">
-                          {row.completed_offers}
-                        </td>
-
-                        {/* Total BDT */}
-                        <td className="py-3 px-4 text-right font-mono font-bold text-cyan-300">
-                          ৳{Number(row.total_bdt).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* "Your Rank" Highlight Card (1 Column Span) */}
-        <div className="rounded-2xl bg-[#0c1015]/80 border border-brand-500/20 p-5 shadow-xl flex flex-col justify-between relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-brand-500/5 rounded-full blur-2xl pointer-events-none" />
-
-          <div className="space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-white/5">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-brand-400" />
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider">Your Standing</h3>
-              </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/25">
-                {formatMonthLabel(data.selected_month)}
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="px-2 font-mono font-bold text-white">
+                {currentPage} / {totalPages}
               </span>
-            </div>
-
-            {/* Rank Status & Number */}
-            <div className="p-4 rounded-xl bg-white/[0.03] border border-white/5 text-center">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Your Rank</span>
-              <div className="mt-1 flex items-center justify-center gap-2">
-                {ownRank ? (
-                  <span className="text-3xl font-black text-brand-400 font-mono tracking-tight">
-                    {ownRank.completed_offers > 0 ? `#${ownRank.rank}` : (top5.length > 0 ? `#${ownRank.rank}` : 'Unranked')}
-                  </span>
-                ) : (
-                  <span className="text-2xl font-bold text-slate-500">Unranked</span>
-                )}
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                {ownRank && ownRank.completed_offers > 0
-                  ? (ownRank.rank <= 5 ? 'Top 5 Leaderboard Winner' : 'Keep going to enter Top 5!')
-                  : 'Complete offers this month to earn rank'}
-              </p>
-            </div>
-
-            {/* Moderator Metadata Breakdown */}
-            <div className="space-y-2 text-xs">
-              <div className="flex items-center justify-between py-1.5 border-b border-white/5">
-                <span className="text-slate-400 font-medium">My ID</span>
-                <span className="font-mono font-bold text-white">{data.my_id ? `#${data.my_id}` : '—'}</span>
-              </div>
-              <div className="flex items-center justify-between py-1.5 border-b border-white/5">
-                <span className="text-slate-400 font-medium">Friendly Name</span>
-                <span className="font-semibold text-brand-300">{data.friendly_name || '—'}</span>
-              </div>
-              <div className="flex items-center justify-between py-1.5 border-b border-white/5">
-                <span className="text-slate-400 font-medium">Completed Offers</span>
-                <span className="font-bold text-amber-400">{ownRank?.completed_offers || 0}</span>
-              </div>
-              <div className="flex items-center justify-between py-1.5">
-                <span className="text-slate-400 font-medium">Total BDT Earn</span>
-                <span className="font-mono font-black text-cyan-300">
-                  ৳{Number(ownRank?.total_bdt || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           </div>
-
-          <div className="mt-4 pt-3 border-t border-white/5 text-[11px] text-slate-500 text-center">
-            Snapshot earnings automatically update on credit.
-          </div>
-        </div>
-      </div>
-
-      {/* GROUPED EARNING BREAKDOWN TABLE */}
-      <div className="rounded-2xl bg-[#0c1015]/80 border border-white/5 overflow-hidden shadow-xl">
-        <div className="p-4 border-b border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              <Coins className="w-4 h-4 text-brand-400" />
-              <span>Completed Offers Breakdown — {formatMonthLabel(data.selected_month)}</span>
-            </h2>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              Grouped by Provider, Offer, Coins, and Payout Rates.
-            </p>
-          </div>
-
-          <span className="text-xs text-slate-400 self-start sm:self-auto font-medium">
-            Total Groups: <span className="text-white font-bold">{items.length}</span>
-          </span>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-white/[0.02] border-b border-white/5 text-[11px] uppercase font-bold tracking-wider text-slate-400">
-                <th className="py-3 px-4 w-12 text-center">SL</th>
-                <th className="py-3 px-4">Wall / Provider</th>
-                <th className="py-3 px-4">Offer Name / ID</th>
-                <th className="py-3 px-4 text-right">Coins</th>
-                <th className="py-3 px-4 text-center">Quantity</th>
-                <th className="py-3 px-4 text-right">USD Rate</th>
-                <th className="py-3 px-4 text-right">BDT Rate</th>
-                <th className="py-3 px-4 text-right">Total BDT</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5 text-slate-300">
-              {loading && items.length === 0 ? (
-                <tr>
-                  <td colSpan="8" className="py-8 text-center text-slate-500">
-                    <RefreshCw className="w-5 h-5 animate-spin mx-auto text-brand-400 mb-1" />
-                    <span>Loading earnings...</span>
-                  </td>
-                </tr>
-              ) : items.length === 0 ? (
-                <tr>
-                  <td colSpan="8" className="py-8 text-center text-slate-500">
-                    <Coins className="w-7 h-7 mx-auto mb-1 text-slate-600 opacity-40" />
-                    <p className="font-semibold text-slate-400">No completed offers found for this period</p>
-                  </td>
-                </tr>
-              ) : (
-                items.map((row) => (
-                  <tr key={`${row.provider}_${row.offer}_${row.coins}_${row.sl}`} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="py-3 px-4 text-center font-mono text-slate-500">
-                      {row.sl}
-                    </td>
-                    <td className="py-3 px-4 font-bold text-white">
-                      <span className="px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
-                        {row.provider}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 font-semibold text-white">
-                      {row.offer}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-amber-400">
-                      {Number(row.coins).toLocaleString()}
-                    </td>
-                    <td className="py-3 px-4 text-center font-mono font-bold text-white">
-                      <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
-                        {row.quantity}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-slate-300">
-                      ${Number(row.rate_usd).toFixed(2)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-slate-300">
-                      ৳{Number(row.rate_bdt).toFixed(2)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-cyan-300">
-                      ৳{Number(row.total_bdt).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        )}
       </div>
     </div>
   );

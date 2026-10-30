@@ -7,7 +7,7 @@ import { Sparkles, Eye, EyeOff, Lock, Mail, User, AlertCircle, ArrowRight, Shiel
 import { api } from '../services/api';
 
 export default function RegisterPage() {
-  const { register, isAuthenticated } = useAuth();
+  const { register, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
 
   const [hasPin, setHasPin] = useState(false);
@@ -32,7 +32,13 @@ export default function RegisterPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/earn', { replace: true });
+      if (user?.role === 'admin') {
+        navigate('/admin', { replace: true });
+      } else if (user?.role === 'moderator') {
+        navigate('/moderator/dashboard', { replace: true });
+      } else {
+        navigate('/earn', { replace: true });
+      }
       return;
     }
 
@@ -61,7 +67,23 @@ export default function RegisterPage() {
     api.getGoogleConfig()
       .then((res) => setGoogleEnabled(!!res?.enabled))
       .catch(() => {});
-  }, [isAuthenticated, navigate]);
+
+    // Listen for Google OAuth popup messages
+    const handleGoogleMessage = (event) => {
+      if (event.data?.source === 'google-auth' && event.data?.payload?.token) {
+        const payload = event.data.payload;
+        if (payload.user?.role === 'moderator') {
+          navigate('/moderator/dashboard', { replace: true });
+        } else if (payload.user?.role === 'admin') {
+          navigate('/admin', { replace: true });
+        } else {
+          navigate('/earn', { replace: true });
+        }
+      }
+    };
+    window.addEventListener('message', handleGoogleMessage);
+    return () => window.removeEventListener('message', handleGoogleMessage);
+  }, [isAuthenticated, user, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -113,6 +135,8 @@ export default function RegisterPage() {
       if (res.success) {
         if (res.user?.role === 'admin') {
           navigate('/admin', { replace: true });
+        } else if (res.user?.role === 'moderator') {
+          navigate('/moderator/dashboard', { replace: true });
         } else {
           navigate('/earn', { replace: true });
         }

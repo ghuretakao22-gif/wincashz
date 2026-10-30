@@ -18,9 +18,28 @@
                     type: 'google-auth-result',
                     payload,
                 }, targetOrigin);
+                window.close();
+                return;
             }
-        } finally {
-            window.close();
+        } catch (e) {}
+
+        // Direct full-page redirect flow (same window)
+        if (payload && payload.token) {
+            try {
+                localStorage.setItem('wincashz_token', payload.token);
+            } catch (e) {}
+
+            const user = payload.user || {};
+            if (user.role === 'moderator') {
+                window.location.href = targetOrigin + '/moderator';
+            } else if (user.role === 'admin') {
+                window.location.href = targetOrigin + '/admin';
+            } else {
+                window.location.href = targetOrigin + '/earn';
+            }
+        } else {
+            const err = payload && payload.error ? encodeURIComponent(payload.error) : 'Google+sign+in+failed';
+            window.location.href = targetOrigin + '/login?error=' + err;
         }
     })();
 </script>

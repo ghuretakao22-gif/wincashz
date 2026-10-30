@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { 
   Sparkles, 
   ArrowRight, 
@@ -23,6 +24,9 @@ import LiveDropTicker from '../components/LiveDropTicker';
 import { api } from '../services/api';
 
 export default function LandingPage() {
+  const { user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+
   const [activeFaq, setActiveFaq] = useState(null);
   const [offerwalls, setOfferwalls] = useState([]);
   const [cashoutMethods, setCashoutMethods] = useState([]);
@@ -30,6 +34,12 @@ export default function LandingPage() {
   const heroCardRef = useRef(null);
 
   useEffect(() => {
+    // If logged-in moderator visits root landing page, auto-redirect to moderator dashboard
+    if (isAuthenticated && user?.role === 'moderator') {
+      navigate('/moderator/dashboard', { replace: true });
+      return;
+    }
+
     // Fetch verified offerwalls and cashout methods
     api.getOfferwalls()
       .then((res) => {
@@ -44,7 +54,7 @@ export default function LandingPage() {
         if (list.length > 0) setCashoutMethods(list);
       })
       .catch(() => {});
-  }, []);
+  }, [isAuthenticated, user, navigate]);
 
   // 3D Mouse Parallax on Desktop
   const handleMouseMove = (e) => {

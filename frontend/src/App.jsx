@@ -39,9 +39,11 @@ const AdminMyIdPaymentsPage = lazy(() => import('./pages/AdminMyIdPaymentsPage')
 // Lazy-Loaded Moderator Portal (Strictly Isolated & Read-Only)
 const ModeratorLayout = lazy(() => import('./components/ModeratorLayout'));
 const ModeratorDashboardPage = lazy(() => import('./pages/ModeratorDashboardPage'));
+const ModeratorCompletedOffersPage = lazy(() => import('./pages/ModeratorCompletedOffersPage'));
 const ModeratorUsersPage = lazy(() => import('./pages/ModeratorUsersPage'));
-const ModeratorMyEarnPage = lazy(() => import('./pages/ModeratorMyEarnPage'));
 const ModeratorPayoutPage = lazy(() => import('./pages/ModeratorPayoutPage'));
+const ModeratorSettingsPage = lazy(() => import('./pages/ModeratorSettingsPage'));
+const ModeratorMyEarnPage = lazy(() => import('./pages/ModeratorMyEarnPage'));
 
 function PageFallback() {
   return (
@@ -52,12 +54,16 @@ function PageFallback() {
 }
 
 function ProtectedRoute({ children }) {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
   if (loading) {
     return <PageFallback />;
   }
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+  // Strictly prevent moderators from accessing member pages; redirect to moderator dashboard
+  if (user?.role === 'moderator') {
+    return <Navigate to="/moderator/dashboard" replace />;
   }
   return children;
 }
@@ -274,9 +280,12 @@ export default function App() {
               <Route path="/moderator" element={<ModeratorLayout />}>
                 <Route index element={<Navigate to="/moderator/dashboard" replace />} />
                 <Route path="dashboard" element={<ModeratorDashboardPage />} />
+                <Route path="completed-offers" element={<ModeratorCompletedOffersPage />} />
                 <Route path="users" element={<ModeratorUsersPage />} />
-                <Route path="my-earn" element={<ModeratorMyEarnPage />} />
                 <Route path="payout" element={<ModeratorPayoutPage />} />
+                <Route path="settings" element={<ModeratorSettingsPage />} />
+                {/* Legacy redirect for old my-earn bookmark */}
+                <Route path="my-earn" element={<Navigate to="/moderator/completed-offers" replace />} />
               </Route>
 
               {/* Catch-all Fallback */}
