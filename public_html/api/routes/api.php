@@ -88,7 +88,7 @@ Route::prefix('admin')
     Route::get('/my-id-overview', [AdminMyIdController::class, 'overview']);
     Route::get('/my-id-payout-rules', [AdminMyIdPayoutRuleController::class, 'index']);
     Route::post('/my-id-payout-rules', [AdminMyIdPayoutRuleController::class, 'store']);
-    Route::patch('/my-id-payout-rules/{id}', [AdminMyIdPayoutRuleController::class, 'update']);
+    Route::match(['put', 'patch'], '/my-id-payout-rules/{id}', [AdminMyIdPayoutRuleController::class, 'update']);
     Route::delete('/my-id-payout-rules/{id}', [AdminMyIdPayoutRuleController::class, 'destroy']);
     Route::get('/my-id-settings', [AdminMyIdSettingsController::class, 'getSettings']);
     Route::match(['post', 'patch'], '/my-id-settings', [AdminMyIdSettingsController::class, 'updateSettings']);

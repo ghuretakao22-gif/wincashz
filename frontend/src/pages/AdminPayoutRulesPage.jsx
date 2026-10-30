@@ -24,6 +24,23 @@ import {
 import { Link } from 'react-router-dom';
 import { api } from '../services/api';
 
+function extractErrorMessage(err, fallback = 'Operation failed.') {
+  if (!err) return fallback;
+  if (err.errors && typeof err.errors === 'object') {
+    const messages = Object.values(err.errors).flat().filter(Boolean);
+    if (messages.length > 0) {
+      return messages.join(' ');
+    }
+  }
+  if (err.message && typeof err.message === 'string') {
+    return err.message;
+  }
+  if (typeof err === 'string') {
+    return err;
+  }
+  return fallback;
+}
+
 export default function AdminPayoutRulesPage() {
   const [rules, setRules] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -90,15 +107,18 @@ export default function AdminPayoutRulesPage() {
     provFilter = providerFilter,
     statFilter = statusFilter,
     pageNumber = page,
-    limit = perPage
+    limit = perPage,
+    clearMsg = true
   ) => {
     setLoading(true);
-    setMsg(null);
+    if (clearMsg) {
+      setMsg(null);
+    }
     try {
       const res = await api.getAdminPayoutRules({
-        search: searchQuery,
-        provider: provFilter || undefined,
-        status: statFilter !== 'all' ? statFilter : undefined,
+        search: (searchQuery || '').trim(),
+        provider: provFilter && provFilter !== 'all' ? provFilter.trim() : undefined,
+        status: statFilter && statFilter !== 'all' ? statFilter.trim() : undefined,
         page: pageNumber,
         per_page: limit,
       });
@@ -110,7 +130,7 @@ export default function AdminPayoutRulesPage() {
         setPagination(res.pagination);
       } else {
         setPagination({
-          current_page: 1,
+          current_page: pageNumber,
           last_page: 1,
           perPage: limit,
           total: list.length,
@@ -122,7 +142,7 @@ export default function AdminPayoutRulesPage() {
       }
     } catch (err) {
       console.error('Failed to load payout rules:', err);
-      setMsg({ type: 'error', text: err.message || 'Failed to connect to backend Payout Rules API.' });
+      setMsg({ type: 'error', text: extractErrorMessage(err, 'Failed to connect to backend Payout Rules API.') });
       setRules([]);
     } finally {
       setLoading(false);
@@ -173,25 +193,19 @@ export default function AdminPayoutRulesPage() {
   const handleToggleStatus = async (rule) => {
     const nextStatus = !rule.is_active;
     setActionLoading(rule.id);
-    setMsg(null);
     try {
       const res = await api.updateAdminPayoutRule(rule.id, { is_active: nextStatus });
-      if (res.success) {
-        setRules(prev => prev.map(r => r.id === rule.id ? { ...r, is_active: nextStatus } : r));
-        setSummary(prev => ({
-          ...prev,
-          active_rules: nextStatus ? prev.active_rules + 1 : prev.active_rules - 1,
-          disabled_rules: nextStatus ? prev.disabled_rules - 1 : prev.disabled_rules + 1,
-        }));
+      if (res.success || res.data) {
         setMsg({ 
           type: 'success', 
-          text: `Rule for ${rule.provider} (${rule.coin_amount} coins) successfully ${nextStatus ? 'enabled' : 'disabled'}.` 
+          text: `Rule for ${rule.provider} (${Number(rule.coin_amount)} coins) successfully ${nextStatus ? 'enabled' : 'disabled'}.` 
         });
+        await fetchRules(search, providerFilter, statusFilter, page, perPage, false);
       }
     } catch (err) {
       setMsg({ 
         type: 'error', 
-        text: err.message || 'Failed to update rule status.' 
+        text: extractErrorMessage(err, 'Failed to update rule status.') 
       });
     } finally {
       setActionLoading(null);
@@ -200,21 +214,19 @@ export default function AdminPayoutRulesPage() {
 
   // Delete rule
   const handleDeleteRule = async (rule) => {
-    if (!window.confirm(`Are you sure you want to delete this rule for ${rule.provider} (${rule.coin_amount} coins)?`)) {
+    if (!window.confirm(`Are you sure you want to delete this rule for ${rule.provider} (${rule.coin_amount} coins)? This cannot be undone.`)) {
       return;
     }
 
     setActionLoading(rule.id);
-    setMsg(null);
     try {
       const res = await api.deleteAdminPayoutRule(rule.id);
       if (res.success) {
-        setRules(prev => prev.filter(r => r.id !== rule.id));
-        setMsg({ type: 'success', text: 'Payout rule deleted successfully.' });
-        fetchRules(search, providerFilter, statusFilter, page, perPage);
+        setMsg({ type: 'success', text: `Payout rule #${rule.id} for ${rule.provider} deleted successfully.` });
+        await fetchRules(search, providerFilter, statusFilter, page, perPage, false);
       }
     } catch (err) {
-      setMsg({ type: 'error', text: err.message || 'Failed to delete rule.' });
+      setMsg({ type: 'error', text: extractErrorMessage(err, 'Failed to delete rule.') });
     } finally {
       setActionLoading(null);
     }
@@ -254,7 +266,7 @@ export default function AdminPayoutRulesPage() {
         is_active: isActive,
       });
 
-      if (res.success) {
+      if (res.success || res.data) {
         setShowAddModal(false);
         setProvider('');
         setOfferId('');
@@ -262,12 +274,18 @@ export default function AdminPayoutRulesPage() {
         setCoinAmount('');
         setUserPayoutUsd('');
         setIsActive(true);
-        setMsg({ type: 'success', text: `Payout rule for ${cleanProvider} created successfully.` });
-        fetchRules(search, providerFilter, statusFilter, 1, perPage);
+        setSearch('');
+        setProviderFilter('');
+        setStatusFilter('all');
+        setPage(1);
+        setMsg({ 
+          type: 'success', 
+          text: `Payout rule for ${cleanProvider} (${Number(coinAmount)} coins -> $${Number(userPayoutUsd).toFixed(2)}) created successfully.` 
+        });
+        await fetchRules('', '', 'all', 1, perPage, false);
       }
     } catch (err) {
-      const validationMsgs = err.errors ? Object.values(err.errors).flat().join(' ') : null;
-      setModalError(validationMsgs || err.message || 'Failed to create payout rule.');
+      setModalError(extractErrorMessage(err, 'Failed to create payout rule.'));
     } finally {
       setSubmitting(false);
     }
@@ -279,8 +297,8 @@ export default function AdminPayoutRulesPage() {
     setEditProvider(rule.provider || '');
     setEditOfferId(rule.offer_id || '');
     setEditOfferName(rule.offer_name || '');
-    setEditCoinAmount(rule.coin_amount !== null ? String(rule.coin_amount) : '');
-    setEditUserPayoutUsd(rule.user_payout_usd !== null ? String(rule.user_payout_usd) : '');
+    setEditCoinAmount(rule.coin_amount !== null && rule.coin_amount !== undefined ? String(rule.coin_amount) : '');
+    setEditUserPayoutUsd(rule.user_payout_usd !== null && rule.user_payout_usd !== undefined ? String(rule.user_payout_usd) : '');
     setEditIsActive(!!rule.is_active);
     setEditError(null);
   };
@@ -320,14 +338,14 @@ export default function AdminPayoutRulesPage() {
         is_active: editIsActive,
       });
 
-      if (res.success) {
-        setRules(prev => prev.map(r => r.id === editingRule.id ? { ...r, ...res.data } : r));
+      if (res.success || res.data) {
+        const updatedId = editingRule.id;
         setEditingRule(null);
-        setMsg({ type: 'success', text: `Payout rule #${editingRule.id} updated successfully.` });
+        setMsg({ type: 'success', text: `Payout rule #${updatedId} updated successfully.` });
+        await fetchRules(search, providerFilter, statusFilter, page, perPage, false);
       }
     } catch (err) {
-      const validationMsgs = err.errors ? Object.values(err.errors).flat().join(' ') : null;
-      setEditError(validationMsgs || err.message || 'Failed to update payout rule.');
+      setEditError(extractErrorMessage(err, 'Failed to update payout rule.'));
     } finally {
       setEditSubmitting(false);
     }

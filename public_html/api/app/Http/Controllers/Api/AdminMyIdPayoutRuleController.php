@@ -18,8 +18,20 @@ class AdminMyIdPayoutRuleController extends Controller
     public function index(Request $request): JsonResponse
     {
         $search = trim((string) $request->query('search', ''));
+        if ($search === 'undefined' || $search === 'null') {
+            $search = '';
+        }
+
         $providerFilter = trim((string) $request->query('provider', ''));
+        if ($providerFilter === 'undefined' || $providerFilter === 'null') {
+            $providerFilter = '';
+        }
+
         $statusFilter = trim((string) $request->query('status', '')); // 'active', 'inactive', 'all'
+        if ($statusFilter === 'undefined' || $statusFilter === 'null') {
+            $statusFilter = 'all';
+        }
+
         $perPage = (int) $request->query('per_page', 20);
         if ($perPage < 5 || $perPage > 100) {
             $perPage = 20;
@@ -230,7 +242,10 @@ class AdminMyIdPayoutRuleController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Payout rule created successfully.',
-            'data' => $rule,
+            'data' => array_merge($rule->toArray(), [
+                'today_count' => 0,
+                'total_count' => 0,
+            ]),
         ], 201);
     }
 
@@ -239,7 +254,13 @@ class AdminMyIdPayoutRuleController extends Controller
      */
     public function update(Request $request, int|string $id): JsonResponse
     {
-        $rule = MyIdPayoutRule::query()->findOrFail($id);
+        $rule = MyIdPayoutRule::query()->find($id);
+        if (!$rule) {
+            return response()->json([
+                'success' => false,
+                'message' => "Payout rule #{$id} not found.",
+            ], 404);
+        }
 
         $validated = $request->validate([
             'provider' => ['nullable', 'string', 'max:100'],
@@ -314,7 +335,14 @@ class AdminMyIdPayoutRuleController extends Controller
      */
     public function destroy(int|string $id): JsonResponse
     {
-        $rule = MyIdPayoutRule::query()->findOrFail($id);
+        $rule = MyIdPayoutRule::query()->find($id);
+        if (!$rule) {
+            return response()->json([
+                'success' => false,
+                'message' => "Payout rule #{$id} not found.",
+            ], 404);
+        }
+
         $rule->delete();
 
         return response()->json([

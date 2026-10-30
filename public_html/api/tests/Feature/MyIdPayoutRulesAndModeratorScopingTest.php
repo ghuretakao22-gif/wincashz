@@ -518,4 +518,208 @@ class MyIdPayoutRulesAndModeratorScopingTest extends TestCase
         $this->assertTrue($resPatch->json('data.my_id_payout_enabled'));
         $this->assertEquals(125.50, $resPatch->json('data.my_id_usd_bdt_rate'));
     }
+
+    public function test_admin_can_add_payout_rule_and_receive_complete_payload(): void
+    {
+        $admin = $this->createAdminUser();
+        $token = auth('api')->login($admin);
+
+        $res = $this->withHeaders(['Authorization' => 'Bearer '.$token])
+            ->postJson('/api/admin/my-id-payout-rules', [
+                'provider' => 'RevU',
+                'offer_id' => 'game_123',
+                'offer_name' => 'Fun Game',
+                'coin_amount' => 400,
+                'user_payout_usd' => 1.20,
+                'is_active' => true,
+            ]);
+
+        $res->assertStatus(201);
+        $res->assertJsonPath('success', true);
+        $res->assertJsonPath('data.provider', 'RevU');
+        $res->assertJsonPath('data.offer_id', 'game_123');
+        $res->assertJsonPath('data.today_count', 0);
+        $res->assertJsonPath('data.total_count', 0);
+
+        $this->assertDatabaseHas('my_id_payout_rules', [
+            'provider' => 'RevU',
+            'offer_id' => 'game_123',
+            'coin_amount' => 400,
+        ]);
+    }
+
+    public function test_admin_can_edit_payout_rule_via_put_and_patch(): void
+    {
+        $admin = $this->createAdminUser();
+        $token = auth('api')->login($admin);
+
+        $rule = MyIdPayoutRule::create([
+            'provider' => 'Offery',
+            'offer_id' => 'off_1',
+            'offer_name' => 'Offer 1',
+            'coin_amount' => 300,
+            'user_payout_usd' => 0.60,
+            'is_active' => true,
+        ]);
+
+        // PATCH
+        $resPatch = $this->withHeaders(['Authorization' => 'Bearer '.$token])
+            ->patchJson('/api/admin/my-id-payout-rules/'.$rule->id, [
+                'user_payout_usd' => 0.85,
+            ]);
+
+        $resPatch->assertStatus(200);
+        $resPatch->assertJsonPath('success', true);
+        $resPatch->assertJsonPath('data.user_payout_usd', '0.8500');
+
+        // PUT
+        $resPut = $this->withHeaders(['Authorization' => 'Bearer '.$token])
+            ->putJson('/api/admin/my-id-payout-rules/'.$rule->id, [
+                'user_payout_usd' => 0.90,
+            ]);
+
+        $resPut->assertStatus(200);
+        $resPut->assertJsonPath('success', true);
+        $resPut->assertJsonPath('data.user_payout_usd', '0.9000');
+    }
+
+    public function test_admin_can_delete_payout_rule(): void
+    {
+        $admin = $this->createAdminUser();
+        $token = auth('api')->login($admin);
+
+        $rule = MyIdPayoutRule::create([
+            'provider' => 'DeleteProv',
+            'offer_id' => 'del_1',
+            'coin_amount' => 150,
+            'user_payout_usd' => 0.30,
+            'is_active' => true,
+        ]);
+
+        $res = $this->withHeaders(['Authorization' => 'Bearer '.$token])
+            ->deleteJson('/api/admin/my-id-payout-rules/'.$rule->id);
+
+        $res->assertStatus(200);
+        $res->assertJsonPath('success', true);
+        $this->assertDatabaseMissing('my_id_payout_rules', ['id' => $rule->id]);
+
+        // Non-existent ID returns 404
+        $res404 = $this->withHeaders(['Authorization' => 'Bearer '.$token])
+            ->deleteJson('/api/admin/my-id-payout-rules/999999');
+
+        $res404->assertStatus(404);
+        $res404->assertJsonPath('success', false);
+    }
+
+    public function test_admin_payout_rules_index_handles_undefined_and_null_query_strings(): void
+    {
+        $admin = $this->createAdminUser();
+        $token = auth('api')->login($admin);
+
+        MyIdPayoutRule::create([
+            'provider' => 'CleanProv',
+            'offer_id' => 'clean_1',
+            'coin_amount' => 100,
+            'user_payout_usd' => 0.20,
+            'is_active' => true,
+        ]);
+
+        // Query with literal 'undefined' parameters that raw frontend clients might pass
+        $res = $this->withHeaders(['Authorization' => 'Bearer '.$token])
+            ->getJson('/api/admin/my-id-payout-rules?provider=undefined&status=undefined&search=undefined');
+
+        $res->assertStatus(200);
+        $res->assertJsonPath('success', true);
+        $items = $res->json('data');
+        $this->assertNotEmpty($items);
+        $this->assertSame('CleanProv', $items[0]['provider']);
+    }
+
+    public function test_rule_based_earnings_flow_on_completed_task(): void
+    {
+        Setting::create(['name' => 'my_id_system_enabled', 'value' => '1']);
+        Setting::create(['name' => 'my_id_usd_bdt_rate', 'value' => '122.00']);
+
+        MyId::create([
+            'my_id_code' => 'TEAM_BETA',
+            'friendly_name' => 'Team Beta',
+            'is_active' => true,
+        ]);
+
+        $worker = User::create([
+            'name' => 'Worker User',
+            'username' => 'worker_'.uniqid(),
+            'email' => 'worker_'.uniqid().'@example.com',
+            'role' => 'user',
+            'my_id' => 'TEAM_BETA',
+            'balance' => 0,
+        ]);
+
+        $mod = $this->createModeratorUser('TEAM_BETA');
+        $modToken = auth('api')->login($mod);
+
+        // 1. Specific rule
+        MyIdPayoutRule::create([
+            'provider' => 'Torox',
+            'offer_id' => 'game_prime',
+            'offer_name' => 'Prime Game',
+            'coin_amount' => 500,
+            'user_payout_usd' => 1.50,
+            'is_active' => true,
+        ]);
+
+        // 2. Wildcard rule
+        MyIdPayoutRule::create([
+            'provider' => 'Torox',
+            'offer_id' => null,
+            'offer_name' => null,
+            'coin_amount' => 200,
+            'user_payout_usd' => 0.50,
+            'is_active' => true,
+        ]);
+
+        // Specific match task (provider raw revenue is $3.00, but rule payout is $1.50)
+        $task1 = CompletedTask::create([
+            'offer_wall_name' => 'Torox',
+            'user_id' => $worker->id,
+            'user_name' => $worker->username,
+            'transaction_id' => 'tx_spec_'.uniqid(),
+            'offer_name' => 'Prime Game',
+            'offer_id' => 'game_prime',
+            'revenue' => 3.00, // RAW PROVIDER REVENUE - NEVER EXPOSED
+            'currency_reward' => 500.00,
+        ]);
+
+        $rec1 = MyIdEarningService::recordTaskEarning($task1);
+        $this->assertTrue($rec1['created']);
+        $this->assertEquals(1.50, $rec1['payout_usd']);
+        $this->assertEquals(183.00, $rec1['payout_bdt']);
+
+        // Wildcard match task (provider raw revenue is $1.80, but rule payout is $0.50)
+        $task2 = CompletedTask::create([
+            'offer_wall_name' => 'Torox',
+            'user_id' => $worker->id,
+            'user_name' => $worker->username,
+            'transaction_id' => 'tx_wild_'.uniqid(),
+            'offer_name' => 'Other Game',
+            'offer_id' => 'random_offer_456',
+            'revenue' => 1.80,
+            'currency_reward' => 200.00,
+        ]);
+
+        $rec2 = MyIdEarningService::recordTaskEarning($task2);
+        $this->assertTrue($rec2['created']);
+        $this->assertEquals(0.50, $rec2['payout_usd']);
+        $this->assertEquals(61.00, $rec2['payout_bdt']);
+
+        // Check Moderator dashboard sees ONLY rule-based total ($2.00 USD), never raw provider revenue ($4.80)
+        $resMod = $this->withHeaders(['Authorization' => 'Bearer '.$modToken])
+            ->getJson('/api/moderator/dashboard?month=all');
+
+        $resMod->assertStatus(200);
+        $summary = $resMod->json('data.summary');
+        $this->assertEquals(2, $summary['total_completed_offers']);
+        $this->assertEquals(2.00, $summary['total_usd_earn']);
+        $this->assertEquals(244.00, $summary['total_bdt_earn']);
+    }
 }

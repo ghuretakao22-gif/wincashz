@@ -16,6 +16,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Models\UserNotification;
 use App\Services\IpCountryResolver;
+use App\Services\MyIdEarningService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -2099,6 +2100,15 @@ class AdminController extends Controller
                 'ip' => $requestIp !== '' ? $requestIp : null,
                 'country' => $country ?? 'unknown',
             ]);
+
+            // Record My ID earning if system is active and user is linked to an active My ID
+            if (Schema::hasTable('my_id_earnings') && Schema::hasTable('my_id_payout_rules')) {
+                try {
+                    MyIdEarningService::recordTaskEarning($completedTask);
+                } catch (\Throwable $e) {
+                    Log::warning('MyIdEarning recording skipped: ' . $e->getMessage());
+                }
+            }
 
             if ($lockedUser) {
                 Transaction::create([

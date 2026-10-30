@@ -49,6 +49,26 @@ export function setStoredToken(token, remember = true) {
 }
 
 /**
+ * Clean and serialize query parameters safely, stripping out undefined, null, and empty values.
+ */
+export function cleanQueryParams(params = {}) {
+  const clean = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (
+      value !== undefined &&
+      value !== null &&
+      value !== '' &&
+      value !== 'undefined' &&
+      value !== 'null'
+    ) {
+      clean[key] = value;
+    }
+  }
+  const q = new URLSearchParams(clean).toString();
+  return q ? `?${q}` : '';
+}
+
+/**
  * Core API fetch wrapper
  */
 export async function apiRequest(endpoint, options = {}) {
@@ -68,16 +88,27 @@ export async function apiRequest(endpoint, options = {}) {
       headers,
     });
 
-    const data = await response.json().catch(() => ({}));
+    let data = {};
+    const text = await response.text().catch(() => '');
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { message: text.slice(0, 300) || `Request failed with HTTP status ${response.status}` };
+    }
 
     if (!response.ok) {
       if (response.status === 401) {
         // Token expired or invalid
         setStoredToken(null);
       }
-      const error = new Error(data.message || data.error || `Request failed with status ${response.status}`);
+      const validationMsgs = data.errors && typeof data.errors === 'object'
+        ? Object.values(data.errors).flat().filter(Boolean).join(' ')
+        : null;
+      const errorMsg = validationMsgs || data.message || data.error || `Request failed with status ${response.status}`;
+      const error = new Error(errorMsg);
       error.status = response.status;
       error.errors = data.errors || {};
+      error.data = data;
       throw error;
     }
 
@@ -142,8 +173,7 @@ export const api = {
   getAdminSummary: () => apiRequest('/admin/summary'),
   getAdminOffers: () => apiRequest('/admin/offers'),
   getAdminUsers: async (params = {}) => {
-    const q = new URLSearchParams(params).toString();
-    const res = await apiRequest(`/admin/users${q ? `?${q}` : ''}`);
+    const res = await apiRequest(`/admin/users${cleanQueryParams(params)}`);
     const list = parseUsersResponse(res);
     return {
       success: true,
@@ -155,8 +185,7 @@ export const api = {
     };
   },
   getAdminCompletedTasks: (params = {}) => {
-    const q = new URLSearchParams(params).toString();
-    return apiRequest(`/admin/completed-tasks${q ? `?${q}` : ''}`);
+    return apiRequest(`/admin/completed-tasks${cleanQueryParams(params)}`);
   },
   getAdminChargebacks: () => apiRequest('/admin/chargebacks'),
   getAdminPendingWithdrawals: () => apiRequest('/admin/pending-withdrawals'),
@@ -180,12 +209,10 @@ export const api = {
 
   // Moderator Endpoints (Strictly Read-Only)
   getModeratorStats: (params = {}) => {
-    const q = new URLSearchParams(params).toString();
-    return apiRequest(`/moderator/stats${q ? `?${q}` : ''}`);
+    return apiRequest(`/moderator/stats${cleanQueryParams(params)}`);
   },
   getModeratorUsers: async (params = {}) => {
-    const q = new URLSearchParams(params).toString();
-    const res = await apiRequest(`/moderator/users${q ? `?${q}` : ''}`);
+    const res = await apiRequest(`/moderator/users${cleanQueryParams(params)}`);
     return {
       success: true,
       data: res.data || [],
@@ -195,12 +222,10 @@ export const api = {
   },
   getModeratorUserActivity: (id) => apiRequest(`/moderator/users/${id}/activity`),
   getModeratorDashboard: (params = {}) => {
-    const q = new URLSearchParams(params).toString();
-    return apiRequest(`/moderator/dashboard${q ? `?${q}` : ''}`);
+    return apiRequest(`/moderator/dashboard${cleanQueryParams(params)}`);
   },
   getModeratorMyEarn: (params = {}) => {
-    const q = new URLSearchParams(params).toString();
-    return apiRequest(`/moderator/my-earn${q ? `?${q}` : ''}`);
+    return apiRequest(`/moderator/my-earn${cleanQueryParams(params)}`);
   },
   getModeratorNotice: () => apiRequest('/moderator/notice'),
 
@@ -213,20 +238,17 @@ export const api = {
 
   // Admin My IDs
   getAdminMyIds: (params = {}) => {
-    const q = new URLSearchParams(params).toString();
-    return apiRequest(`/admin/my-ids${q ? `?${q}` : ''}`);
+    return apiRequest(`/admin/my-ids${cleanQueryParams(params)}`);
   },
   getAdminMyIdOverview: (params = {}) => {
-    const q = new URLSearchParams(params).toString();
-    return apiRequest(`/admin/my-id-overview${q ? `?${q}` : ''}`);
+    return apiRequest(`/admin/my-id-overview${cleanQueryParams(params)}`);
   },
   createAdminMyId: (data) => apiRequest('/admin/my-ids', { method: 'POST', body: JSON.stringify(data) }),
   updateAdminMyId: (id, data) => apiRequest(`/admin/my-ids/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   // Admin My ID Payout Rules
   getAdminPayoutRules: (params = {}) => {
-    const q = new URLSearchParams(params).toString();
-    return apiRequest(`/admin/my-id-payout-rules${q ? `?${q}` : ''}`);
+    return apiRequest(`/admin/my-id-payout-rules${cleanQueryParams(params)}`);
   },
   createAdminPayoutRule: (data) => apiRequest('/admin/my-id-payout-rules', { method: 'POST', body: JSON.stringify(data) }),
   updateAdminPayoutRule: (id, data) => apiRequest(`/admin/my-id-payout-rules/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
@@ -242,15 +264,13 @@ export const api = {
 
   // Moderator Payouts
   getModeratorPayouts: (params = {}) => {
-    const q = new URLSearchParams(params).toString();
-    return apiRequest(`/moderator/payouts${q ? `?${q}` : ''}`);
+    return apiRequest(`/moderator/payouts${cleanQueryParams(params)}`);
   },
   submitModeratorPayout: (data) => apiRequest('/moderator/payouts', { method: 'POST', body: JSON.stringify(data) }),
 
   // Admin My ID Payouts
   getAdminMyIdPayouts: (params = {}) => {
-    const q = new URLSearchParams(params).toString();
-    return apiRequest(`/admin/my-id-payouts${q ? `?${q}` : ''}`);
+    return apiRequest(`/admin/my-id-payouts${cleanQueryParams(params)}`);
   },
   updateAdminMyIdPayoutStatus: (id, data) => apiRequest(`/admin/my-id-payouts/${id}/status`, { method: 'PATCH', body: JSON.stringify(data) }),
   getAdminMyIdPayoutSettings: () => apiRequest('/admin/my-id-payouts/settings'),

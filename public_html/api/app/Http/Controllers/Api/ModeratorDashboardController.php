@@ -122,15 +122,24 @@ class ModeratorDashboardController extends Controller
         }
 
         // 1. Offer Summary Table: Grouped by (offer_name, provider) for this My ID only
-        $offerSummary = (clone $earningsQuery)
+        $offerSummarySub = (clone $earningsQuery)
             ->selectRaw("
-                COALESCE(NULLIF(TRIM(offer_name), ''), NULLIF(TRIM(offer_id), ''), 'Standard Offer') as offer_name,
-                COALESCE(NULLIF(TRIM(provider), ''), 'Unknown Provider') as provider,
+                COALESCE(NULLIF(TRIM(offer_name), ''), NULLIF(TRIM(offer_id), ''), 'Standard Offer') as norm_offer_name,
+                COALESCE(NULLIF(TRIM(provider), ''), 'Unknown Provider') as norm_provider,
+                payout_usd,
+                payout_bdt
+            ");
+
+        $offerSummary = DB::query()
+            ->fromSub($offerSummarySub, 'off_sub')
+            ->selectRaw("
+                norm_offer_name as offer_name,
+                norm_provider as provider,
                 COUNT(*) as total_completed,
                 COALESCE(SUM(payout_usd), 0) as earnings_usd,
                 COALESCE(SUM(payout_bdt), 0) as earnings_bdt
             ")
-            ->groupBy('offer_name', 'provider')
+            ->groupBy('norm_offer_name', 'norm_provider')
             ->orderByDesc('total_completed')
             ->orderByDesc('earnings_usd')
             ->get()
