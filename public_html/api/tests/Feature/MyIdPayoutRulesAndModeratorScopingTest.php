@@ -183,6 +183,139 @@ class MyIdPayoutRulesAndModeratorScopingTest extends TestCase
         $this->assertEquals(2, $items[0]['total_count']);
     }
 
+    public function test_payout_rule_aggregation_handles_wildcard_casing_and_null_offers_under_strict_grouping(): void
+    {
+        $admin = $this->createAdminUser();
+        $token = auth('api')->login($admin);
+
+        // 1. Specific rule
+        $ruleSpecific = MyIdPayoutRule::create([
+            'provider' => 'Vortex',
+            'offer_id' => 'special_offer',
+            'offer_name' => 'Special Offer',
+            'coin_amount' => 500,
+            'user_payout_usd' => 1.50,
+            'is_active' => true,
+        ]);
+
+        // 2. Wildcard rule
+        $ruleWildcard = MyIdPayoutRule::create([
+            'provider' => 'Vortex',
+            'offer_id' => null,
+            'offer_name' => null,
+            'coin_amount' => 250,
+            'user_payout_usd' => 0.75,
+            'is_active' => true,
+        ]);
+
+        $todayStr = Carbon::now('UTC')->format('Y-m-d H:i:s');
+        $yesterdayStr = Carbon::now('UTC')->subDay()->format('Y-m-d H:i:s');
+
+        // Insert specific earnings (2 today with different casing/trimming, 1 yesterday)
+        MyIdEarning::create([
+            'my_id_code' => 'TEAM_A',
+            'user_id' => 10,
+            'completed_task_id' => 101,
+            'provider' => ' Vortex ',
+            'offer_id' => ' SPECIAL_OFFER ',
+            'offer_name' => 'Special Offer',
+            'coin_amount' => 500,
+            'payout_usd' => 1.50,
+            'usd_bdt_rate' => 122.00,
+            'payout_bdt' => 183.00,
+            'completed_at' => $todayStr,
+        ]);
+
+        MyIdEarning::create([
+            'my_id_code' => 'TEAM_A',
+            'user_id' => 11,
+            'completed_task_id' => 102,
+            'provider' => 'vortex',
+            'offer_id' => 'special_offer',
+            'offer_name' => 'Special Offer',
+            'coin_amount' => 500,
+            'payout_usd' => 1.50,
+            'usd_bdt_rate' => 122.00,
+            'payout_bdt' => 183.00,
+            'completed_at' => $todayStr,
+        ]);
+
+        MyIdEarning::create([
+            'my_id_code' => 'TEAM_B',
+            'user_id' => 12,
+            'completed_task_id' => 103,
+            'provider' => 'vortex',
+            'offer_id' => 'special_offer',
+            'offer_name' => 'Special Offer',
+            'coin_amount' => 500,
+            'payout_usd' => 1.50,
+            'usd_bdt_rate' => 122.00,
+            'payout_bdt' => 183.00,
+            'completed_at' => $yesterdayStr,
+        ]);
+
+        // Insert wildcard earnings (one with null offer_id, one with empty string, one with '-')
+        MyIdEarning::create([
+            'my_id_code' => 'TEAM_A',
+            'user_id' => 13,
+            'completed_task_id' => 104,
+            'provider' => 'Vortex',
+            'offer_id' => null,
+            'offer_name' => null,
+            'coin_amount' => 250,
+            'payout_usd' => 0.75,
+            'usd_bdt_rate' => 122.00,
+            'payout_bdt' => 91.50,
+            'completed_at' => $todayStr,
+        ]);
+
+        MyIdEarning::create([
+            'my_id_code' => 'TEAM_B',
+            'user_id' => 14,
+            'completed_task_id' => 105,
+            'provider' => 'Vortex',
+            'offer_id' => '',
+            'offer_name' => null,
+            'coin_amount' => 250,
+            'payout_usd' => 0.75,
+            'usd_bdt_rate' => 122.00,
+            'payout_bdt' => 91.50,
+            'completed_at' => $todayStr,
+        ]);
+
+        MyIdEarning::create([
+            'my_id_code' => 'TEAM_C',
+            'user_id' => 15,
+            'completed_task_id' => 106,
+            'provider' => 'Vortex',
+            'offer_id' => '-',
+            'offer_name' => null,
+            'coin_amount' => 250,
+            'payout_usd' => 0.75,
+            'usd_bdt_rate' => 122.00,
+            'payout_bdt' => 91.50,
+            'completed_at' => $yesterdayStr,
+        ]);
+
+        $res = $this->withHeaders(['Authorization' => 'Bearer '.$token])
+            ->getJson('/api/admin/my-id-payout-rules');
+
+        $res->assertStatus(200);
+        $res->assertJsonPath('success', true);
+        $items = collect($res->json('data'));
+
+        $specificItem = $items->firstWhere('id', $ruleSpecific->id);
+        $wildcardItem = $items->firstWhere('id', $ruleWildcard->id);
+
+        $this->assertNotNull($specificItem);
+        $this->assertEquals(2, $specificItem['today_count']);
+        $this->assertEquals(3, $specificItem['total_count']);
+
+        $this->assertNotNull($wildcardItem);
+        $this->assertEquals(2, $wildcardItem['today_count']);
+        $this->assertEquals(3, $wildcardItem['total_count']);
+    }
+
     public function test_payout_rule_conflict_validation_prevents_duplicates(): void
     {
         $admin = $this->createAdminUser();

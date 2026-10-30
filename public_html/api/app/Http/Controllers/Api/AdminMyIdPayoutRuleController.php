@@ -53,19 +53,32 @@ class AdminMyIdPayoutRuleController extends Controller
         $earningsRows = collect();
 
         if (Schema::hasTable('my_id_earnings')) {
-            $earningsRows = DB::table('my_id_earnings')
+            $subQuery = DB::table('my_id_earnings')
                 ->selectRaw("
                     LOWER(TRIM(provider)) as norm_provider,
-                    CASE WHEN offer_id IS NOT NULL AND TRIM(offer_id) != '' THEN LOWER(TRIM(offer_id)) ELSE NULL END as norm_offer_id,
+                    CASE 
+                        WHEN offer_id IS NOT NULL AND TRIM(offer_id) != '' AND TRIM(offer_id) != '-' 
+                        THEN LOWER(TRIM(offer_id)) 
+                        ELSE NULL 
+                    END as norm_offer_id,
+                    coin_amount,
+                    CASE 
+                        WHEN (completed_at LIKE ? OR (completed_at IS NULL AND created_at LIKE ?)) 
+                        THEN 1 
+                        ELSE 0 
+                    END as is_today
+                ", ["{$todayDate}%", "{$todayDate}%"]);
+
+            $earningsRows = DB::query()
+                ->fromSub($subQuery, 'earnings_sub')
+                ->selectRaw("
+                    norm_provider,
+                    norm_offer_id,
                     coin_amount,
                     COUNT(*) as total_count,
-                    COALESCE(SUM(CASE WHEN (completed_at LIKE '{$todayDate}%' OR (completed_at IS NULL AND created_at LIKE '{$todayDate}%')) THEN 1 ELSE 0 END), 0) as today_count
+                    COALESCE(SUM(is_today), 0) as today_count
                 ")
-                ->groupBy(
-                    DB::raw("LOWER(TRIM(provider))"),
-                    DB::raw("CASE WHEN offer_id IS NOT NULL AND TRIM(offer_id) != '' THEN LOWER(TRIM(offer_id)) ELSE NULL END"),
-                    'coin_amount'
-                )
+                ->groupBy('norm_provider', 'norm_offer_id', 'coin_amount')
                 ->get();
         }
 
