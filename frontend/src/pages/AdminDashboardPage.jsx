@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   DollarSign, 
@@ -16,9 +16,47 @@ import {
   Zap,
   Activity,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Calendar,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { api } from '../services/api';
+
+/**
+ * Returns current UTC YYYY-MM
+ */
+const getCurrentUtcYearMonth = () => {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = String(now.getUTCMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+};
+
+/**
+ * Returns UTC YYYY-MM shifted by month offset
+ */
+const getAdjacentMonth = (yearMonthStr, offset) => {
+  let ym = yearMonthStr;
+  if (!ym || !/^\d{4}-\d{2}$/.test(ym)) {
+    ym = getCurrentUtcYearMonth();
+  }
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + offset, 1));
+  const newY = d.getUTCFullYear();
+  const newM = String(d.getUTCMonth() + 1).padStart(2, '0');
+  return `${newY}-${newM}`;
+};
+
+/**
+ * Formats YYYY-MM to human readable (e.g. October 2026)
+ */
+const formatUtcMonthLabel = (yearMonthStr) => {
+  if (!yearMonthStr || !/^\d{4}-\d{2}$/.test(yearMonthStr)) return '';
+  const [y, m] = yearMonthStr.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1, 1));
+  return d.toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+};
 
 export default function AdminDashboardPage() {
   const [stats, setStats] = useState({
@@ -37,12 +75,26 @@ export default function AdminDashboardPage() {
     allWithdrawalsAmount: 0.00,
     activeOfferwalls: 0,
   });
+
+  // Period filter state: 'this_month' (default) | 'last_month' | 'all_time' | 'custom'
+  const [period, setPeriod] = useState('this_month');
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentUtcYearMonth());
+  const [periodMeta, setPeriodMeta] = useState({
+    period: 'this_month',
+    month_label: '',
+    range_start: null,
+    range_end: null,
+    range_text: '',
+    range_start_formatted: '',
+    range_end_formatted: '',
+  });
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  const loadMetrics = useCallback(async (isBackground = false) => {
+  const loadMetrics = useCallback(async (isBackground = false, targetPeriod = period, targetMonth = selectedMonth) => {
     if (!isBackground) {
       setLoading(true);
     } else {
@@ -50,7 +102,20 @@ export default function AdminDashboardPage() {
     }
     setError(null);
     try {
-      const res = await api.getAdminDashboard();
+      const params = {};
+      if (targetPeriod === 'all_time') {
+        params.period = 'all_time';
+      } else if (targetPeriod === 'this_month') {
+        params.period = 'this_month';
+        if (targetMonth) params.month = targetMonth;
+      } else if (targetPeriod === 'last_month') {
+        params.period = 'last_month';
+        if (targetMonth) params.month = targetMonth;
+      } else {
+        if (targetMonth) params.month = targetMonth;
+      }
+
+      const res = await api.getAdminDashboard(params);
       const summary = res?.summary || res?.stats || {};
       
       const totalUsers = Number(summary.totalUsers ?? 0);
@@ -84,6 +149,17 @@ export default function AdminDashboardPage() {
         allWithdrawalsAmount,
         activeOfferwalls,
       });
+
+      setPeriodMeta({
+        period: res?.period ?? summary.period ?? targetPeriod,
+        month_label: res?.month_label ?? summary.month_label ?? '',
+        range_start: res?.range_start ?? summary.range_start ?? null,
+        range_end: res?.range_end ?? summary.range_end ?? null,
+        range_text: res?.range_text ?? summary.range_text ?? '',
+        range_start_formatted: res?.range_start_formatted ?? summary.range_start_formatted ?? '',
+        range_end_formatted: res?.range_end_formatted ?? summary.range_end_formatted ?? '',
+      });
+
       setLastUpdated(new Date());
     } catch (e) {
       console.error('Failed to load admin dashboard summary:', e);
@@ -94,7 +170,7 @@ export default function AdminDashboardPage() {
       if (!isBackground) setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [period, selectedMonth]);
 
   useEffect(() => {
     loadMetrics(false);
@@ -123,6 +199,62 @@ export default function AdminDashboardPage() {
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [loadMetrics]);
+
+  // Tab switch handlers
+  const handleSelectThisMonth = () => {
+    const cur = getCurrentUtcYearMonth();
+    setPeriod('this_month');
+    setSelectedMonth(cur);
+    loadMetrics(false, 'this_month', cur);
+  };
+
+  const handleSelectLastMonth = () => {
+    const last = getAdjacentMonth(getCurrentUtcYearMonth(), -1);
+    setPeriod('last_month');
+    setSelectedMonth(last);
+    loadMetrics(false, 'last_month', last);
+  };
+
+  const handleSelectAllTime = () => {
+    setPeriod('all_time');
+    loadMetrics(false, 'all_time', null);
+  };
+
+  const handlePrevMonth = () => {
+    const target = getAdjacentMonth(selectedMonth, -1);
+    const cur = getCurrentUtcYearMonth();
+    const last = getAdjacentMonth(cur, -1);
+    let nextPeriod = 'custom';
+    if (target === cur) nextPeriod = 'this_month';
+    else if (target === last) nextPeriod = 'last_month';
+    setPeriod(nextPeriod);
+    setSelectedMonth(target);
+    loadMetrics(false, nextPeriod, target);
+  };
+
+  const handleNextMonth = () => {
+    const target = getAdjacentMonth(selectedMonth, 1);
+    const cur = getCurrentUtcYearMonth();
+    const last = getAdjacentMonth(cur, -1);
+    let nextPeriod = 'custom';
+    if (target === cur) nextPeriod = 'this_month';
+    else if (target === last) nextPeriod = 'last_month';
+    setPeriod(nextPeriod);
+    setSelectedMonth(target);
+    loadMetrics(false, nextPeriod, target);
+  };
+
+  const monthDisplayLabel = periodMeta.month_label || formatUtcMonthLabel(selectedMonth) || 'Current Month';
+
+  const exactRangeText = useMemo(() => {
+    if (periodMeta?.range_text) return periodMeta.range_text;
+    if (periodMeta?.range_start_formatted && periodMeta?.range_end_formatted) {
+      return `${periodMeta.range_start_formatted} → ${periodMeta.range_end_formatted}`;
+    }
+    if (!selectedMonth || !/^\d{4}-\d{2}$/.test(selectedMonth)) return '';
+    const nextMonth = getAdjacentMonth(selectedMonth, 1);
+    return `${selectedMonth}-01 00:00:00 UTC → ${nextMonth}-01 00:00:00 UTC`;
+  }, [periodMeta, selectedMonth]);
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -162,6 +294,111 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
+      {/* Period Selector & Month Navigation (Top of Dashboard Content) */}
+      <div className="space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 rounded-3xl bg-slate-900/80 border border-white/10 backdrop-blur-md shadow-xl">
+          {/* 3 Main Period Tabs */}
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={handleSelectThisMonth}
+              disabled={loading}
+              className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                period === 'this_month'
+                  ? 'bg-gradient-to-r from-brand-600 to-emerald-600 text-white shadow-lg shadow-brand-500/25 border border-brand-400/40 ring-1 ring-white/10'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>This Month (UTC)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSelectLastMonth}
+              disabled={loading}
+              className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                period === 'last_month'
+                  ? 'bg-gradient-to-r from-brand-600 to-emerald-600 text-white shadow-lg shadow-brand-500/25 border border-brand-400/40 ring-1 ring-white/10'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Last Month (UTC)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSelectAllTime}
+              disabled={loading}
+              className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                period === 'all_time'
+                  ? 'bg-gradient-to-r from-brand-600 to-emerald-600 text-white shadow-lg shadow-brand-500/25 border border-brand-400/40 ring-1 ring-white/10'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>All Time</span>
+            </button>
+          </div>
+
+          {/* Active Period Status Badge */}
+          <div className="flex items-center gap-2 px-3 py-1 text-xs text-slate-300">
+            <span className="text-[11px] font-semibold text-slate-400">Viewing:</span>
+            <span className="font-bold text-white flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              {period === 'all_time' ? 'All Time (Platform History)' : `${monthDisplayLabel} (UTC)`}
+            </span>
+          </div>
+        </div>
+
+        {/* Sub-header row for Month navigation when month mode is active */}
+        {period !== 'all_time' ? (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 backdrop-blur-sm">
+            <div className="flex items-center justify-between sm:justify-start gap-2.5 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                disabled={loading}
+                className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer disabled:opacity-50"
+                title="View Previous Month"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span>Prev Month</span>
+              </button>
+
+              <div className="px-4 py-1.5 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-300 text-xs font-extrabold flex items-center gap-2 shadow-inner">
+                <Calendar className="w-3.5 h-3.5 text-brand-400" />
+                <span>{monthDisplayLabel} (UTC)</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                disabled={loading}
+                className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer disabled:opacity-50"
+                title="View Next Month"
+              >
+                <span>Next Month</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="text-[11px] font-mono text-slate-400 flex items-center gap-2 self-start sm:self-auto px-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-brand-400 shrink-0" />
+              <span>{exactRangeText}</span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-white/[0.02] border border-white/5 text-xs text-slate-400">
+            <div className="flex items-center gap-2">
+              <Layers className="w-4 h-4 text-brand-400" />
+              <span>Displaying platform cumulative statistics without date filtering (All Time).</span>
+            </div>
+          </div>
+        )}
+      </div>
+
       {error && (
         <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
@@ -185,7 +422,9 @@ export default function AdminDashboardPage() {
           className="rounded-3xl glass-card p-6 border border-white/10 hover:border-brand-500/50 hover:shadow-glow-emerald cursor-pointer transition-all flex flex-col justify-between group"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Registered Users</span>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              {period === 'all_time' ? 'Total Registered Users' : 'Users Registered'}
+            </span>
             <div className="w-10 h-10 rounded-2xl bg-brand-500/10 text-brand-400 flex items-center justify-center group-hover:scale-105 transition-transform">
               <Users className="w-5 h-5" />
             </div>
@@ -194,7 +433,11 @@ export default function AdminDashboardPage() {
             <div className="text-3xl font-extrabold text-white group-hover:text-brand-300 transition-colors">
               {loading ? '...' : stats.totalUsers.toLocaleString()}
             </div>
-            <p className="text-xs text-slate-400 mt-1">Full database registered member accounts</p>
+            <p className="text-xs text-slate-400 mt-1">
+              {period === 'all_time'
+                ? 'Full database registered member accounts'
+                : `New user accounts registered in ${monthDisplayLabel}`}
+            </p>
           </div>
           <div className="text-[11px] font-semibold text-brand-400 flex items-center gap-1 pt-2 border-t border-white/5">
             <CheckCircle2 className="w-3.5 h-3.5" /> Open Users Table ({stats.totalUsers.toLocaleString()}) →
@@ -207,7 +450,9 @@ export default function AdminDashboardPage() {
           className="rounded-3xl glass-card p-6 border border-white/10 hover:border-cyan-500/50 hover:shadow-glow-cyan cursor-pointer transition-all flex flex-col justify-between group"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Completed Offers</span>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              {period === 'all_time' ? 'Total Completed Offers' : 'Completed Offers'}
+            </span>
             <div className="w-10 h-10 rounded-2xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center group-hover:scale-105 transition-transform">
               <FileSpreadsheet className="w-5 h-5" />
             </div>
@@ -220,7 +465,7 @@ export default function AdminDashboardPage() {
               {stats.todayCompletedOffers > 0 ? (
                 <span className="text-emerald-400 font-semibold">+{stats.todayCompletedOffers} today • </span>
               ) : null}
-              All-time verified postback logs
+              {period === 'all_time' ? 'All-time verified postback logs' : `${monthDisplayLabel} verified postback logs`}
             </p>
           </div>
           <div className="text-[11px] font-semibold text-cyan-400 flex items-center gap-1 pt-2 border-t border-white/5">
@@ -231,7 +476,9 @@ export default function AdminDashboardPage() {
         {/* Total Gross Revenue USD */}
         <div className="rounded-3xl glass-card p-6 border border-white/10 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Gross Revenue</span>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              {period === 'all_time' ? 'Total Gross Revenue' : 'Gross Revenue'}
+            </span>
             <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
               <DollarSign className="w-5 h-5" />
             </div>
@@ -244,7 +491,9 @@ export default function AdminDashboardPage() {
               {stats.todayRevenueUsd > 0 ? (
                 <span className="text-emerald-400 font-semibold">+${stats.todayRevenueUsd.toFixed(2)} earned today</span>
               ) : (
-                'Cumulative provider payout received'
+                period === 'all_time'
+                  ? 'Cumulative provider payout received'
+                  : `${monthDisplayLabel} provider payout received`
               )}
             </p>
           </div>
@@ -259,7 +508,9 @@ export default function AdminDashboardPage() {
           className="rounded-3xl glass-card p-6 border border-white/10 hover:border-rose-500/50 cursor-pointer transition-all flex flex-col justify-between group"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Chargebacks</span>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              {period === 'all_time' ? 'Total Chargebacks' : 'Chargebacks'}
+            </span>
             <div className="w-10 h-10 rounded-2xl bg-rose-500/10 text-rose-400 flex items-center justify-center group-hover:scale-105 transition-transform">
               <ShieldAlert className="w-5 h-5" />
             </div>
@@ -302,7 +553,9 @@ export default function AdminDashboardPage() {
           className="rounded-3xl glass-card p-6 border border-white/10 hover:border-amber-500/50 cursor-pointer transition-all flex flex-col justify-between group"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pending Cashouts</span>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              {period === 'all_time' ? 'Pending Cashouts' : 'Pending Cashouts'}
+            </span>
             <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:scale-105 transition-transform">
               <Clock className="w-5 h-5" />
             </div>

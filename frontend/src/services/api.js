@@ -169,8 +169,8 @@ export const api = {
   submitWithdrawal: (payload) => apiRequest('/withdrawals', { method: 'POST', body: JSON.stringify(payload) }),
 
   // Admin Endpoints
-  getAdminDashboard: () => apiRequest('/admin/dashboard'),
-  getAdminSummary: () => apiRequest('/admin/summary'),
+  getAdminDashboard: (params = {}) => apiRequest(`/admin/dashboard${cleanQueryParams(params)}`),
+  getAdminSummary: (params = {}) => apiRequest(`/admin/summary${cleanQueryParams(params)}`),
   getAdminOffers: () => apiRequest('/admin/offers'),
   getAdminUsers: async (params = {}) => {
     const res = await apiRequest(`/admin/users${cleanQueryParams(params)}`);

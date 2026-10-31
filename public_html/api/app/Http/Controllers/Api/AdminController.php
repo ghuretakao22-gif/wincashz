@@ -28,6 +28,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -57,22 +58,135 @@ class AdminController extends Controller
         ['key' => 'clickwall', 'label' => 'Clickwall'],
     ];
 
-    public function dashboard(): JsonResponse
+    /**
+     * Resolve date range and period metadata from request.
+     *
+     * @param Request $request
+     * @return array{0: ?Carbon, 1: ?Carbon, 2: ?string, 3: ?string, 4: ?string}
+     */
+    private function resolveDashboardDateRange(Request $request): array
     {
-        try {
-            $today = Carbon::today();
-            $startOfDay = $today->copy()->startOfDay();
-            $endOfDay = $today->copy()->endOfDay();
+        if (!$request->has('period') && !$request->has('month')) {
+            return [null, null, null, null, null];
+        }
 
-            $totalUsers = Schema::hasTable('users') ? User::count() : 0;
-            $totalCompletedTasks = Schema::hasTable('completed_tasks') ? CompletedTask::count() : 0;
-            $todayCompletedTasks = Schema::hasTable('completed_tasks')
-                ? CompletedTask::whereBetween('created_at', [$startOfDay, $endOfDay])->count()
-                : 0;
-            $totalChargebacks = Schema::hasTable('chargebacks') ? Chargeback::count() : 0;
-            $todayChargebacks = Schema::hasTable('chargebacks')
-                ? Chargeback::whereBetween('created_at', [$startOfDay, $endOfDay])->count()
-                : 0;
+        $rawPeriod = $request->input('period');
+        $rawMonth = $request->input('month');
+
+        if (($rawPeriod === null || trim((string) $rawPeriod) === '') && ($rawMonth === null || trim((string) $rawMonth) === '')) {
+            return [null, null, null, null, null];
+        }
+
+        $nowUtc = Carbon::now('UTC');
+        $currentMonthStr = $nowUtc->format('Y-m');
+        $lastMonthStr = $nowUtc->copy()->subMonthNoOverflow()->format('Y-m');
+
+        $period = $rawPeriod !== null ? strtolower(trim((string) $rawPeriod)) : null;
+        $month = $rawMonth !== null && trim((string) $rawMonth) !== '' ? trim((string) $rawMonth) : null;
+
+        if ($month !== null) {
+            $startUtc = Carbon::createFromFormat('!Y-m', $month, 'UTC')->startOfMonth();
+            $endUtc = $startUtc->copy()->addMonthNoOverflow()->startOfMonth();
+            $monthLabel = $startUtc->format('F Y');
+            $selectedMonth = $month;
+
+            if ($month === $currentMonthStr) {
+                $periodKey = 'this_month';
+            } elseif ($month === $lastMonthStr) {
+                $periodKey = 'last_month';
+            } else {
+                $periodKey = ($period && in_array($period, ['this_month', 'last_month', 'all_time', 'custom'], true)) ? $period : 'custom';
+            }
+
+            return [$startUtc, $endUtc, $periodKey, $monthLabel, $selectedMonth];
+        }
+
+        if ($period === 'this_month') {
+            $startUtc = $nowUtc->copy()->startOfMonth();
+            $endUtc = $startUtc->copy()->addMonthNoOverflow()->startOfMonth();
+            $monthLabel = $startUtc->format('F Y');
+            $selectedMonth = $currentMonthStr;
+            return [$startUtc, $endUtc, 'this_month', $monthLabel, $selectedMonth];
+        }
+
+        if ($period === 'last_month') {
+            $startUtc = $nowUtc->copy()->subMonthNoOverflow()->startOfMonth();
+            $endUtc = $startUtc->copy()->addMonthNoOverflow()->startOfMonth();
+            $monthLabel = $startUtc->format('F Y');
+            $selectedMonth = $lastMonthStr;
+            return [$startUtc, $endUtc, 'last_month', $monthLabel, $selectedMonth];
+        }
+
+        if ($period === 'all_time') {
+            return [null, null, 'all_time', 'All Time', null];
+        }
+
+        return [null, null, null, null, null];
+    }
+
+    public function dashboard(Request $request): JsonResponse
+    {
+        if ($request->has('period') && is_string($request->input('period'))) {
+            $request->merge(['period' => strtolower(trim($request->input('period')))]);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'period' => ['nullable', 'string', Rule::in(['this_month', 'last_month', 'all_time', 'custom'])],
+            'month' => ['nullable', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'The given data was invalid.',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            [$startUtc, $endUtc, $periodKey, $monthLabel, $selectedMonth] = $this->resolveDashboardDateRange($request);
+            $startUtcString = $startUtc?->format('Y-m-d H:i:s');
+            $endUtcString = $endUtc?->format('Y-m-d H:i:s');
+
+            $nowUtc = Carbon::now('UTC');
+            $startOfDay = $nowUtc->copy()->startOfDay();
+            $endOfDay = $nowUtc->copy()->endOfDay();
+
+            // Today is considered within the period if it's all time/unfiltered, or if nowUtc is inside [$startUtc, $endUtc)
+            $isTodayInPeriod = (!$startUtc && !$endUtc) || ($nowUtc->greaterThanOrEqualTo($startUtc) && $nowUtc->lessThan($endUtc));
+
+            $usersQuery = User::query();
+            if ($startUtcString && $endUtcString) {
+                $usersQuery->where('created_at', '>=', $startUtcString)->where('created_at', '<', $endUtcString);
+            }
+            $totalUsers = Schema::hasTable('users') ? $usersQuery->count() : 0;
+
+            $tasksQuery = CompletedTask::query();
+            if ($startUtcString && $endUtcString) {
+                $tasksQuery->where('created_at', '>=', $startUtcString)->where('created_at', '<', $endUtcString);
+            }
+            $totalCompletedTasks = Schema::hasTable('completed_tasks') ? $tasksQuery->count() : 0;
+            $totalRevenue = Schema::hasTable('completed_tasks') ? (float) $tasksQuery->sum('revenue') : 0.0;
+
+            $todayCompletedTasks = 0;
+            $todayRevenue = 0.0;
+            if (Schema::hasTable('completed_tasks') && $isTodayInPeriod) {
+                $todayCompletedTasks = CompletedTask::whereBetween('created_at', [$startOfDay, $endOfDay])->count();
+                $todayRevenue = (float) CompletedTask::whereBetween('created_at', [$startOfDay, $endOfDay])->sum('revenue');
+            }
+
+            $cbQuery = Chargeback::query();
+            if ($startUtcString && $endUtcString) {
+                $cbQuery->where('created_at', '>=', $startUtcString)->where('created_at', '<', $endUtcString);
+            }
+            $totalChargebacks = Schema::hasTable('chargebacks') ? $cbQuery->count() : 0;
+            $totalChargebackRevenue = Schema::hasTable('chargebacks') ? (float) $cbQuery->sum('revenue') : 0.0;
+
+            $todayChargebacks = 0;
+            $todayChargebackRevenue = 0.0;
+            if (Schema::hasTable('chargebacks') && $isTodayInPeriod) {
+                $todayChargebacks = Chargeback::whereBetween('created_at', [$startOfDay, $endOfDay])->count();
+                $todayChargebackRevenue = (float) Chargeback::whereBetween('created_at', [$startOfDay, $endOfDay])->sum('revenue');
+            }
 
             $pendingWithdrawalsCount = 0;
             $pendingWithdrawalsAmount = 0.0;
@@ -83,26 +197,23 @@ class AdminController extends Controller
                 $pendingWithdrawalsQuery = Transaction::query()
                     ->where('type', 'like', 'withdrawal%')
                     ->where('status', 'pending');
+                if ($startUtcString && $endUtcString) {
+                    $pendingWithdrawalsQuery->where('created_at', '>=', $startUtcString)->where('created_at', '<', $endUtcString);
+                }
                 $pendingWithdrawalsCount = (int) $pendingWithdrawalsQuery->count();
                 $pendingWithdrawalsAmount = (float) $pendingWithdrawalsQuery->sum('amount');
 
-                $allWithdrawalsCount = Transaction::query()
-                    ->where('type', 'like', 'withdrawal%')
-                    ->count();
-                $allWithdrawalsAmount = (float) Transaction::query()
-                    ->where('type', 'like', 'withdrawal%')
+                $allWithdrawalsQuery = Transaction::query()
+                    ->where('type', 'like', 'withdrawal%');
+                if ($startUtcString && $endUtcString) {
+                    $allWithdrawalsQuery->where('created_at', '>=', $startUtcString)->where('created_at', '<', $endUtcString);
+                }
+                $allWithdrawalsCount = (int) $allWithdrawalsQuery->count();
+                $allWithdrawalsAmount = (float) (clone $allWithdrawalsQuery)
                     ->where('status', 'completed')
                     ->sum('amount');
             }
 
-            $totalRevenue = Schema::hasTable('completed_tasks') ? (float) CompletedTask::sum('revenue') : 0.0;
-            $todayRevenue = Schema::hasTable('completed_tasks')
-                ? (float) CompletedTask::whereBetween('created_at', [$startOfDay, $endOfDay])->sum('revenue')
-                : 0.0;
-            $totalChargebackRevenue = Schema::hasTable('chargebacks') ? (float) Chargeback::sum('revenue') : 0.0;
-            $todayChargebackRevenue = Schema::hasTable('chargebacks')
-                ? (float) Chargeback::whereBetween('created_at', [$startOfDay, $endOfDay])->sum('revenue')
-                : 0.0;
             $netRevenue = round($totalRevenue - $totalChargebackRevenue, 2);
 
             $activeOfferwalls = 0;
@@ -118,7 +229,19 @@ class AdminController extends Controller
                 }
             }
 
-            $summaryData = [
+            $periodMeta = [
+                'period' => $periodKey,
+                'month_label' => $monthLabel,
+                'range_start' => $startUtc?->format('Y-m-d\TH:i:s\Z'),
+                'range_end' => $endUtc?->format('Y-m-d\TH:i:s\Z'),
+                'range_start_formatted' => $startUtc?->format('Y-m-d H:i:s \U\T\C'),
+                'range_end_formatted' => $endUtc?->format('Y-m-d H:i:s \U\T\C'),
+                'range_text' => $startUtc && $endUtc ? ($startUtc->format('Y-m-d H:i:s \U\T\C') . ' → ' . $endUtc->format('Y-m-d H:i:s \U\T\C')) : null,
+                'selected_month' => $selectedMonth,
+                'current_month' => $nowUtc->format('Y-m'),
+            ];
+
+            $summaryData = array_merge([
                 'totalUsers' => $totalUsers,
                 'totalCompletedOffers' => $totalCompletedTasks,
                 'todayCompletedOffers' => $todayCompletedTasks,
@@ -134,7 +257,7 @@ class AdminController extends Controller
                 'allWithdrawalsCount' => $allWithdrawalsCount,
                 'allWithdrawalsAmount' => round($allWithdrawalsAmount, 2),
                 'activeOfferwalls' => $activeOfferwalls,
-            ];
+            ], $periodMeta);
 
             $googleAuthEnabled = false;
             if (Schema::hasTable('google_authentications')) {
@@ -145,7 +268,7 @@ class AdminController extends Controller
                 }
             }
 
-            return response()->json([
+            return response()->json(array_merge($periodMeta, [
                 'summary' => $summaryData,
                 'stats' => $summaryData,
                 'metrics' => [
@@ -193,11 +316,11 @@ class AdminController extends Controller
                     ],
                 ],
                 'activity' => [
-                    'users' => $this->recentUsers(),
-                    'tasks' => $this->recentTasks(),
-                    'withdrawals' => $this->recentWithdrawals(),
-                    'chargebacks' => $this->recentChargebacks(),
-                    'transactions' => $this->recentTransactions(),
+                    'users' => $this->recentUsers($startUtcString, $endUtcString),
+                    'tasks' => $this->recentTasks($startUtcString, $endUtcString),
+                    'withdrawals' => $this->recentWithdrawals($startUtcString, $endUtcString),
+                    'chargebacks' => $this->recentChargebacks($startUtcString, $endUtcString),
+                    'transactions' => $this->recentTransactions($startUtcString, $endUtcString),
                     'cashoutMethods' => $this->recentCashoutMethods(),
                 ],
                 'settings' => [
@@ -205,7 +328,7 @@ class AdminController extends Controller
                     'logoUrl' => $this->siteLogo(),
                     'googleAuthenticationEnabled' => $googleAuthEnabled,
                 ],
-            ]);
+            ]));
         } catch (\Throwable $e) {
             Log::error('Admin dashboard error: ' . $e->getMessage(), ['exception' => $e]);
             return response()->json([
@@ -243,9 +366,9 @@ class AdminController extends Controller
         }
     }
 
-    public function summary(): JsonResponse
+    public function summary(Request $request): JsonResponse
     {
-        return $this->dashboard();
+        return $this->dashboard($request);
     }
 
     public function publicSettings(): JsonResponse
@@ -3804,48 +3927,64 @@ class AdminController extends Controller
         return number_format((float) $query->sum('revenue'), 2, '.', '');
     }
 
-    private function recentUsers()
+    private function recentUsers(?string $startUtc = null, ?string $endUtc = null)
     {
         if (!Schema::hasTable('users')) {
             return collect();
         }
-        return User::query()->latest()->limit(5)->get(['id', 'name', 'username', 'email', 'role', 'balance', 'created_at']);
+        $query = User::query();
+        if ($startUtc && $endUtc) {
+            $query->where('created_at', '>=', $startUtc)->where('created_at', '<', $endUtc);
+        }
+        return $query->latest()->limit(5)->get(['id', 'name', 'username', 'email', 'role', 'balance', 'created_at']);
     }
 
-    private function recentTasks()
+    private function recentTasks(?string $startUtc = null, ?string $endUtc = null)
     {
         if (!Schema::hasTable('completed_tasks')) {
             return collect();
         }
-        return CompletedTask::query()->latest()->limit(5)->get(['id', 'offer_wall_name', 'offer_name', 'transaction_id', 'currency_reward', 'country', 'created_at']);
+        $query = CompletedTask::query();
+        if ($startUtc && $endUtc) {
+            $query->where('created_at', '>=', $startUtc)->where('created_at', '<', $endUtc);
+        }
+        return $query->latest()->limit(5)->get(['id', 'offer_wall_name', 'offer_name', 'transaction_id', 'currency_reward', 'country', 'created_at']);
     }
 
-    private function recentWithdrawals()
+    private function recentWithdrawals(?string $startUtc = null, ?string $endUtc = null)
     {
         if (!Schema::hasTable('transactions')) {
             return collect();
         }
-        return Transaction::query()
-            ->where('type', 'like', 'withdrawal%')
-            ->latest()
-            ->limit(5)
-            ->get(['id', 'user_name', 'type', 'status', 'amount', 'transaction_id', 'title', 'description', 'created_at']);
+        $query = Transaction::query()->where('type', 'like', 'withdrawal%');
+        if ($startUtc && $endUtc) {
+            $query->where('created_at', '>=', $startUtc)->where('created_at', '<', $endUtc);
+        }
+        return $query->latest()->limit(5)->get(['id', 'user_name', 'type', 'status', 'amount', 'transaction_id', 'title', 'description', 'created_at']);
     }
 
-    private function recentChargebacks()
+    private function recentChargebacks(?string $startUtc = null, ?string $endUtc = null)
     {
         if (!Schema::hasTable('chargebacks')) {
             return collect();
         }
-        return Chargeback::query()->latest()->limit(5)->get(['id', 'offer_wall_name', 'offer_name', 'transaction_id', 'currency_reward', 'status', 'created_at']);
+        $query = Chargeback::query();
+        if ($startUtc && $endUtc) {
+            $query->where('created_at', '>=', $startUtc)->where('created_at', '<', $endUtc);
+        }
+        return $query->latest()->limit(5)->get(['id', 'offer_wall_name', 'offer_name', 'transaction_id', 'currency_reward', 'status', 'created_at']);
     }
 
-    private function recentTransactions()
+    private function recentTransactions(?string $startUtc = null, ?string $endUtc = null)
     {
         if (!Schema::hasTable('transactions')) {
             return collect();
         }
-        return Transaction::query()->latest()->limit(5)->get(['id', 'user_name', 'type', 'status', 'amount', 'transaction_id', 'title', 'created_at']);
+        $query = Transaction::query();
+        if ($startUtc && $endUtc) {
+            $query->where('created_at', '>=', $startUtc)->where('created_at', '<', $endUtc);
+        }
+        return $query->latest()->limit(5)->get(['id', 'user_name', 'type', 'status', 'amount', 'transaction_id', 'title', 'created_at']);
     }
 
     private function recentCashoutMethods()
