@@ -13,7 +13,7 @@ return new class extends Migration
     {
         if (Schema::hasTable('my_id_payout_rules') && !Schema::hasColumn('my_id_payout_rules', 'usd_bdt_rate')) {
             Schema::table('my_id_payout_rules', function (Blueprint $table): void {
-                $table->decimal('usd_bdt_rate', 10, 2)->nullable()->default(null)->after('user_payout_usd');
+                $table->decimal('usd_bdt_rate', 10, 4)->nullable()->default(null)->after('user_payout_usd');
             });
         }
     }

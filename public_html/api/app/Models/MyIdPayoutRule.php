@@ -26,7 +26,7 @@ class MyIdPayoutRule extends Model
         return [
             'coin_amount' => 'decimal:4',
             'user_payout_usd' => 'decimal:4',
-            'usd_bdt_rate' => 'decimal:2',
+            'usd_bdt_rate' => 'decimal:4',
             'is_active' => 'boolean',
         ];
     }

@@ -211,9 +211,16 @@ class AdminMyIdPayoutRuleController extends Controller
         $cleanOfferName = isset($validated['offer_name']) && trim((string) $validated['offer_name']) !== '' ? trim((string) $validated['offer_name']) : null;
         $coinAmount = (float) $validated['coin_amount'];
         $userPayoutUsd = (float) $validated['user_payout_usd'];
-        $usdBdtRate = (isset($validated['usd_bdt_rate']) && is_numeric($validated['usd_bdt_rate']) && (float) $validated['usd_bdt_rate'] > 0)
-            ? (float) $validated['usd_bdt_rate']
-            : null;
+        
+        // Resolve USD to BDT rate: request value, or fallback to global setting / default
+        $usdBdtRate = null;
+        if (isset($validated['usd_bdt_rate']) && is_numeric($validated['usd_bdt_rate']) && (float) $validated['usd_bdt_rate'] > 0) {
+            $usdBdtRate = (float) $validated['usd_bdt_rate'];
+        } else {
+            $globalRate = MyIdEarningService::getUsdBdtRate();
+            $usdBdtRate = ($globalRate > 0) ? $globalRate : 1.0000;
+        }
+
         $isActive = $request->has('is_active') ? (bool) $request->input('is_active') : true;
 
         // Conflict check: Provider + Coin + Offer ID combination must not already exist
@@ -237,15 +244,21 @@ class AdminMyIdPayoutRuleController extends Controller
             ], 422);
         }
 
-        $rule = MyIdPayoutRule::create([
+        $ruleData = [
             'provider' => $cleanProvider,
             'offer_id' => $cleanOfferId,
             'offer_name' => $cleanOfferName,
             'coin_amount' => $coinAmount,
             'user_payout_usd' => $userPayoutUsd,
-            'usd_bdt_rate' => $usdBdtRate,
             'is_active' => $isActive,
-        ]);
+        ];
+
+        // Guard against pending migration: only include column if it exists in the database
+        if (Schema::hasColumn('my_id_payout_rules', 'usd_bdt_rate')) {
+            $ruleData['usd_bdt_rate'] = $usdBdtRate;
+        }
+
+        $rule = MyIdPayoutRule::create($ruleData);
 
         // Feature 3: Auto-backfill unmapped earnings for this rule
         $this->backfillUnmappedEarnings($rule);
@@ -331,8 +344,11 @@ class AdminMyIdPayoutRuleController extends Controller
             $rule->user_payout_usd = (float) $request->input('user_payout_usd');
         }
 
-        if ($request->has('usd_bdt_rate')) {
-            $rule->usd_bdt_rate = (float) $request->input('usd_bdt_rate');
+        if ($request->has('usd_bdt_rate') && Schema::hasColumn('my_id_payout_rules', 'usd_bdt_rate')) {
+            $rawRate = $request->input('usd_bdt_rate');
+            if (is_numeric($rawRate) && (float) $rawRate > 0) {
+                $rule->usd_bdt_rate = (float) $rawRate;
+            }
         }
 
         if ($request->has('is_active')) {
@@ -376,8 +392,12 @@ class AdminMyIdPayoutRuleController extends Controller
         $normProvider = strtolower(trim((string) $rule->provider));
         $coinAmount = (float) $rule->coin_amount;
         $payoutUsd = (float) $rule->user_payout_usd;
-        $usdBdtRate = ($rule->usd_bdt_rate !== null && (float) $rule->usd_bdt_rate > 0)
-            ? (float) $rule->usd_bdt_rate
+        $ruleRate = null;
+        if (Schema::hasColumn('my_id_payout_rules', 'usd_bdt_rate')) {
+            $ruleRate = $rule->usd_bdt_rate;
+        }
+        $usdBdtRate = ($ruleRate !== null && (float) $ruleRate > 0)
+            ? (float) $ruleRate
             : MyIdEarningService::getUsdBdtRate();
         $payoutBdt = round($payoutUsd * $usdBdtRate, 2);
 
@@ -424,12 +444,16 @@ class AdminMyIdPayoutRuleController extends Controller
             }
         }
 
-        return $query->update([
+        $updateData = [
             'payout_usd' => $payoutUsd,
-            'usd_bdt_rate' => $usdBdtRate,
             'payout_bdt' => $payoutBdt,
             'updated_at' => Carbon::now('UTC'),
-        ]);
+        ];
+        if (Schema::hasColumn('my_id_earnings', 'usd_bdt_rate')) {
+            $updateData['usd_bdt_rate'] = $usdBdtRate;
+        }
+
+        return $query->update($updateData);
     }
 
     /**

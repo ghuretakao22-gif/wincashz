@@ -723,4 +723,81 @@ class MyIdPayoutRulesAndModeratorScopingTest extends TestCase
         $this->assertEquals(2.00, $summary['total_usd_earn']);
         $this->assertEquals(244.00, $summary['total_bdt_earn']);
     }
+
+    public function test_admin_can_store_payout_rule_with_custom_usd_bdt_rate(): void
+    {
+        $admin = $this->createAdminUser();
+        $token = auth('api')->login($admin);
+
+        $res = $this->withHeaders(['Authorization' => 'Bearer '.$token])
+            ->postJson('/api/admin/my-id-payout-rules', [
+                'provider' => 'Torox',
+                'offer_id' => 'offer_123',
+                'offer_name' => 'Custom Offer',
+                'coin_amount' => 500,
+                'user_payout_usd' => 2.50,
+                'usd_bdt_rate' => 125.5000,
+                'is_active' => true,
+            ]);
+
+        $res->assertStatus(201);
+        $res->assertJsonPath('success', true);
+        $this->assertEquals(125.5000, (float) $res->json('data.usd_bdt_rate'));
+    }
+
+    public function test_admin_store_payout_rule_fallbacks_to_global_setting_when_usd_bdt_rate_empty(): void
+    {
+        $admin = $this->createAdminUser();
+        $token = auth('api')->login($admin);
+
+        Setting::setValue('my_id_usd_bdt_rate', '124.00');
+
+        $res = $this->withHeaders(['Authorization' => 'Bearer '.$token])
+            ->postJson('/api/admin/my-id-payout-rules', [
+                'provider' => 'RevU',
+                'offer_id' => 'rev_456',
+                'offer_name' => 'RevU Offer',
+                'coin_amount' => 300,
+                'user_payout_usd' => 1.00,
+                'usd_bdt_rate' => null,
+                'is_active' => true,
+            ]);
+
+        $res->assertStatus(201);
+        $res->assertJsonPath('success', true);
+        $this->assertEquals(124.0000, (float) $res->json('data.usd_bdt_rate'));
+    }
+
+    public function test_admin_store_payout_rule_succeeds_even_if_column_missing_before_migration(): void
+    {
+        // Drop column to simulate pre-migration state
+        if (Schema::hasColumn('my_id_payout_rules', 'usd_bdt_rate')) {
+            Schema::table('my_id_payout_rules', function (Blueprint $table): void {
+                $table->dropColumn('usd_bdt_rate');
+            });
+        }
+
+        $admin = $this->createAdminUser();
+        $token = auth('api')->login($admin);
+
+        $res = $this->withHeaders(['Authorization' => 'Bearer '.$token])
+            ->postJson('/api/admin/my-id-payout-rules', [
+                'provider' => 'AdGem',
+                'offer_id' => 'adg_789',
+                'offer_name' => 'AdGem Offer',
+                'coin_amount' => 200,
+                'user_payout_usd' => 0.80,
+                'usd_bdt_rate' => 120.00,
+                'is_active' => true,
+            ]);
+
+        $res->assertStatus(201);
+        $res->assertJsonPath('success', true);
+        $this->assertEquals('AdGem', $res->json('data.provider'));
+
+        // Restore column for subsequent tests
+        Schema::table('my_id_payout_rules', function (Blueprint $table): void {
+            $table->decimal('usd_bdt_rate', 10, 4)->nullable()->after('user_payout_usd');
+        });
+    }
 }
