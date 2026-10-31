@@ -254,19 +254,19 @@ export default function ModeratorDashboardPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       {/* Header Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2 border-b border-white/5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2.5 border-b border-white/5">
         <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg sm:text-2xl font-black text-white tracking-tight">
               Moderator Dashboard
             </h1>
             <span className="text-[10px] font-mono font-bold uppercase tracking-wider bg-brand-500/15 text-brand-300 border border-brand-500/30 px-2 py-0.5 rounded-md">
               {data.my_id || 'MY ID'}
             </span>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
             Real-time performance metrics and offer summaries for your assigned My ID.
           </p>
         </div>
@@ -277,7 +277,7 @@ export default function ModeratorDashboardPage() {
           <div className="inline-flex rounded-xl bg-white/[0.04] p-1 border border-white/10">
             <button
               onClick={() => handleFilterClick('today')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-bold transition-all ${
                 activeFilter === 'today'
                   ? 'bg-brand-500 text-slate-950 shadow-glow-emerald'
                   : 'text-slate-400 hover:text-white'
@@ -287,7 +287,7 @@ export default function ModeratorDashboardPage() {
             </button>
             <button
               onClick={() => handleFilterClick('this_month')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-bold transition-all ${
                 activeFilter === 'this_month'
                   ? 'bg-brand-500 text-slate-950 shadow-glow-emerald'
                   : 'text-slate-400 hover:text-white'
@@ -297,7 +297,7 @@ export default function ModeratorDashboardPage() {
             </button>
             <button
               onClick={() => handleFilterClick('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-bold transition-all ${
                 activeFilter === 'all'
                   ? 'bg-brand-500 text-slate-950 shadow-glow-emerald'
                   : 'text-slate-400 hover:text-white'
@@ -313,7 +313,7 @@ export default function ModeratorDashboardPage() {
               <select
                 value={customMonth}
                 onChange={handleCustomMonthChange}
-                className="appearance-none bg-[#0e141d] border border-white/10 text-slate-300 text-xs font-medium rounded-xl pl-3 pr-8 py-2 focus:outline-none focus:border-brand-500 cursor-pointer"
+                className="appearance-none bg-[#0e141d] border border-white/10 text-slate-300 text-xs font-medium rounded-xl pl-3 pr-8 py-1.5 sm:py-2 focus:outline-none focus:border-brand-500 cursor-pointer"
               >
                 <option value="">Historical Month...</option>
                 {data.months.map((m) => (
@@ -330,16 +330,16 @@ export default function ModeratorDashboardPage() {
           <button
             onClick={() => fetchDashboard(activeFilter, customMonth)}
             disabled={loading}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-all cursor-pointer disabled:opacity-50"
+            className="p-1.5 sm:p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-all cursor-pointer disabled:opacity-50"
             title="Refresh dashboard"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-brand-400' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${loading ? 'animate-spin text-brand-400' : ''}`} />
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
+        <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
           <span>{error}</span>
           <button
             onClick={() => fetchDashboard(activeFilter, customMonth)}
@@ -350,62 +350,232 @@ export default function ModeratorDashboardPage() {
         </div>
       )}
 
-      {/* A) EXACTLY 8 TOP SUMMARY CARDS */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      {/* A) 8 COMPACT TOP SUMMARY CARDS */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5">
         {summaryCards.map((card, idx) => (
           <div
             key={idx}
-            className={`p-4 rounded-2xl bg-gradient-to-br ${card.color} bg-[#0c1015]/90 border backdrop-blur-sm transition-all hover:border-white/20`}
+            className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-gradient-to-br ${card.color} bg-[#0c1015]/90 border backdrop-blur-sm transition-all hover:border-white/20 flex flex-col justify-between`}
           >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-slate-400 truncate">
+            <div className="flex items-center justify-between gap-1 mb-1">
+              <span className="text-[11px] sm:text-xs font-semibold text-slate-400 truncate">
                 {card.label}
               </span>
-              <div className="p-2 rounded-xl bg-white/5 border border-white/5 shrink-0">
-                <card.icon className="w-4 h-4" />
+              <div className="p-1 sm:p-1.5 rounded-lg bg-white/5 border border-white/5 shrink-0">
+                <card.icon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               </div>
             </div>
-            <div className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              {card.value}
-            </div>
-            <div className="text-[11px] text-slate-500 mt-1 truncate">
-              {card.subtext}
+            <div>
+              <div className="text-base sm:text-lg font-black text-white tracking-tight">
+                {card.value}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5 truncate leading-tight">
+                {card.subtext}
+              </div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* B) MONTHLY TEAM LEADERBOARD (UTC) */}
-      <div className="bg-[#0c1015]/90 border border-white/5 rounded-3xl overflow-hidden shadow-xl">
+      {/* B) MAIN TABLE: OFFER SUMMARY TABLE (Positioned right after summary cards) */}
+      <div className="bg-[#0c1015]/90 border border-white/10 rounded-2xl sm:rounded-3xl overflow-hidden shadow-xl">
+        {/* Table Header Controls */}
+        <div className="p-3.5 sm:p-5 border-b border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm sm:text-base font-black text-white tracking-tight">
+                Offer Summary Table
+              </h2>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/15 text-brand-300 border border-brand-500/30">
+                {filteredOfferSummary.length} Offers
+              </span>
+            </div>
+            <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
+              Breakdown by provider and offer name with moderator net earnings.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
+            {/* Search Input */}
+            <div className="relative flex-1 sm:w-60">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search offer or provider..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full bg-white/[0.03] border border-white/10 rounded-xl pl-9 pr-3 py-1.5 sm:py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 transition-colors"
+              />
+            </div>
+
+            {/* Link to Completed Offers */}
+            <Link
+              to="/moderator/completed-offers"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold transition-all shrink-0"
+            >
+              <span>Logs</span>
+              <ArrowRight className="w-3.5 h-3.5 text-brand-400" />
+            </Link>
+          </div>
+        </div>
+
+        {/* Responsive Table (8 Columns) */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs min-w-[700px]">
+            <thead>
+              <tr className="border-b border-white/5 bg-white/[0.02] text-slate-400 uppercase text-[10px] font-bold tracking-wider">
+                <th className="py-2.5 sm:py-3 px-3 sm:px-4">Provider</th>
+                <th className="py-2.5 sm:py-3 px-3 sm:px-4">Offer Name</th>
+                <th className="py-2.5 sm:py-3 px-3 sm:px-4 text-right">Coin</th>
+                <th className="py-2.5 sm:py-3 px-3 sm:px-4 text-right">Today Offers</th>
+                <th className="py-2.5 sm:py-3 px-3 sm:px-4 text-right">Total Offers</th>
+                <th className="py-2.5 sm:py-3 px-3 sm:px-4 text-right">Offer Price (USD)</th>
+                <th className="py-2.5 sm:py-3 px-3 sm:px-4 text-right">Net USD</th>
+                <th className="py-2.5 sm:py-3 px-3 sm:px-4 text-right">Net BDT</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5 font-medium">
+              {loading && offerSummary.length === 0 ? (
+                <tr>
+                  <td colSpan="8" className="py-10 text-center text-slate-500 font-medium">
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-brand-400" />
+                    Loading offer summary...
+                  </td>
+                </tr>
+              ) : paginatedRows.length === 0 ? (
+                <tr>
+                  <td colSpan="8" className="py-10 text-center text-slate-500">
+                    No completed offers found for the selected period.
+                  </td>
+                </tr>
+              ) : (
+                paginatedRows.map((row, idx) => (
+                  <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-slate-200">
+                      <span className="inline-block px-2 py-0.5 rounded-md bg-white/5 border border-white/5 text-[11px]">
+                        {row.provider || '—'}
+                      </span>
+                    </td>
+                    <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-white font-medium max-w-xs truncate" title={row.offer_name}>
+                      {row.offer_name || '—'}
+                    </td>
+                    <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-right font-mono text-amber-300">
+                      {Number(row.coin || 0).toLocaleString()}
+                    </td>
+                    <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-right font-mono font-bold text-slate-300">
+                      {Number(row.today_offers || 0).toLocaleString()}
+                    </td>
+                    <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-right font-mono font-bold text-white">
+                      {Number(row.total_offers || row.total_completed || 0).toLocaleString()}
+                    </td>
+                    <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-right font-mono text-slate-300">
+                      ${(Number(row.offer_price) || 0).toFixed(4)}
+                    </td>
+                    <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-right font-mono font-bold text-brand-300">
+                      ${(Number(row.net_usd ?? row.earnings_usd) || 0).toFixed(2)}
+                    </td>
+                    <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-right font-mono font-bold text-cyan-300">
+                      ৳{Math.round(Number(row.net_bdt ?? row.earnings_bdt) || 0).toLocaleString()}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+
+            {/* Footer Totals Row */}
+            {filteredOfferSummary.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-brand-500/30 bg-brand-500/[0.04] text-xs font-black text-white">
+                  <td colSpan="3" className="py-3 px-3 sm:px-4 uppercase tracking-wider text-brand-300 font-bold">
+                    Total Summary ({filteredOfferSummary.length} Offers)
+                  </td>
+                  <td className="py-3 px-3 sm:px-4 text-right font-mono font-black text-white">
+                    {totals.today_offers.toLocaleString()}
+                  </td>
+                  <td className="py-3 px-3 sm:px-4 text-right font-mono font-black text-white">
+                    {totals.total_offers.toLocaleString()}
+                  </td>
+                  <td className="py-3 px-3 sm:px-4 text-right text-slate-500 text-[11px]">
+                    —
+                  </td>
+                  <td className="py-3 px-3 sm:px-4 text-right font-mono font-black text-brand-300">
+                    ${totals.net_usd.toFixed(2)}
+                  </td>
+                  <td className="py-3 px-3 sm:px-4 text-right font-mono font-black text-cyan-300">
+                    ৳{Math.round(totals.net_bdt).toLocaleString()}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+
+        {/* Table Pagination */}
+        {totalPages > 1 && (
+          <div className="p-3.5 sm:p-4 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+            <div>
+              Showing {(currentPage - 1) * pageSize + 1} to{' '}
+              {Math.min(currentPage * pageSize, filteredOfferSummary.length)} of{' '}
+              {filteredOfferSummary.length} rows
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="px-2 font-mono font-bold text-white">
+                {currentPage} / {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* C) MONTHLY TEAM LEADERBOARD (UTC) (Positioned cleanly BELOW Offer Summary Table) */}
+      <div className="bg-[#0c1015]/90 border border-white/10 rounded-2xl sm:rounded-3xl overflow-hidden shadow-xl">
         {/* Leaderboard Header with prominent "Your Rank" pill */}
-        <div className="p-4 sm:p-6 border-b border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 shrink-0">
-              <Trophy className="w-5 h-5" />
+        <div className="p-3.5 sm:p-5 border-b border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="p-2 sm:p-2.5 rounded-xl sm:rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 shrink-0">
+              <Trophy className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-black text-white tracking-tight">
+                <h2 className="text-sm sm:text-base font-black text-white tracking-tight">
                   Monthly Team Leaderboard (UTC)
                 </h2>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/15 text-brand-300 border border-brand-500/30 uppercase tracking-wider">
                   Top 10
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
                 Live monthly platform team rankings ordered by total income (USD) and completed offers.
               </p>
             </div>
           </div>
 
           {/* Prominent Your Rank display */}
-          <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-brand-500/10 via-emerald-500/10 to-cyan-500/10 border border-brand-500/30 text-white shrink-0 shadow-lg shadow-brand-500/5">
-            <Crown className="w-4 h-4 text-brand-400" />
-            <span className="text-xs font-bold text-slate-300">Your Rank:</span>
-            <span className="font-mono font-black text-sm text-transparent bg-clip-text bg-gradient-to-r from-brand-300 to-emerald-300">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl sm:rounded-2xl bg-gradient-to-r from-brand-500/10 via-emerald-500/10 to-cyan-500/10 border border-brand-500/30 text-white shrink-0 shadow-lg shadow-brand-500/5 self-start sm:self-auto">
+            <Crown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-400" />
+            <span className="text-[11px] sm:text-xs font-bold text-slate-300">Your Rank:</span>
+            <span className="font-mono font-black text-xs sm:text-sm text-transparent bg-clip-text bg-gradient-to-r from-brand-300 to-emerald-300">
               #{myRank.rank}
             </span>
-            <span className="text-[11px] text-slate-400 font-medium">
+            <span className="text-[10px] sm:text-[11px] text-slate-400 font-medium">
               of {myRank.total_teams} {myRank.total_teams === 1 ? 'Team' : 'Teams'}
             </span>
           </div>
@@ -413,14 +583,14 @@ export default function ModeratorDashboardPage() {
 
         {/* Responsive Table: Exactly 5 Columns */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full text-left border-collapse text-xs min-w-[540px]">
             <thead>
               <tr className="border-b border-white/5 bg-white/[0.02] text-slate-400 uppercase text-[10px] font-bold tracking-wider">
-                <th className="py-3.5 px-4 text-center w-16">Rank</th>
-                <th className="py-3.5 px-4">My ID / Team</th>
-                <th className="py-3.5 px-4 text-right">Total Offers</th>
-                <th className="py-3.5 px-4 text-right">Total Income (USD)</th>
-                <th className="py-3.5 px-4 text-right">Total Income (BDT)</th>
+                <th className="py-2.5 sm:py-3 px-3 sm:px-4 text-center w-14 sm:w-16">Rank</th>
+                <th className="py-2.5 sm:py-3 px-3 sm:px-4">My ID / Team Name</th>
+                <th className="py-2.5 sm:py-3 px-3 sm:px-4 text-right">Total Completed Offers</th>
+                <th className="py-2.5 sm:py-3 px-3 sm:px-4 text-right">Total Income (USD)</th>
+                <th className="py-2.5 sm:py-3 px-3 sm:px-4 text-right">Total Income (BDT)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 font-medium">
@@ -452,7 +622,7 @@ export default function ModeratorDashboardPage() {
                         }`}
                       >
                         {/* 1. Rank */}
-                        <td className="py-3 px-4 text-center">
+                        <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-center">
                           {rankNum === 1 ? (
                             <div className="w-7 h-7 mx-auto rounded-xl bg-amber-400/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black text-sm shadow-sm shadow-amber-950/40">
                               🥇
@@ -478,8 +648,8 @@ export default function ModeratorDashboardPage() {
                           )}
                         </td>
 
-                        {/* 2. My ID / Team */}
-                        <td className="py-3 px-4">
+                        {/* 2. My ID / Team Name */}
+                        <td className="py-2.5 sm:py-3 px-3 sm:px-4">
                           <div className="flex items-center gap-2">
                             <span className={`font-bold ${isOwn ? 'text-brand-300' : 'text-white'}`}>
                               {row.team_name || row.my_id_code || 'Unnamed Team'}
@@ -497,20 +667,20 @@ export default function ModeratorDashboardPage() {
                           </div>
                         </td>
 
-                        {/* 3. Total Offers */}
-                        <td className="py-3 px-4 text-right font-mono font-semibold text-slate-200">
+                        {/* 3. Total Completed Offers */}
+                        <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-right font-mono font-semibold text-slate-200">
                           <span className="inline-block px-2.5 py-0.5 rounded-lg bg-white/5 border border-white/5">
                             {Number(row.total_offers || 0).toLocaleString()}
                           </span>
                         </td>
 
                         {/* 4. Total Income (USD) */}
-                        <td className="py-3 px-4 text-right font-mono font-black text-emerald-400 text-sm">
+                        <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-right font-mono font-black text-emerald-400 text-sm">
                           ${(Number(row.total_income_usd) || 0).toFixed(2)}
                         </td>
 
                         {/* 5. Total Income (BDT) */}
-                        <td className="py-3 px-4 text-right font-mono font-bold text-cyan-300">
+                        <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-right font-mono font-bold text-cyan-300">
                           ৳{Math.round(Number(row.total_income_bdt) || 0).toLocaleString()}
                         </td>
                       </tr>
@@ -530,14 +700,14 @@ export default function ModeratorDashboardPage() {
                       </tr>
                       <tr className="bg-brand-500/10 hover:bg-brand-500/15 border-y border-brand-500/30 transition-colors">
                         {/* 1. Rank */}
-                        <td className="py-3 px-4 text-center">
+                        <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-center">
                           <div className="w-7 h-7 mx-auto rounded-xl bg-brand-500/20 text-brand-300 border border-brand-500/40 flex items-center justify-center font-mono font-bold text-xs">
                             #{myRank.rank}
                           </div>
                         </td>
 
-                        {/* 2. My ID / Team */}
-                        <td className="py-3 px-4">
+                        {/* 2. My ID / Team Name */}
+                        <td className="py-2.5 sm:py-3 px-3 sm:px-4">
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-brand-300">
                               {myRank.team_name || myRank.my_id_code || 'Your Team'}
@@ -553,20 +723,20 @@ export default function ModeratorDashboardPage() {
                           </div>
                         </td>
 
-                        {/* 3. Total Offers */}
-                        <td className="py-3 px-4 text-right font-mono font-semibold text-slate-200">
+                        {/* 3. Total Completed Offers */}
+                        <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-right font-mono font-semibold text-slate-200">
                           <span className="inline-block px-2.5 py-0.5 rounded-lg bg-white/5 border border-white/5">
                             {Number(myRank.total_offers || 0).toLocaleString()}
                           </span>
                         </td>
 
                         {/* 4. Total Income (USD) */}
-                        <td className="py-3 px-4 text-right font-mono font-black text-emerald-400 text-sm">
+                        <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-right font-mono font-black text-emerald-400 text-sm">
                           ${(Number(myRank.total_income_usd ?? myRank.monthly_usd) || 0).toFixed(2)}
                         </td>
 
                         {/* 5. Total Income (BDT) */}
-                        <td className="py-3 px-4 text-right font-mono font-bold text-cyan-300">
+                        <td className="py-2.5 sm:py-3 px-3 sm:px-4 text-right font-mono font-bold text-cyan-300">
                           ৳{Math.round(Number(myRank.total_income_bdt ?? myRank.monthly_bdt) || 0).toLocaleString()}
                         </td>
                       </tr>
@@ -577,174 +747,6 @@ export default function ModeratorDashboardPage() {
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* C) OFFER SUMMARY TABLE */}
-      <div className="bg-[#0c1015]/90 border border-white/5 rounded-3xl overflow-hidden shadow-xl">
-        {/* Table Header Controls */}
-        <div className="p-4 sm:p-6 border-b border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-black text-white tracking-tight">
-                Offer Summary Table
-              </h2>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/15 text-brand-300 border border-brand-500/30">
-                {filteredOfferSummary.length} Offers
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Breakdown by provider and offer name with moderator net earnings.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {/* Search Input */}
-            <div className="relative min-w-[200px] sm:min-w-[240px]">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search offer or provider..."
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="w-full bg-white/[0.03] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 transition-colors"
-              />
-            </div>
-
-            {/* Link to Completed Offers */}
-            <Link
-              to="/moderator/completed-offers"
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold transition-all shrink-0"
-            >
-              <span>Individual Logs</span>
-              <ArrowRight className="w-3.5 h-3.5 text-brand-400" />
-            </Link>
-          </div>
-        </div>
-
-        {/* Responsive Table (8 Columns) */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="border-b border-white/5 bg-white/[0.02] text-slate-400 uppercase text-[10px] font-bold tracking-wider">
-                <th className="py-3 px-4">Provider</th>
-                <th className="py-3 px-4">Offer Name</th>
-                <th className="py-3 px-4 text-right">Coin</th>
-                <th className="py-3 px-4 text-right">Today Offers</th>
-                <th className="py-3 px-4 text-right">Total Offers</th>
-                <th className="py-3 px-4 text-right">Offer Price (USD)</th>
-                <th className="py-3 px-4 text-right">Net USD</th>
-                <th className="py-3 px-4 text-right">Net BDT</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5 font-medium">
-              {loading && offerSummary.length === 0 ? (
-                <tr>
-                  <td colSpan="8" className="py-12 text-center text-slate-500 font-medium">
-                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-brand-400" />
-                    Loading offer summary...
-                  </td>
-                </tr>
-              ) : paginatedRows.length === 0 ? (
-                <tr>
-                  <td colSpan="8" className="py-12 text-center text-slate-500">
-                    No completed offers found for the selected period.
-                  </td>
-                </tr>
-              ) : (
-                paginatedRows.map((row, idx) => (
-                  <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="py-3 px-4 font-semibold text-slate-200">
-                      <span className="inline-block px-2 py-0.5 rounded-md bg-white/5 border border-white/5 text-[11px]">
-                        {row.provider || '—'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-white font-medium max-w-xs truncate" title={row.offer_name}>
-                      {row.offer_name || '—'}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-amber-300">
-                      {Number(row.coin || 0).toLocaleString()}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-slate-300">
-                      {Number(row.today_offers || 0).toLocaleString()}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-white">
-                      {Number(row.total_offers || row.total_completed || 0).toLocaleString()}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono text-slate-300">
-                      ${(Number(row.offer_price) || 0).toFixed(4)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-brand-300">
-                      ${(Number(row.net_usd ?? row.earnings_usd) || 0).toFixed(2)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-cyan-300">
-                      ৳{Math.round(Number(row.net_bdt ?? row.earnings_bdt) || 0).toLocaleString()}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-
-            {/* Footer Totals Row */}
-            {filteredOfferSummary.length > 0 && (
-              <tfoot>
-                <tr className="border-t-2 border-brand-500/30 bg-brand-500/[0.04] text-xs font-black text-white">
-                  <td colSpan="3" className="py-3.5 px-4 uppercase tracking-wider text-brand-300 font-bold">
-                    Total Summary ({filteredOfferSummary.length} Offers)
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono font-black text-white">
-                    {totals.today_offers.toLocaleString()}
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono font-black text-white">
-                    {totals.total_offers.toLocaleString()}
-                  </td>
-                  <td className="py-3.5 px-4 text-right text-slate-500 text-[11px]">
-                    —
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono font-black text-brand-300">
-                    ${totals.net_usd.toFixed(2)}
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono font-black text-cyan-300">
-                    ৳{Math.round(totals.net_bdt).toLocaleString()}
-                  </td>
-                </tr>
-              </tfoot>
-            )}
-          </table>
-        </div>
-
-        {/* Table Pagination */}
-        {totalPages > 1 && (
-          <div className="p-4 border-t border-white/5 flex items-center justify-between text-xs text-slate-400">
-            <div>
-              Showing {(currentPage - 1) * pageSize + 1} to{' '}
-              {Math.min(currentPage * pageSize, filteredOfferSummary.length)} of{' '}
-              {filteredOfferSummary.length} rows
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span className="px-2 font-mono font-bold text-white">
-                {currentPage} / {totalPages}
-              </span>
-              <button
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
