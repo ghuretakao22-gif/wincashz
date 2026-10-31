@@ -68,6 +68,35 @@ export function cleanQueryParams(params = {}) {
   return q ? `?${q}` : '';
 }
 
+export async function downloadBlob(urlPath, defaultFilename = 'export.xlsx') {
+  const token = getStoredToken();
+  const headers = {
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+  };
+  const url = urlPath.startsWith('http') ? urlPath : `${API_BASE}${urlPath.startsWith('/') ? '' : '/'}${urlPath}`;
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    throw new Error(`Download failed with status ${response.status}`);
+  }
+  const disposition = response.headers.get('content-disposition');
+  let filename = defaultFilename;
+  if (disposition && disposition.indexOf('filename=') !== -1) {
+    const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+    if (matches != null && matches[1]) {
+      filename = matches[1].replace(/['"]/g, '');
+    }
+  }
+  const blob = await response.blob();
+  const downloadUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = downloadUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(downloadUrl);
+}
+
 /**
  * Core API fetch wrapper
  */
@@ -188,6 +217,9 @@ export const api = {
   getAdminCompletedTasks: (params = {}) => {
     return apiRequest(`/admin/completed-tasks${cleanQueryParams(params)}`);
   },
+  exportAdminCompletedTasks: (params = {}) => {
+    return downloadBlob(`/admin/completed-tasks/export${cleanQueryParams(params)}`, 'completed-offers.xlsx');
+  },
   getAdminChargebacks: () => apiRequest('/admin/chargebacks'),
   getAdminPendingWithdrawals: () => apiRequest('/admin/pending-withdrawals'),
   getAdminAllWithdrawals: () => apiRequest('/admin/all-withdrawals'),
@@ -227,6 +259,9 @@ export const api = {
   },
   getModeratorCompletedOffers: (params = {}) => {
     return apiRequest(`/moderator/completed-offers${cleanQueryParams(params)}`);
+  },
+  exportModeratorCompletedOffers: (params = {}) => {
+    return downloadBlob(`/moderator/completed-offers/export${cleanQueryParams(params)}`, 'moderator-completed-offers.xlsx');
   },
   getModeratorMyEarn: (params = {}) => {
     return apiRequest(`/moderator/my-earn${cleanQueryParams(params)}`);

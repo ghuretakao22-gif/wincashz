@@ -62,6 +62,7 @@ Route::prefix('admin')
     Route::post('/offers-api', [AdminController::class, 'storeOffersApiLink']);
     Route::get('/users', [AdminController::class, 'users']);
     Route::get('/completed-tasks', [AdminController::class, 'completedTasks']);
+    Route::get('/completed-tasks/export', [AdminController::class, 'exportCompletedTasks']);
     Route::get('/chargebacks', [AdminController::class, 'chargebacks']);
     Route::get('/pending-withdrawals', [AdminController::class, 'pendingWithdrawals']);
     Route::get('/all-withdrawals', [AdminController::class, 'allWithdrawals']);
@@ -111,6 +112,7 @@ Route::prefix('moderator')
         Route::get('/users', [ModeratorController::class, 'users']);
         Route::get('/users/{id}/activity', [ModeratorController::class, 'activity']);
         Route::get('/completed-offers', [ModeratorCompletedOffersController::class, 'index']);
+        Route::get('/completed-offers/export', [ModeratorCompletedOffersController::class, 'export']);
         Route::get('/my-earn', [ModeratorMyEarnController::class, 'index']);
         Route::get('/payouts', [ModeratorPayoutController::class, 'index']);
         Route::post('/payouts', [ModeratorPayoutController::class, 'store']);

@@ -121,31 +121,79 @@ export default function ModeratorCompletedOffersPage() {
     setSearchParams({});
   };
 
-  // CSV Export
+  // Export Handler (Server-side XLSX with client fallback)
+  const handleExport = async (format = 'xlsx') => {
+    try {
+      const params = { period };
+      if (provider) params.provider = provider;
+      if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
+      if (userIdFilter.trim()) params.user_id = userIdFilter.trim();
+      if (format === 'csv') params.format = 'csv';
+      await api.exportModeratorCompletedOffers(params);
+    } catch {
+      handleExportCSV();
+    }
+  };
+
   const handleExportCSV = () => {
     if (!data || data.length === 0) return;
-    const headers = ['Date_UTC', 'User_ID', 'Username', 'Provider', 'Offer_Name', 'Offer_ID', 'Coin', 'Payout_USD', 'Payout_BDT', 'Status'];
-    const rows = data.map((r) => [
-      `"${r.completed_at || ''}"`,
-      r.user_id ?? '',
-      `"${(r.username || '').replace(/"/g, '""')}"`,
-      `"${(r.provider || '').replace(/"/g, '""')}"`,
-      `"${(r.offer_name || '').replace(/"/g, '""')}"`,
-      `"${(r.offer_id || '').replace(/"/g, '""')}"`,
-      r.coin_amount ?? 0,
-      r.payout_usd ?? 0,
-      r.payout_bdt ?? 0,
-      `"${r.status || 'Completed'}"`,
-    ]);
+    const headers = [
+      'S.L',
+      'Date (UTC)',
+      'Time (UTC)',
+      'User ID',
+      'Username',
+      'Email',
+      'Provider',
+      'Offer ID',
+      'Offer Name',
+      'Coin',
+      'Payout USD',
+      'Payout BDT',
+      'Status',
+      'My ID',
+      'Transaction ID',
+      'IP Address',
+      'Country',
+    ];
+    const rows = data.map((r, idx) => {
+      const rawDate = r.completed_at || '';
+      const cleanDT = String(rawDate).replace('T', ' ').replace('Z', '').split('.')[0];
+      const parts = cleanDT.split(' ');
+      const dateVal = parts[0] || '';
+      const timeVal = parts[1] || '';
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+      return [
+        idx + 1,
+        `"${dateVal}"`,
+        `"${timeVal}"`,
+        `"${r.user_id ?? ''}"`,
+        `"${String(r.username || `user_${r.user_id}`).replace(/"/g, '""')}"`,
+        `"${String(r.user_email || '—').replace(/"/g, '""')}"`,
+        `"${String(r.provider || 'Unknown').replace(/"/g, '""')}"`,
+        `"${String(r.offer_id || '—').replace(/"/g, '""')}"`,
+        `"${String(r.offer_name || 'Standard Offer').replace(/"/g, '""')}"`,
+        Number(r.coin_amount) || 0,
+        Number(r.payout_usd) || 0,
+        Number(r.payout_bdt) || 0,
+        `"${String(r.status || 'Completed').replace(/"/g, '""')}"`,
+        `"${String(r.my_id || '—').replace(/"/g, '""')}"`,
+        `"${String(r.transaction_id || `TX-${r.id}`).replace(/"/g, '""')}"`,
+        `"${String(r.ip || '—').replace(/"/g, '""')}"`,
+        `"${String(r.country || '—').replace(/"/g, '""')}"`,
+      ].join(',');
+    });
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `wincashz_completed_offers_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.href = url;
+    link.download = `moderator-completed-offers-${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Status Badge Styling Helper
@@ -185,13 +233,13 @@ export default function ModeratorCompletedOffersPage() {
 
         <div className="flex items-center gap-2.5">
           <button
-            onClick={handleExportCSV}
+            onClick={() => handleExport('xlsx')}
             disabled={data.length === 0}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold transition-all disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
-            title="Export CSV"
+            title="Export Excel (.xlsx)"
           >
             <Download className="w-3.5 h-3.5 text-brand-400" />
-            <span>Export CSV</span>
+            <span>Export Excel</span>
           </button>
 
           <button

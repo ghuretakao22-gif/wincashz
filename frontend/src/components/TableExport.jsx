@@ -1,5 +1,6 @@
 import React from 'react';
 import { FileSpreadsheet, FileText, Database } from 'lucide-react';
+import { api } from '../services/api';
 
 function escapeXml(str) {
   return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
@@ -8,31 +9,61 @@ function escapeXml(str) {
 function formatRows(list) {
   const safeList = Array.isArray(list) ? list : [];
   return safeList.map((item, idx) => {
-    const rawBal = Number(item.reward || item.coins || item.points || 0);
-    const coins = Math.round(rawBal >= 100 ? rawBal : rawBal * 1000);
-    const offerVal = Number(item.offer_value ?? item.value ?? item.payout ?? (coins ? coins / 1000 : 0));
-    const siteRev = Number(item.site_revenue ?? item.revenue ?? (offerVal * 0.7));
-    const dtStr = item.created_at || item.date || new Date().toISOString();
-    const parts = String(dtStr).split(' ');
-    const dateVal = parts[0] || dtStr.substring(0, 10);
-    const timeVal = parts[1] || dtStr.substring(11, 19) || '00:00:00';
-    const uid = item.user_id ? (Number(item.user_id) >= 101 ? item.user_id : 100 + Number(item.user_id)) : '101';
+    // 1. S.L
+    const sl = idx + 1;
+
+    // 2. Date & Time (UTC)
+    const dtStr = item.createdAt || item.created_at || item.date || item.completed_at || new Date().toISOString();
+    const cleanDT = String(dtStr).replace('T', ' ').replace('Z', '').split('.')[0];
+    const parts = cleanDT.split(' ');
+    const dateVal = parts[0] || String(dtStr).substring(0, 10);
+    const timeVal = parts[1] || String(dtStr).substring(11, 19) || '00:00:00';
+
+    // 3. User ID & Username
+    const uid = item.userId ?? item.user_id ?? '—';
+    const username = item.userName || item.user_name || item.username || item.name || (uid !== '—' ? `user_${uid}` : 'Member');
+    const email = item.userEmail || item.user_email || item.email || '—';
+
+    // 4. Provider, Offer ID, Offer Name
+    const provider = item.offerWall || item.offer_wall_name || item.provider || '—';
+    const offerId = item.offerId || item.offer_id || '—';
+    const offerName = item.offerName || item.offer_name || 'Standard Offer';
+
+    // 5. Coin (real numeric, never blank, 0 if null, no multiplier)
+    const rawCoin = item.reward ?? item.currencyReward ?? item.currency_reward ?? item.coin_amount ?? item.coins ?? item.points ?? 0;
+    const coins = Number(rawCoin) || 0;
+
+    // 6. Worker payouts (numeric cells)
+    const payoutUsd = Number(item.payoutUsd ?? item.payout_usd ?? 0);
+    const payoutBdt = Number(item.payoutBdt ?? item.payout_bdt ?? 0);
+
+    // 7. Status & My ID
+    const status = item.status || 'Completed';
+    const myId = item.myId ?? item.my_id ?? item.my_id_code ?? '—';
+
+    // 8. Transaction ID, IP, Country
+    const txId = item.transactionId || item.transaction_id || `TX-${item.id || idx + 1}`;
+    const ip = item.ip || '—';
+    const country = item.country || '—';
 
     return {
-      sl: idx + 1,
-      user_id: uid,
-      name: item.user_name || item.name || item.username || 'Member',
-      email: item.email || '—',
-      offerwall: item.offerwall_name || item.offerwall || 'System',
-      offer_name: item.offer_name || 'Offer Task',
-      coins,
-      site_revenue: siteRev.toFixed(2),
-      offer_value: offerVal.toFixed(2),
-      tx_id: item.transaction_id || `TX-${item.id || idx}`,
-      ip: item.ip || '127.0.0.1',
-      country: item.country || 'US',
+      sl,
       date: dateVal,
-      time: timeVal
+      time: timeVal,
+      user_id: uid,
+      username,
+      email,
+      provider,
+      offer_id: offerId,
+      offer_name: offerName,
+      coins,
+      payout_usd: payoutUsd,
+      payout_bdt: payoutBdt,
+      status,
+      my_id: myId,
+      tx_id: txId,
+      ip,
+      country,
     };
   });
 }
@@ -142,9 +173,23 @@ function createZipArchive(files) {
 function generateGenuineXLSXBlob(list, sheetName = 'Completed Offers') {
   const formatted = formatRows(list);
   const headers = [
-    'S.L', 'User ID', 'Name', 'Email', 'Offerwall', 'Offer Name',
-    'Reward / Coins', 'Site Revenue ($)', 'Offer Value ($)', 'Transaction ID',
-    'IP Address', 'Country', 'Date', 'Time'
+    'S.L',
+    'Date (UTC)',
+    'Time (UTC)',
+    'User ID',
+    'Username',
+    'Email',
+    'Provider',
+    'Offer ID',
+    'Offer Name',
+    'Coin',
+    'Payout USD',
+    'Payout BDT',
+    'Status',
+    'My ID',
+    'Transaction ID',
+    'IP Address',
+    'Country',
   ];
 
   let sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\n<sheetData>\n<row r="1">`;
@@ -157,19 +202,24 @@ function generateGenuineXLSXBlob(list, sheetName = 'Completed Offers') {
     const rowNum = idx + 2;
     sheetXml += `<row r="${rowNum}">`;
     sheetXml += `<c><v>${r.sl}</v></c>`;
-    sheetXml += `<c><v>${r.user_id}</v></c>`;
-    sheetXml += `<c t="inlineStr"><is><t>${escapeXml(r.name)}</t></is></c>`;
+    sheetXml += `<c t="inlineStr"><is><t>${escapeXml(r.date)}</t></is></c>`;
+    sheetXml += `<c t="inlineStr"><is><t>${escapeXml(r.time)}</t></is></c>`;
+    sheetXml += !isNaN(Number(r.user_id)) && r.user_id !== '—' && r.user_id !== ''
+      ? `<c><v>${r.user_id}</v></c>`
+      : `<c t="inlineStr"><is><t>${escapeXml(r.user_id)}</t></is></c>`;
+    sheetXml += `<c t="inlineStr"><is><t>${escapeXml(r.username)}</t></is></c>`;
     sheetXml += `<c t="inlineStr"><is><t>${escapeXml(r.email)}</t></is></c>`;
-    sheetXml += `<c t="inlineStr"><is><t>${escapeXml(r.offerwall)}</t></is></c>`;
+    sheetXml += `<c t="inlineStr"><is><t>${escapeXml(r.provider)}</t></is></c>`;
+    sheetXml += `<c t="inlineStr"><is><t>${escapeXml(r.offer_id)}</t></is></c>`;
     sheetXml += `<c t="inlineStr"><is><t>${escapeXml(r.offer_name)}</t></is></c>`;
-    sheetXml += `<c><v>${r.coins}</v></c>`;
-    sheetXml += `<c><v>${r.site_revenue}</v></c>`;
-    sheetXml += `<c><v>${r.offer_value}</v></c>`;
+    sheetXml += `<c><v>${Number(r.coins) || 0}</v></c>`;
+    sheetXml += `<c><v>${Number(r.payout_usd) || 0}</v></c>`;
+    sheetXml += `<c><v>${Number(r.payout_bdt) || 0}</v></c>`;
+    sheetXml += `<c t="inlineStr"><is><t>${escapeXml(r.status)}</t></is></c>`;
+    sheetXml += `<c t="inlineStr"><is><t>${escapeXml(r.my_id)}</t></is></c>`;
     sheetXml += `<c t="inlineStr"><is><t>${escapeXml(r.tx_id)}</t></is></c>`;
     sheetXml += `<c t="inlineStr"><is><t>${escapeXml(r.ip)}</t></is></c>`;
     sheetXml += `<c t="inlineStr"><is><t>${escapeXml(r.country)}</t></is></c>`;
-    sheetXml += `<c t="inlineStr"><is><t>${escapeXml(r.date)}</t></is></c>`;
-    sheetXml += `<c t="inlineStr"><is><t>${escapeXml(r.time)}</t></is></c>`;
     sheetXml += `</row>\n`;
   });
   sheetXml += `</sheetData>\n</worksheet>`;
@@ -222,8 +272,7 @@ function downloadFile(content, fileName, mimeType) {
 }
 
 export default function TableExport({ data = [], allData = [], selectedMonth = 'all', selectedDay = 'all', filename = 'wincashz-completed-offers' }) {
-  const handleExportExcelFiltered = () => {
-    const records = data.length ? data : allData;
+  const handleExportExcelFiltered = async () => {
     let name = filename;
     if (selectedDay !== 'all') {
       name = `wincashz-completed-offers-${selectedDay}.xlsx`;
@@ -232,45 +281,80 @@ export default function TableExport({ data = [], allData = [], selectedMonth = '
     } else {
       name = `wincashz-completed-offers-filtered.xlsx`;
     }
-    const blob = generateGenuineXLSXBlob(records);
-    downloadFile(blob, name, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+    try {
+      const params = {};
+      if (selectedDay !== 'all') {
+        params.from_date = selectedDay;
+        params.to_date = selectedDay;
+      } else if (selectedMonth !== 'all') {
+        params.month = selectedMonth;
+      }
+      await api.exportAdminCompletedTasks(params);
+    } catch {
+      const records = data.length ? data : allData;
+      const blob = generateGenuineXLSXBlob(records);
+      downloadFile(blob, name, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    }
   };
 
-  const handleExportExcelAllTime = () => {
-    const records = allData.length ? allData : data;
+  const handleExportExcelAllTime = async () => {
     const name = `wincashz-completed-offers-all-time.xlsx`;
-    const blob = generateGenuineXLSXBlob(records, 'All-Time Completed Offers');
-    downloadFile(blob, name, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    try {
+      await api.exportAdminCompletedTasks({ month: 'all' });
+    } catch {
+      const records = allData.length ? allData : data;
+      const blob = generateGenuineXLSXBlob(records, 'All-Time Completed Offers');
+      downloadFile(blob, name, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    }
   };
 
   const handleExportCSV = () => {
     const records = data.length ? data : allData;
     const formatted = formatRows(records);
     const headers = [
-      'S.L', 'User ID', 'Name', 'Email', 'Offerwall', 'Offer Name',
-      'Reward / Coins', 'Site Revenue ($)', 'Offer Value ($)', 'Transaction ID',
-      'IP Address', 'Country', 'Date', 'Time'
+      'S.L',
+      'Date (UTC)',
+      'Time (UTC)',
+      'User ID',
+      'Username',
+      'Email',
+      'Provider',
+      'Offer ID',
+      'Offer Name',
+      'Coin',
+      'Payout USD',
+      'Payout BDT',
+      'Status',
+      'My ID',
+      'Transaction ID',
+      'IP Address',
+      'Country',
     ];
     const csvLines = [headers.join(',')];
     formatted.forEach(r => {
       csvLines.push([
         r.sl,
-        r.user_id,
-        `"${r.name.replace(/"/g, '""')}"`,
-        `"${r.email.replace(/"/g, '""')}"`,
-        `"${r.offerwall.replace(/"/g, '""')}"`,
-        `"${r.offer_name.replace(/"/g, '""')}"`,
-        r.coins,
-        r.site_revenue,
-        r.offer_value,
-        `"${r.tx_id.replace(/"/g, '""')}"`,
-        `"${r.ip.replace(/"/g, '""')}"`,
-        `"${r.country.replace(/"/g, '""')}"`,
         `"${r.date}"`,
-        `"${r.time}"`
+        `"${r.time}"`,
+        `"${r.user_id}"`,
+        `"${String(r.username).replace(/"/g, '""')}"`,
+        `"${String(r.email).replace(/"/g, '""')}"`,
+        `"${String(r.provider).replace(/"/g, '""')}"`,
+        `"${String(r.offer_id).replace(/"/g, '""')}"`,
+        `"${String(r.offer_name).replace(/"/g, '""')}"`,
+        Number(r.coins) || 0,
+        Number(r.payout_usd) || 0,
+        Number(r.payout_bdt) || 0,
+        `"${String(r.status).replace(/"/g, '""')}"`,
+        `"${String(r.my_id).replace(/"/g, '""')}"`,
+        `"${String(r.tx_id).replace(/"/g, '""')}"`,
+        `"${String(r.ip).replace(/"/g, '""')}"`,
+        `"${String(r.country).replace(/"/g, '""')}"`
       ].join(','));
     });
-    downloadFile(csvLines.join('\n'), `${filename}.csv`, 'text/csv;charset=utf-8;');
+    const csvContent = '\uFEFF' + csvLines.join('\n');
+    downloadFile(csvContent, `${filename}.csv`, 'text/csv;charset=utf-8;');
   };
 
   const handleExportJSON = () => {

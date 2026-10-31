@@ -1076,25 +1076,31 @@ class AdminController extends Controller
         ]);
     }
 
-    public function completedTasks(Request $request): JsonResponse
+    public function completedTasksBaseQuery(Request $request)
     {
-        $page = max(1, (int) $request->query('page', 1));
         $search = trim((string) $request->query('search', ''));
-        $wall = trim((string) ($request->query('wall', $request->query('offerwall', ''))));
+        $wall = trim((string) ($request->query('wall', $request->query('offerwall', $request->query('provider', '')))));
         $month = trim((string) $request->query('month', ''));
         $fromDate = trim((string) ($request->query('from_date', $request->query('from', ''))));
         $toDate = trim((string) ($request->query('to_date', $request->query('to', ''))));
+        $myId = trim((string) ($request->query('my_id', $request->query('team', ''))));
+        $status = trim((string) $request->query('status', ''));
 
-        $requestedPerPage = strtolower(trim((string) $request->query('per_page', '10')));
         $hasUserUsernameColumn = Schema::hasTable('users') && Schema::hasColumn('users', 'username');
         $hasUserNameColumn = Schema::hasTable('users') && Schema::hasColumn('users', 'name');
         $hasUserEmailColumn = Schema::hasTable('users') && Schema::hasColumn('users', 'email');
+        $hasUserMyIdColumn = Schema::hasTable('users') && Schema::hasColumn('users', 'my_id');
+        $hasMyIdEarnings = Schema::hasTable('my_id_earnings');
 
         $query = CompletedTask::query()
             ->leftJoin('users as task_users_by_id', 'task_users_by_id.id', '=', 'completed_tasks.user_id');
 
         if ($hasUserUsernameColumn) {
             $query->leftJoin('users as task_users_by_name', 'task_users_by_name.username', '=', 'completed_tasks.user_name');
+        }
+
+        if ($hasMyIdEarnings) {
+            $query->leftJoin('my_id_earnings', 'my_id_earnings.completed_task_id', '=', 'completed_tasks.id');
         }
 
         if ($wall !== '' && strtolower($wall) !== 'all') {
@@ -1105,15 +1111,52 @@ class AdminController extends Controller
         }
 
         if ($month !== '' && strtolower($month) !== 'all') {
-            $query->where('completed_tasks.created_at', 'like', $month . '%');
+            try {
+                $startOfMonth = Carbon::parse($month . '-01', 'UTC')->startOfMonth()->toDateTimeString();
+                $endOfMonth = Carbon::parse($month . '-01', 'UTC')->endOfMonth()->toDateTimeString();
+                $query->whereBetween('completed_tasks.created_at', [$startOfMonth, $endOfMonth]);
+            } catch (\Throwable) {
+                $query->where('completed_tasks.created_at', 'like', $month . '%');
+            }
         }
 
         if ($fromDate !== '') {
-            $query->whereDate('completed_tasks.created_at', '>=', $fromDate);
+            try {
+                $startFrom = Carbon::parse($fromDate, 'UTC')->startOfDay()->toDateTimeString();
+                $query->where('completed_tasks.created_at', '>=', $startFrom);
+            } catch (\Throwable) {
+                $query->whereDate('completed_tasks.created_at', '>=', $fromDate);
+            }
         }
 
         if ($toDate !== '') {
-            $query->whereDate('completed_tasks.created_at', '<=', $toDate);
+            try {
+                $endTo = Carbon::parse($toDate, 'UTC')->endOfDay()->toDateTimeString();
+                $query->where('completed_tasks.created_at', '<=', $endTo);
+            } catch (\Throwable) {
+                $query->whereDate('completed_tasks.created_at', '<=', $toDate);
+            }
+        }
+
+        if ($myId !== '' && strtolower($myId) !== 'all') {
+            $query->where(function ($builder) use ($myId, $hasMyIdEarnings, $hasUserMyIdColumn): void {
+                $hasClause = false;
+                if ($hasMyIdEarnings) {
+                    $builder->where('my_id_earnings.my_id_code', $myId);
+                    $hasClause = true;
+                }
+                if ($hasUserMyIdColumn) {
+                    if ($hasClause) {
+                        $builder->orWhere('task_users_by_id.my_id', $myId);
+                    } else {
+                        $builder->where('task_users_by_id.my_id', $myId);
+                        $hasClause = true;
+                    }
+                }
+                if (!$hasClause) {
+                    $builder->whereRaw('0 = 1');
+                }
+            });
         }
 
         if ($search !== '') {
@@ -1123,7 +1166,7 @@ class AdminController extends Controller
             $isNumeric = is_numeric($search);
             $numericId = $isNumeric ? (int) $search : -1;
 
-            $query->where(function ($builder) use ($prefixLike, $containsLike, $isNumeric, $numericId, $hasUserUsernameColumn, $hasUserNameColumn, $hasUserEmailColumn): void {
+            $query->where(function ($builder) use ($prefixLike, $containsLike, $isNumeric, $numericId, $hasUserUsernameColumn, $hasUserNameColumn, $hasUserEmailColumn, $hasMyIdEarnings): void {
                 // User-related fields: prefix-only matching
                 $builder->where('completed_tasks.user_name', 'like', $prefixLike);
 
@@ -1153,6 +1196,10 @@ class AdminController extends Controller
                     ->orWhere('completed_tasks.transaction_id', 'like', $containsLike)
                     ->orWhere('completed_tasks.ip', 'like', $containsLike)
                     ->orWhere('completed_tasks.country', 'like', $containsLike);
+
+                if ($hasMyIdEarnings) {
+                    $builder->orWhere('my_id_earnings.my_id_code', 'like', $prefixLike);
+                }
 
                 if ($isNumeric) {
                     $builder->orWhere('completed_tasks.id', $numericId)
@@ -1184,6 +1231,25 @@ class AdminController extends Controller
                 ->orderByDesc('completed_tasks.id');
         }
 
+        return $query;
+    }
+
+    public function completedTasks(Request $request): JsonResponse
+    {
+        $page = max(1, (int) $request->query('page', 1));
+        $fromDate = trim((string) ($request->query('from_date', $request->query('from', ''))));
+        $toDate = trim((string) ($request->query('to_date', $request->query('to', ''))));
+        $month = trim((string) $request->query('month', ''));
+
+        $requestedPerPage = strtolower(trim((string) $request->query('per_page', '10')));
+        $hasUserUsernameColumn = Schema::hasTable('users') && Schema::hasColumn('users', 'username');
+        $hasUserNameColumn = Schema::hasTable('users') && Schema::hasColumn('users', 'name');
+        $hasUserEmailColumn = Schema::hasTable('users') && Schema::hasColumn('users', 'email');
+        $hasUserMyIdColumn = Schema::hasTable('users') && Schema::hasColumn('users', 'my_id');
+        $hasMyIdEarnings = Schema::hasTable('my_id_earnings');
+
+        $query = $this->completedTasksBaseQuery($request);
+
         $allowedPerPageOptions = [10, 20, 25, 30, 50, 100, 250, 500, 1000];
 
         // Specific single date selection, month auto-all, or requested 'all' automatically shows all matching offers
@@ -1199,28 +1265,54 @@ class AdminController extends Controller
                 : 10;
         }
 
+        $usernameCandidates = [];
+        if ($hasUserUsernameColumn) {
+            $usernameCandidates[] = 'NULLIF(task_users_by_id.username, "")';
+        }
+        $usernameCandidates[] = 'NULLIF(completed_tasks.user_name, "")';
+        if ($hasUserNameColumn) {
+            $usernameCandidates[] = 'NULLIF(task_users_by_id.name, "")';
+        }
+        if ($hasUserUsernameColumn) {
+            $usernameCandidates[] = 'NULLIF(task_users_by_name.username, "")';
+        }
+        $usernameCandidates[] = 'CAST(completed_tasks.user_id AS CHAR)';
+        $usernameSql = 'COALESCE(' . implode(', ', $usernameCandidates) . ')';
+
+        $emailSql = $hasUserEmailColumn
+            ? ($hasUserUsernameColumn ? 'COALESCE(task_users_by_id.email, task_users_by_name.email)' : 'task_users_by_id.email')
+            : 'NULL';
+
+        $myIdSql = $hasMyIdEarnings
+            ? ($hasUserMyIdColumn ? 'COALESCE(my_id_earnings.my_id_code, task_users_by_id.my_id, "-")' : 'COALESCE(my_id_earnings.my_id_code, "-")')
+            : ($hasUserMyIdColumn ? 'COALESCE(task_users_by_id.my_id, "-")' : '"-"');
+
+        $payoutUsdSql = $hasMyIdEarnings ? 'COALESCE(my_id_earnings.payout_usd, 0)' : '0';
+        $payoutBdtSql = $hasMyIdEarnings ? 'COALESCE(my_id_earnings.payout_bdt, 0)' : '0';
+
         $paginator = $query->paginate(
-                $perPage,
-                [
-                    'completed_tasks.id as id',
-                    'completed_tasks.offer_wall_name as offer_wall_name',
-                    'completed_tasks.user_id as user_id',
-                    'completed_tasks.user_name as user_name',
-                    DB::raw($hasUserUsernameColumn
-                        ? 'COALESCE(task_users_by_id.email, task_users_by_name.email) as user_email'
-                        : 'task_users_by_id.email as user_email'),
-                    'completed_tasks.transaction_id as transaction_id',
-                    'completed_tasks.offer_name as offer_name',
-                    'completed_tasks.offer_id as offer_id',
-                    'completed_tasks.revenue as revenue',
-                    'completed_tasks.currency_reward as currency_reward',
-                    'completed_tasks.ip as ip',
-                    'completed_tasks.country as country',
-                    'completed_tasks.created_at as created_at',
-                ],
-                'page',
-                $page,
-            );
+            $perPage,
+            [
+                'completed_tasks.id as id',
+                'completed_tasks.offer_wall_name as offer_wall_name',
+                'completed_tasks.user_id as user_id',
+                DB::raw($usernameSql . ' as user_name'),
+                DB::raw($emailSql . ' as user_email'),
+                'completed_tasks.transaction_id as transaction_id',
+                'completed_tasks.offer_name as offer_name',
+                'completed_tasks.offer_id as offer_id',
+                'completed_tasks.revenue as revenue',
+                'completed_tasks.currency_reward as currency_reward',
+                'completed_tasks.ip as ip',
+                'completed_tasks.country as country',
+                'completed_tasks.created_at as created_at',
+                DB::raw($myIdSql . ' as my_id'),
+                DB::raw($payoutUsdSql . ' as payout_usd'),
+                DB::raw($payoutBdtSql . ' as payout_bdt'),
+            ],
+            'page',
+            $page,
+        );
 
         $rows = collect($paginator->items())
             ->map(fn (CompletedTask $task) => [
@@ -1238,6 +1330,9 @@ class AdminController extends Controller
                 'ip' => $task->ip ?? '-',
                 'country' => $task->country ?? '-',
                 'date' => $task->created_at?->toAtomString(),
+                'myId' => $task->my_id ?? '-',
+                'payoutUsd' => number_format((float) ($task->payout_usd ?? 0), 4, '.', ''),
+                'payoutBdt' => number_format((float) ($task->payout_bdt ?? 0), 2, '.', ''),
             ])
             ->values();
 
@@ -1251,6 +1346,234 @@ class AdminController extends Controller
                 'from' => $paginator->firstItem(),
                 'to' => $paginator->lastItem(),
             ],
+        ]);
+    }
+
+    public function exportCompletedTasks(Request $request): \Symfony\Component\HttpFoundation\Response
+    {
+        $hasUserUsernameColumn = Schema::hasTable('users') && Schema::hasColumn('users', 'username');
+        $hasUserNameColumn = Schema::hasTable('users') && Schema::hasColumn('users', 'name');
+        $hasUserEmailColumn = Schema::hasTable('users') && Schema::hasColumn('users', 'email');
+        $hasUserMyIdColumn = Schema::hasTable('users') && Schema::hasColumn('users', 'my_id');
+        $hasMyIdEarnings = Schema::hasTable('my_id_earnings');
+
+        $query = $this->completedTasksBaseQuery($request);
+
+        $usernameCandidates = [];
+        if ($hasUserUsernameColumn) {
+            $usernameCandidates[] = 'NULLIF(task_users_by_id.username, "")';
+        }
+        $usernameCandidates[] = 'NULLIF(completed_tasks.user_name, "")';
+        if ($hasUserNameColumn) {
+            $usernameCandidates[] = 'NULLIF(task_users_by_id.name, "")';
+        }
+        if ($hasUserUsernameColumn) {
+            $usernameCandidates[] = 'NULLIF(task_users_by_name.username, "")';
+        }
+        $usernameCandidates[] = 'CAST(completed_tasks.user_id AS CHAR)';
+        $usernameSql = 'COALESCE(' . implode(', ', $usernameCandidates) . ')';
+
+        $emailSql = $hasUserEmailColumn
+            ? ($hasUserUsernameColumn ? 'COALESCE(task_users_by_id.email, task_users_by_name.email)' : 'task_users_by_id.email')
+            : 'NULL';
+
+        $myIdSql = $hasMyIdEarnings
+            ? ($hasUserMyIdColumn ? 'COALESCE(my_id_earnings.my_id_code, task_users_by_id.my_id, "-")' : 'COALESCE(my_id_earnings.my_id_code, "-")')
+            : ($hasUserMyIdColumn ? 'COALESCE(task_users_by_id.my_id, "-")' : '"-"');
+
+        $payoutUsdSql = $hasMyIdEarnings ? 'COALESCE(my_id_earnings.payout_usd, 0)' : '0';
+        $payoutBdtSql = $hasMyIdEarnings ? 'COALESCE(my_id_earnings.payout_bdt, 0)' : '0';
+
+        // NOTE: Strictly exclude revenue from query and output
+        $items = $query->get([
+            'completed_tasks.id as id',
+            'completed_tasks.offer_wall_name as offer_wall_name',
+            'completed_tasks.user_id as user_id',
+            DB::raw($usernameSql . ' as user_name'),
+            DB::raw($emailSql . ' as user_email'),
+            'completed_tasks.transaction_id as transaction_id',
+            'completed_tasks.offer_name as offer_name',
+            'completed_tasks.offer_id as offer_id',
+            'completed_tasks.currency_reward as currency_reward',
+            'completed_tasks.ip as ip',
+            'completed_tasks.country as country',
+            'completed_tasks.created_at as created_at',
+            DB::raw($myIdSql . ' as my_id'),
+            DB::raw($payoutUsdSql . ' as payout_usd'),
+            DB::raw($payoutBdtSql . ' as payout_bdt'),
+        ]);
+
+        $headers = [
+            'S.L',
+            'Date (UTC)',
+            'Time (UTC)',
+            'User ID',
+            'Username',
+            'Email',
+            'Provider',
+            'Offer ID',
+            'Offer Name',
+            'Coin',
+            'Payout USD',
+            'Payout BDT',
+            'Status',
+            'My ID',
+            'Transaction ID',
+            'IP Address',
+            'Country',
+        ];
+
+        $rows = [];
+        foreach ($items as $idx => $task) {
+            $dt = $task->created_at ? Carbon::parse($task->created_at, 'UTC')->setTimezone('UTC') : null;
+            $payoutUsd = (float) ($task->payout_usd ?? 0);
+            $payoutBdt = (float) ($task->payout_bdt ?? 0);
+            $status = ($payoutUsd > 0 || empty($task->my_id) || $task->my_id === '-') ? 'Completed' : 'Unmapped';
+
+            $rows[] = [
+                'sl' => $idx + 1,
+                'date' => $dt ? $dt->format('Y-m-d') : '',
+                'time' => $dt ? $dt->format('H:i:s') : '',
+                'user_id' => $task->user_id,
+                'username' => (string) ($task->user_name ?: ('user_' . ($task->user_id ?? $idx + 1))),
+                'email' => (string) ($task->user_email ?: 'N/A'),
+                'provider' => (string) ($task->offer_wall_name ?: 'System'),
+                'offer_id' => (string) ($task->offer_id ?: '—'),
+                'offer_name' => (string) ($task->offer_name ?: 'Standard Offer'),
+                'coin' => (float) ($task->currency_reward ?? 0),
+                'payout_usd' => round($payoutUsd, 4),
+                'payout_bdt' => round($payoutBdt, 2),
+                'status' => $status,
+                'my_id' => (string) ($task->my_id ?: '—'),
+                'transaction_id' => (string) ($task->transaction_id ?: ('TX-' . $task->id)),
+                'ip' => (string) ($task->ip ?: '—'),
+                'country' => (string) ($task->country ?: '—'),
+            ];
+        }
+
+        $month = trim((string) $request->query('month', ''));
+        $fromDate = trim((string) ($request->query('from_date', $request->query('from', ''))));
+        $toDate = trim((string) ($request->query('to_date', $request->query('to', ''))));
+
+        if ($month !== '' && strtolower($month) !== 'all') {
+            $baseName = 'completed-offers-' . $month;
+        } elseif ($fromDate !== '' && $fromDate === $toDate) {
+            $baseName = 'completed-offers-' . $fromDate;
+        } elseif ($fromDate !== '' || $toDate !== '') {
+            $baseName = 'completed-offers-' . ($fromDate ?: 'start') . '-to-' . ($toDate ?: 'end');
+        } else {
+            $baseName = 'completed-offers-all-time';
+        }
+
+        $format = strtolower((string) $request->query('format', 'xlsx'));
+        if ($format === 'csv') {
+            return $this->generateCsvSpreadsheetResponse($headers, $rows, $baseName . '.csv');
+        }
+
+        return $this->generateOpenXmlSpreadsheetResponse($headers, $rows, $baseName . '.xlsx', 'Completed Offers');
+    }
+
+    private function generateOpenXmlSpreadsheetResponse(array $headers, array $rows, string $filename, string $sheetName = 'Completed Offers'): \Symfony\Component\HttpFoundation\Response
+    {
+        $zip = new \ZipArchive();
+        $tempFile = tempnam(sys_get_temp_dir(), 'wincashz_xlsx_');
+
+        if ($zip->open($tempFile, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            return $this->generateCsvSpreadsheetResponse($headers, $rows, str_replace('.xlsx', '.csv', $filename));
+        }
+
+        $sheetXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\n"
+            . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            . '<sheetData>'
+            . '<row r="1">';
+
+        foreach ($headers as $h) {
+            $escaped = htmlspecialchars($h, ENT_XML1, 'UTF-8');
+            $sheetXml .= '<c t="inlineStr"><is><t>' . $escaped . '</t></is></c>';
+        }
+        $sheetXml .= '</row>' . "\n";
+
+        foreach ($rows as $idx => $r) {
+            $rowNum = $idx + 2;
+            $sheetXml .= '<row r="' . $rowNum . '">';
+            $values = is_array($r) ? array_values($r) : [];
+            foreach ($values as $colIdx => $val) {
+                // Numeric columns: S.L (col 0), User ID (col 3), Coin (col 9), Payout USD (col 10), Payout BDT (col 11)
+                $isNumericCol = in_array($colIdx, [0, 3, 9, 10, 11], true);
+                if ($isNumericCol && is_numeric($val)) {
+                    $sheetXml .= '<c><v>' . (0 + $val) . '</v></c>';
+                } else {
+                    $escaped = htmlspecialchars((string) ($val ?? ''), ENT_XML1, 'UTF-8');
+                    $sheetXml .= '<c t="inlineStr"><is><t>' . $escaped . '</t></is></c>';
+                }
+            }
+            $sheetXml .= '</row>' . "\n";
+        }
+
+        $sheetXml .= '</sheetData></worksheet>';
+
+        $contentTypes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\n"
+            . '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            . '<Default Extension="xml" ContentType="application/xml"/>'
+            . '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            . '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            . '</Types>';
+
+        $rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\n"
+            . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            . '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+            . '</Relationships>';
+
+        $workbook = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\n"
+            . '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            . '<sheets>'
+            . '<sheet name="' . htmlspecialchars($sheetName, ENT_XML1, 'UTF-8') . '" sheetId="1" r:id="rId1"/>'
+            . '</sheets>'
+            . '</workbook>';
+
+        $workbookRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\n"
+            . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            . '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+            . '</Relationships>';
+
+        $zip->addFromString('[Content_Types].xml', $contentTypes);
+        $zip->addFromString('_rels/.rels', $rels);
+        $zip->addFromString('xl/workbook.xml', $workbook);
+        $zip->addFromString('xl/_rels/workbook.xml.rels', $workbookRels);
+        $zip->addFromString('xl/worksheets/sheet1.xml', $sheetXml);
+        $zip->close();
+
+        $content = file_get_contents($tempFile);
+        @unlink($tempFile);
+
+        return response($content, 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Cache-Control' => 'max-age=0, no-cache, must-revalidate, proxy-revalidate',
+        ]);
+    }
+
+    private function generateCsvSpreadsheetResponse(array $headers, array $rows, string $filename): \Symfony\Component\HttpFoundation\Response
+    {
+        $handle = fopen('php://memory', 'r+');
+        // UTF-8 BOM
+        fputs($handle, "\xEF\xBB\xBF");
+        fputcsv($handle, $headers);
+
+        foreach ($rows as $r) {
+            $values = is_array($r) ? array_values($r) : [];
+            fputcsv($handle, $values);
+        }
+
+        rewind($handle);
+        $csv = stream_get_contents($handle);
+        fclose($handle);
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Cache-Control' => 'max-age=0, no-cache, must-revalidate, proxy-revalidate',
         ]);
     }
 
