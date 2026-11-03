@@ -105,7 +105,7 @@ class ModeratorController extends Controller
         $myIdCode = $hasMyIdCol ? trim((string) ($user?->my_id ?? '')) : '';
 
         // If moderator has no My ID in a full environment
-        if ($isModerator && $hasMyIdCol && $myIdCode === '') {
+        if ($hasMyIdCol && $myIdCode === '') {
             $emptyPagination = [
                 'currentPage' => 1,
                 'current_page' => 1,
@@ -122,6 +122,8 @@ class ModeratorController extends Controller
                 'status' => 'success',
                 'data' => [],
                 'pagination' => $emptyPagination,
+                'offerwalls' => [],
+                'providers' => [],
                 'current_page' => 1,
                 'last_page' => 1,
                 'per_page' => 25,
@@ -133,6 +135,7 @@ class ModeratorController extends Controller
 
         $view = strtolower(trim((string) $request->input('view', 'all')));
         $search = trim((string) $request->input('search', ''));
+        $wallFilter = trim((string) $request->input('wall', $request->input('offerwall', $request->input('provider', ''))));
         $date = trim((string) ($request->input('date', $request->input('from_date', ''))));
         $month = trim((string) $request->input('month', ''));
         $isValidDate = ($date !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date));
@@ -181,8 +184,12 @@ class ModeratorController extends Controller
                 ]);
 
             // Scope strictly to moderator's My ID
-            if ($isModerator && $hasMyIdCol && $myIdCode !== '') {
+            if ($hasMyIdCol) {
                 $query->where('users.my_id', $myIdCode);
+            }
+
+            if ($wallFilter !== '' && strtolower($wallFilter) !== 'all') {
+                $query->whereRaw('LOWER(TRIM(completed_tasks.offer_wall_name)) = ?', [strtolower($wallFilter)]);
             }
 
             if ($search !== '') {
@@ -282,8 +289,17 @@ class ModeratorController extends Controller
         $query = User::query()->select(['id', 'username', 'name', 'email', 'balance', 'ban', 'created_at']);
 
         // Scope strictly to moderator's My ID
-        if ($isModerator && $hasMyIdCol && $myIdCode !== '') {
+        if ($hasMyIdCol) {
             $query->where('users.my_id', $myIdCode);
+        }
+
+        if ($wallFilter !== '' && strtolower($wallFilter) !== 'all' && $hasCompletedTasks) {
+            $query->whereExists(function ($sub) use ($wallFilter) {
+                $sub->select(DB::raw(1))
+                    ->from('completed_tasks')
+                    ->whereColumn('completed_tasks.user_id', 'users.id')
+                    ->whereRaw('LOWER(TRIM(completed_tasks.offer_wall_name)) = ?', [strtolower($wallFilter)]);
+            });
         }
 
         if ($search !== '') {
@@ -292,13 +308,26 @@ class ModeratorController extends Controller
             $isNumeric = is_numeric($search);
             $numericId = $isNumeric ? (int) $search : -1;
 
-            $query->where(function ($q) use ($prefixLike, $isNumeric, $numericId) {
+            $query->where(function ($q) use ($prefixLike, $isNumeric, $numericId, $hasCompletedTasks) {
                 $q->where('username', 'like', $prefixLike)
                   ->orWhere('name', 'like', $prefixLike)
                   ->orWhere('email', 'like', $prefixLike);
 
                 if ($isNumeric) {
-                    $q->orWhere('id', $numericId);
+                    $q->orWhere('users.id', $numericId);
+                }
+
+                if ($hasCompletedTasks) {
+                    $q->orWhereExists(function ($sub) use ($prefixLike) {
+                        $sub->select(DB::raw(1))
+                            ->from('completed_tasks')
+                            ->whereColumn('completed_tasks.user_id', 'users.id')
+                            ->where(function ($ts) use ($prefixLike) {
+                                $ts->where('offer_name', 'like', $prefixLike)
+                                   ->orWhere('offer_wall_name', 'like', $prefixLike)
+                                   ->orWhere('transaction_id', 'like', $prefixLike);
+                            });
+                    });
                 }
             });
         }
@@ -441,10 +470,41 @@ class ModeratorController extends Controller
             'to' => $to,
         ];
 
+        $offerwalls = [];
+        if ($hasCompletedTasks && $hasMyIdCol && $myIdCode !== '') {
+            $offerwalls = DB::table('completed_tasks')
+                ->join('users', 'users.id', '=', 'completed_tasks.user_id')
+                ->where('users.my_id', $myIdCode)
+                ->whereNotNull('completed_tasks.offer_wall_name')
+                ->where('completed_tasks.offer_wall_name', '!=', '')
+                ->distinct()
+                ->orderBy('completed_tasks.offer_wall_name')
+                ->pluck('completed_tasks.offer_wall_name')
+                ->filter()
+                ->values()
+                ->all();
+        }
+
+        if (Schema::hasTable('my_id_earnings') && $myIdCode !== '') {
+            $earningProviders = DB::table('my_id_earnings')
+                ->where('my_id_code', $myIdCode)
+                ->whereNotNull('provider')
+                ->where('provider', '!=', '')
+                ->distinct()
+                ->pluck('provider')
+                ->filter()
+                ->values()
+                ->all();
+            $offerwalls = array_values(array_unique(array_merge($offerwalls, $earningProviders)));
+            sort($offerwalls);
+        }
+
         return response()->json([
             'status' => 'success',
             'data' => $data,
             'pagination' => $paginationData,
+            'offerwalls' => $offerwalls,
+            'providers' => $offerwalls,
             'current_page' => $currentPage,
             'last_page' => $lastPage,
             'per_page' => $perPageDisplay,
@@ -465,9 +525,8 @@ class ModeratorController extends Controller
         $myIdCode = $hasMyIdCol ? trim((string) ($user?->my_id ?? '')) : '';
 
         // If moderator, verify target user belongs to moderator's My ID
-        if ($isModerator && $hasMyIdCol && $myIdCode !== '') {
-            $targetUserBelongs = User::where('id', $id)->where('my_id', $myIdCode)->exists();
-            if (! $targetUserBelongs) {
+        if ($hasMyIdCol) {
+            if ($myIdCode === '' || ! User::where('id', $id)->where('my_id', $myIdCode)->exists()) {
                 return response()->json([
                     'status' => 'success',
                     'data' => [],

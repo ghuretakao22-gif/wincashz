@@ -251,6 +251,8 @@ export const api = {
       success: true,
       data: res.data || [],
       pagination: res.pagination || null,
+      offerwalls: res.offerwalls || res.providers || [],
+      providers: res.providers || res.offerwalls || [],
       raw: res,
     };
   },

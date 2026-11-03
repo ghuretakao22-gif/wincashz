@@ -6,6 +6,7 @@ import {
   Filter, 
   Download, 
   Calendar, 
+  CalendarDays,
   DollarSign, 
   Coins, 
   Clock, 
@@ -422,79 +423,56 @@ export default function ModeratorCompletedOffersPage() {
             </div>
           )}
         </div>
+      </div>
 
-        {/* Inputs: Search, Provider Dropdown, User ID, Rows Per Page */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1">
-          {/* Search by username or offer name */}
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search user or offer..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-white/[0.03] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
-            />
-          </div>
-
-          {/* Provider Dropdown */}
-          <div className="relative">
-            <select
-              value={provider}
-              onChange={(e) => {
-                setProvider(e.target.value);
+      {/* Main Search & Offerwalls Bar matching reference UI */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl glass-card border border-white/10 text-xs shadow-md">
+        <div className="flex items-center gap-2 flex-1 min-w-[240px] relative">
+          <Search className="w-4 h-4 text-slate-500 shrink-0 pointer-events-none" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by User ID, Name, Email, Offer, TX ID..."
+            className="w-full bg-transparent border-0 text-xs text-white placeholder-slate-500 focus:outline-none pr-6"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('');
                 setCurrentPage(1);
               }}
-              className="w-full appearance-none bg-[#0e141d] border border-white/10 text-slate-300 text-xs font-medium rounded-xl pl-3 pr-8 py-2 focus:outline-none focus:border-brand-500 cursor-pointer"
+              className="absolute right-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              title="Clear search"
             >
-              <option value="">All Providers</option>
-              {providersList.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-            <Filter className="w-3.5 h-3.5 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          </div>
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
 
-          {/* User ID Direct Match */}
-          <div className="relative">
-            <User className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Filter by User ID..."
-              value={userIdFilter}
-              onChange={(e) => {
-                setUserIdFilter(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full bg-white/[0.03] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 font-mono"
-            />
-          </div>
+        <div className="flex items-center gap-3">
+          <select
+            value={provider}
+            onChange={(e) => {
+              setProvider(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="bg-[#0c1015] border border-white/10 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none cursor-pointer"
+          >
+            <option value="">All Offerwalls</option>
+            {providersList.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
 
-          {/* Per Page selector */}
-          <div className="flex items-center justify-between sm:justify-end gap-2">
-            <span className="text-[11px] text-slate-400">Rows:</span>
-            <select
-              value={perPage}
-              onChange={(e) => {
-                setPerPage(Number(e.target.value));
-                setCurrentPage(1);
-              }}
-              className="appearance-none bg-[#0e141d] border border-white/10 text-slate-300 text-xs font-medium rounded-xl px-3 py-2 focus:outline-none focus:border-brand-500 cursor-pointer"
-            >
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-            </select>
-            {(provider || search || userIdFilter) && (
-              <button
-                onClick={handleClearFilters}
-                className="text-xs text-slate-400 hover:text-white underline cursor-pointer ml-1"
-              >
-                Reset
-              </button>
-            )}
+          <div className="px-3 py-1.5 rounded-xl bg-brand-500/10 border border-brand-500/25 text-brand-300 text-xs font-semibold whitespace-nowrap flex items-center gap-1.5">
+            <CalendarDays className="w-3.5 h-3.5 text-brand-400" />
+            <span>
+              Showing all {(summary.total_records || pagination.total || data.length || 0).toLocaleString()} matching offers {date ? 'on this date' : (period === 'all' ? 'all time' : 'in this month')}
+            </span>
           </div>
         </div>
       </div>
@@ -594,8 +572,26 @@ export default function ModeratorCompletedOffersPage() {
         {/* Pagination Footer */}
         {pagination.total > 0 && (
           <div className="p-4 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
-            <div>
-              Showing {pagination.from || 0} to {pagination.to || 0} of {pagination.total.toLocaleString()} records
+            <div className="flex items-center gap-3">
+              <span>
+                Showing {pagination.from || 0} to {pagination.to || 0} of {pagination.total.toLocaleString()} records
+              </span>
+              <div className="flex items-center gap-1.5 ml-2">
+                <span className="text-[11px] text-slate-400">Rows:</span>
+                <select
+                  value={perPage}
+                  onChange={(e) => {
+                    setPerPage(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="bg-[#0c1015] border border-white/10 text-slate-300 text-xs rounded-lg px-2 py-1 focus:outline-none cursor-pointer"
+                >
+                  <option value={20}>20</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
             </div>
 
             <div className="flex items-center gap-1.5">

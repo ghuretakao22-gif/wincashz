@@ -260,4 +260,92 @@ class ModeratorUsersScopeTest extends TestCase
             ],
         ]);
     }
+
+    /**
+     * Requirement 1: Data Isolation - Moderator cannot view user activity of another team
+     */
+    public function test_moderator_cannot_view_activity_of_user_belonging_to_another_team(): void
+    {
+        $modA = $this->createUser([
+            'username' => 'mod_iso_a',
+            'role' => 'moderator',
+            'my_id' => 'ISO_TEAM_A',
+        ]);
+
+        $userB = $this->createUser([
+            'username' => 'user_iso_b',
+            'role' => 'user',
+            'my_id' => 'ISO_TEAM_B',
+        ]);
+
+        DB::table('completed_tasks')->insert([
+            'user_id' => $userB->id,
+            'user_name' => $userB->username,
+            'transaction_id' => 'tx_iso_b_99',
+            'offer_wall_name' => 'SecretWall',
+            'offer_name' => 'Secret Task',
+            'currency_reward' => 500,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $res = $this->actingAs($modA, 'api')->getJson('/api/moderator/users/' . $userB->id . '/activity');
+        $res->assertStatus(200);
+        $res->assertJson([
+            'status' => 'success',
+            'data' => [],
+        ]);
+    }
+
+    /**
+     * Requirement 2: Offerwall filtering on Moderator Users endpoint
+     */
+    public function test_users_endpoint_offerwall_filter_and_offerwalls_list(): void
+    {
+        $mod = $this->createUser([
+            'username' => 'mod_walls',
+            'role' => 'moderator',
+            'my_id' => 'WALLS_TEAM',
+        ]);
+
+        $user1 = $this->createUser(['username' => 'w_user1', 'my_id' => 'WALLS_TEAM']);
+        $user2 = $this->createUser(['username' => 'w_user2', 'my_id' => 'WALLS_TEAM']);
+
+        DB::table('completed_tasks')->insert([
+            'user_id' => $user1->id,
+            'user_name' => $user1->username,
+            'transaction_id' => 'tx_w1',
+            'offer_wall_name' => 'Torox',
+            'offer_name' => 'Torox Offer 1',
+            'currency_reward' => 100,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('completed_tasks')->insert([
+            'user_id' => $user2->id,
+            'user_name' => $user2->username,
+            'transaction_id' => 'tx_w2',
+            'offer_wall_name' => 'AdWorkMedia',
+            'offer_name' => 'AWM Offer 2',
+            'currency_reward' => 200,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // GET all returns offerwalls list
+        $res = $this->actingAs($mod, 'api')->getJson('/api/moderator/users');
+        $res->assertStatus(200);
+        $offerwalls = $res->json('offerwalls');
+        $this->assertIsArray($offerwalls);
+        $this->assertContains('Torox', $offerwalls);
+        $this->assertContains('AdWorkMedia', $offerwalls);
+
+        // Filter by wall=Torox
+        $resWall = $this->actingAs($mod, 'api')->getJson('/api/moderator/users?wall=Torox');
+        $resWall->assertStatus(200);
+        $wallUsernames = collect($resWall->json('data'))->pluck('username')->all();
+        $this->assertContains('w_user1', $wallUsernames);
+        $this->assertNotContains('w_user2', $wallUsernames);
+    }
 }

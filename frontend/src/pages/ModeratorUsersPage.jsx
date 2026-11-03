@@ -11,6 +11,7 @@ import {
   ShieldAlert, 
   Mail, 
   Calendar,
+  CalendarDays,
   X
 } from 'lucide-react';
 import { api } from '../services/api';
@@ -20,9 +21,11 @@ export default function ModeratorUsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Search & Pagination
+  // Search, Filter & Pagination
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [wallFilter, setWallFilter] = useState('');
+  const [offerwalls, setOfferwalls] = useState([]);
   const [date, setDate] = useState('');
   const [month, setMonth] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -59,6 +62,9 @@ export default function ModeratorUsersPage() {
       } else if (month) {
         params.month = month;
       }
+      if (wallFilter) {
+        params.wall = wallFilter;
+      }
       if (debouncedSearch.trim()) {
         params.search = debouncedSearch.trim();
       }
@@ -68,6 +74,11 @@ export default function ModeratorUsersPage() {
         setUsers(res.data);
         if (res.pagination) {
           setPagination(res.pagination);
+        }
+        if (Array.isArray(res.offerwalls) && res.offerwalls.length > 0) {
+          setOfferwalls(res.offerwalls);
+        } else if (Array.isArray(res.providers) && res.providers.length > 0) {
+          setOfferwalls(res.providers);
         }
       } else {
         setUsers([]);
@@ -79,7 +90,7 @@ export default function ModeratorUsersPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, perPage, debouncedSearch, date, month]);
+  }, [currentPage, perPage, debouncedSearch, wallFilter, date, month]);
 
   useEffect(() => {
     fetchUsers();
@@ -133,29 +144,9 @@ export default function ModeratorUsersPage() {
         </div>
       </div>
 
-      {/* Search & Filter Toolbar */}
-      <div className="p-4 rounded-2xl bg-[#0c1015]/90 border border-white/5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Search Input */}
-          <div className="relative w-full sm:w-72">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search by User ID or username..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              className="w-full bg-white/[0.03] border border-white/10 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
-            />
-            {searchInput && (
-              <button
-                onClick={() => setSearchInput('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
+      {/* Date & Month Filter Strip */}
+      <div className="p-3 rounded-2xl bg-[#0c1015]/90 border border-white/5 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex flex-wrap items-center gap-2.5">
           {/* Date (UTC) Picker */}
           <div className="flex items-center gap-1.5 bg-white/[0.03] border border-white/10 rounded-xl px-2.5 py-1 text-xs">
             <Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
@@ -201,13 +192,63 @@ export default function ModeratorUsersPage() {
               setPerPage(val);
               setCurrentPage(1);
             }}
-            className="appearance-none bg-[#0e141d] border border-white/10 text-slate-300 text-xs font-medium rounded-xl px-3 py-1.5 focus:outline-none focus:border-brand-500 cursor-pointer"
+            className="bg-[#0c1015] border border-white/10 text-slate-300 text-xs font-medium rounded-xl px-3 py-1.5 focus:outline-none cursor-pointer"
           >
             <option value={25}>25</option>
             <option value={50}>50</option>
             <option value={100}>100</option>
             <option value="all">All</option>
           </select>
+        </div>
+      </div>
+
+      {/* Main Search & Offerwalls Bar matching reference UI */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl glass-card border border-white/10 text-xs shadow-md">
+        <div className="flex items-center gap-2 flex-1 min-w-[240px] relative">
+          <Search className="w-4 h-4 text-slate-500 shrink-0 pointer-events-none" />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search by User ID, Name, Email, Offer, TX ID..."
+            className="w-full bg-transparent border-0 text-xs text-white placeholder-slate-500 focus:outline-none pr-6"
+          />
+          {searchInput && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchInput('');
+                setCurrentPage(1);
+              }}
+              className="absolute right-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              title="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <select
+            value={wallFilter}
+            onChange={(e) => {
+              setWallFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="bg-[#0c1015] border border-white/10 text-xs text-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none cursor-pointer"
+          >
+            <option value="">All Offerwalls</option>
+            {offerwalls.map((wall) => (
+              <option key={wall} value={wall}>
+                {wall}
+              </option>
+            ))}
+          </select>
+
+          <div className="px-3 py-1.5 rounded-xl bg-brand-500/10 border border-brand-500/25 text-brand-300 text-xs font-semibold whitespace-nowrap flex items-center gap-1.5">
+            <CalendarDays className="w-3.5 h-3.5 text-brand-400" />
+            <span>Showing all {(pagination.total || users.length || 0).toLocaleString()} matching users</span>
+          </div>
         </div>
       </div>
 

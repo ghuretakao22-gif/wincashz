@@ -89,6 +89,8 @@ class ModeratorCompletedOffersController extends Controller
             $perPage = 25;
         }
 
+        $hasCompletedTasks = Schema::hasTable('completed_tasks');
+
         $selectFields = [
             'my_id_earnings.id',
             'my_id_earnings.user_id',
@@ -106,6 +108,10 @@ class ModeratorCompletedOffersController extends Controller
             'users.name as user_name',
             'users.email as user_email',
         ];
+
+        if ($hasCompletedTasks) {
+            $selectFields[] = 'completed_tasks.transaction_id';
+        }
 
         $paginator = $query->select($selectFields)->paginate($perPage);
 
@@ -128,6 +134,7 @@ class ModeratorCompletedOffersController extends Controller
             return [
                 'id' => (int) $row->id,
                 'completed_task_id' => $row->completed_task_id ? (int) $row->completed_task_id : null,
+                'transaction_id' => (string) ($row->transaction_id ?? ($row->completed_task_id ? 'TX#' . $row->completed_task_id : '—')),
                 'user_id' => (int) $row->user_id,
                 'username' => (string) ($row->username ?? 'user_' . $row->user_id),
                 'user_name' => (string) ($row->user_name ?? ''),
@@ -209,6 +216,11 @@ class ModeratorCompletedOffersController extends Controller
         }
 
         $query->where('my_id_earnings.my_id_code', $myIdCode);
+
+        // Strict scoping: only users created by/belonging to this moderator
+        if (Schema::hasColumn('users', 'my_id')) {
+            $query->where('users.my_id', $myIdCode);
+        }
 
         // Date / Month / Period filter (UTC, half-open ranges [start, end))
         // Precedence: valid date wins over month and period; valid month wins over period
@@ -300,7 +312,7 @@ class ModeratorCompletedOffersController extends Controller
             $isNumeric = is_numeric($search);
             $numVal = $isNumeric ? (int) $search : -1;
 
-            $query->where(function ($q) use ($like, $isNumeric, $numVal) {
+            $query->where(function ($q) use ($like, $isNumeric, $numVal, $hasCompletedTasks) {
                 $q->where('users.username', 'like', $like)
                   ->orWhere('users.name', 'like', $like)
                   ->orWhere('users.email', 'like', $like)
@@ -308,9 +320,14 @@ class ModeratorCompletedOffersController extends Controller
                   ->orWhere('my_id_earnings.offer_id', 'like', $like)
                   ->orWhere('my_id_earnings.provider', 'like', $like);
 
+                if ($hasCompletedTasks) {
+                    $q->orWhere('completed_tasks.transaction_id', 'like', $like);
+                }
+
                 if ($isNumeric) {
                     $q->orWhere('my_id_earnings.user_id', $numVal)
-                      ->orWhere('my_id_earnings.coin_amount', $numVal);
+                      ->orWhere('my_id_earnings.coin_amount', $numVal)
+                      ->orWhere('my_id_earnings.completed_task_id', $numVal);
                 }
             });
         }
