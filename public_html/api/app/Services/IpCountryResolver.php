@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 
 class IpCountryResolver
 {
@@ -31,31 +33,45 @@ class IpCountryResolver
             return $headerCountry ?: 'Local';
         }
 
-        try {
-            $res = \Illuminate\Support\Facades\Http::timeout(3)->get("https://ipapi.co/{$resolvedIp}/json/");
-            if ($res->successful()) {
-                $data = $res->json();
-                $country = $data['country_name'] ?? $data['country'] ?? null;
-                if ($this->isFilledString($country)) {
-                    return $this->normalizeCountryValue($country);
-                }
+        $country = Cache::remember("ip_country:{$resolvedIp}", 86400, function () use ($resolvedIp, $headerCountry) {
+            $geoCached = Cache::get("geo:{$resolvedIp}");
+            if (is_array($geoCached) && !empty($geoCached['country']) && $geoCached['country'] !== 'Unknown') {
+                return $geoCached['country'];
             }
-        } catch (\Throwable $e) {
+
+            try {
+                $res = Http::timeout(2.5)->get("https://ipapi.co/{$resolvedIp}/json/");
+                if ($res->successful()) {
+                    $data = $res->json();
+                    $country = $data['country_name'] ?? $data['country'] ?? null;
+                    if ($this->isFilledString($country)) {
+                        return $this->normalizeCountryValue($country);
+                    }
+                }
+            } catch (\Throwable $e) {
+            }
+
+            try {
+                $res = Http::timeout(2.5)->get("https://api.country.is/{$resolvedIp}");
+                if ($res->successful()) {
+                    $data = $res->json();
+                    $country = $data['country'] ?? $data['country_name'] ?? null;
+                    if ($this->isFilledString($country)) {
+                        return $this->normalizeCountryValue($country);
+                    }
+                }
+            } catch (\Throwable $e) {
+            }
+
+            return $headerCountry ?: 'Unknown';
+        });
+
+        if ($country === 'Unknown' || $country === '') {
+            Cache::forget("ip_country:{$resolvedIp}");
+            return $headerCountry ?: 'Unknown';
         }
 
-        try {
-            $res = \Illuminate\Support\Facades\Http::timeout(3)->get("https://api.country.is/{$resolvedIp}");
-            if ($res->successful()) {
-                $data = $res->json();
-                $country = $data['country'] ?? $data['country_name'] ?? null;
-                if ($this->isFilledString($country)) {
-                    return $this->normalizeCountryValue($country);
-                }
-            }
-        } catch (\Throwable $e) {
-        }
-
-        return $headerCountry ?: 'Unknown';
+        return $country;
     }
 
     public function resolveClientIp(Request $request): ?string

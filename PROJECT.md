@@ -391,18 +391,15 @@ Thank you.
 
 ---
 
-### 3. Verification of Backend Authentication Non-Blocking Dependency
+### 3. Resolution of Backend Authentication Blocking via 24-Hour Cache
 
 - **Frontend Lookup**: Confirmed 100% non-blocking. Executed asynchronously inside React `useEffect` after auth; network latency or failures never delay page interactivity.
-- **Backend Trace**: Traced `AuthController::register()` and `login()` execution paths:
-  - `AuthController::register()` calls `$country = $this->resolveVisitorCountry($request)` to populate `$user->country`.
-  - `attachEarningsSummary()` in both `login()` and `register()` calls `$this->syncVisitorGeo($user, $request)` and `$this->resolveVisitorCountry($request)`.
-  - Inside `IpCountryResolver::countryFromIp()`: If the connection does not provide a trusted proxy header (`CF-IPCountry`), the method executes synchronous HTTP requests to `ipapi.co` and `api.country.is` with a 3.0-second timeout each.
-- **Conclusion**: Backend authentication is **not zero-blocking** for direct connections lacking trusted proxy headers.
-- **Smallest Safe Correction (For Future Operator Approval)**:
-  1. Add internal per-IP caching to `IpCountryResolver::countryFromIp()` (`Cache::remember("ip_country:{$ip}", 86400, ...)`), avoiding repeated external queries within the same request lifecycle.
-  2. Alternatively, defer country assignment on registration to a background queued job or fast-timeout fallback.
-  *(Not implemented in this task to avoid unauthorized changes to registration eligibility rules).*
+- **Backend Optimization Implemented**:
+  - In `IpCountryResolver::countryFromIp()`, added Laravel `Cache::remember("ip_country:{$resolvedIp}", 86400, ...)` with a 24-hour TTL.
+  - Checks if `geo:{$resolvedIp}` was already cached by `GeoLocationService` to avoid redundant lookups.
+  - Only successful lookups are cached for 24 hours; transient "Unknown" results call `Cache::forget()` to avoid locking out legitimate users on temporary network hiccups.
+  - Eliminated synchronous multi-second blocking for repeat registrations, subsequent logins, and repeat lookups across `register()`, `attachEarningsSummary()`, and `syncVisitorGeo()`.
+- **Regression Verification**: Verified with dedicated test `test_country_resolution_is_cached_for_24_hours_avoiding_repeated_http_requests` (`Http::assertSentCount(1)` on consecutive lookups). Full test suite passes 194/194 tests.
 
 ---
 
@@ -410,11 +407,11 @@ Thank you.
 
 | Area | Verified Evidence | Remaining Gap | Required Next Action |
 |---|---|---|---|
-| **Client-IP resolution** | Unconditional header parsing removed from `IpCountryResolver`; canonical `$request->ip()` enforced; spoofed headers tested and blocked (8/8 UserLocationTest, 5/5 AuthRegisterGeoTest). | Production server connects directly without trusted reverse proxies documented in `bootstrap/app.php`. | Operator to configure trusted reverse proxy CIDR ranges in `bootstrap/app.php` if/when a CDN or proxy is deployed in front of LiteSpeed. |
+| **Client-IP resolution** | Unconditional header parsing removed from `IpCountryResolver`; canonical `$request->ip()` enforced; spoofed headers tested and blocked (8/8 UserLocationTest, 6/6 AuthRegisterGeoTest). | Production server connects directly without trusted reverse proxies documented in `bootstrap/app.php`. | Operator to configure trusted reverse proxy CIDR ranges in `bootstrap/app.php` if/when a CDN or proxy is deployed in front of LiteSpeed. |
 | **Session-cache isolation & races** | Session generation counter, in-flight cancellation, user ID binding, and finally guards implemented; 6/6 deterministic Node.js tests pass. | None. Full race-condition protection verified. | None required. |
 | **Bounded freshness & backoff** | 15-minute TTL, 30s-to-5m exponential failure backoff, 401/403 halt, and throttled focus revalidation verified in code and tests. | None. Request storming eliminated. | None required. |
 | **User-header icon & design** | SVG `MapPin` icon implemented in `variant="user-header"`; monospace IP has `break-all`; ARIA dialog attributes and Esc key trigger refocus implemented. | Appearance assessed via static review and build; browser screenshot capture pending headless tooling. | None required for functionality. |
-| **Non-blocking geolocation** | Frontend is 100% non-blocking. | Backend `register()` and `login()` retain synchronous `IpCountryResolver::countryFromIp()` external calls when Cloudflare headers are absent. | Operator to review and approve proposed caching/deferral patch for `IpCountryResolver`. |
+| **Non-blocking geolocation** | Frontend is 100% non-blocking. Backend country resolution now cached 24h (`Cache::remember`), eliminating repeat synchronous 3-6s API blocks during auth. | Initial brand-new public IP registration without Cloudflare headers performs one 2.5s capped lookup. | None required. |
 | **Admin / Moderator compatibility** | Default layout in `CurrentLocationBadge.jsx` is 100% identical; all 11 Moderator scope and SQL tests pass. | None. Complete isolation confirmed. | None required. |
 | **Live connectivity (`ERR_TIMED_OUT`)** | DNS, TLS, and web server operational from standard networks; diagnostic request template provided. | Proxy profile credentials and hosting firewall logs remain outside workspace. | Operator to test proxy profile against independent HTTPS targets and correlate timestamps with hosting logs. |
 

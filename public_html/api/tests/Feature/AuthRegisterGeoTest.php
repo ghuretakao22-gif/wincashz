@@ -211,6 +211,27 @@ class AuthRegisterGeoTest extends TestCase
         $response->assertJsonPath('country', 'United States');
     }
 
+    public function test_country_resolution_is_cached_for_24_hours_avoiding_repeated_http_requests(): void
+    {
+        Http::fake([
+            'https://ipapi.co/93.184.216.34/json/' => Http::response([
+                'country_name' => 'United States',
+                'country' => 'US',
+            ], 200),
+        ]);
+
+        $resolver = app(\App\Services\IpCountryResolver::class);
+
+        $first = $resolver->countryFromIp('93.184.216.34');
+        $this->assertSame('United States', $first);
+        Http::assertSentCount(1);
+
+        // Second lookup must hit the 24-hour cache and not dispatch an HTTP call
+        $second = $resolver->countryFromIp('93.184.216.34');
+        $this->assertSame('United States', $second);
+        Http::assertSentCount(1);
+    }
+
     public function test_registration_requires_profile_setup_completion(): void
     {
         Http::fake([
