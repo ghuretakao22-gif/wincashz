@@ -209,14 +209,14 @@ All recommendations are documented for future implementation planning only; no f
 - **Port 80 (HTTP)**: TCP connection succeeds immediately; returns HTTP `301 Moved Permanently` redirecting to `https://wincashz.com/`.
 - **Port 443 (HTTPS)**: TLS handshake succeeds cleanly; Sectigo DV SSL certificate is active and valid (validity: 2025-12-18 through 2026-12-19).
 - **Web Server & Application Status**: The production LiteSpeed web server serves the static SPA (`index.html` and assets in `/assets/`) with HTTP 200 OK. Public API endpoints (e.g. `/api/site-pin/status`) return HTTP 200 `{"has_pin":false}`.
-- **Root Cause of `ERR_TIMED_OUT` on User's Browser / Proxy Profile**:
-  - The connection fails at the network transport level before reaching the application layer or web server. TCP SYN packets from the proxy's egress IP are dropped without receiving a SYN-ACK, causing the browser to timeout with `ERR_TIMED_OUT`.
-  - This symptom is characteristic of hosting-level security firewalls (ConfigServer Security & Firewall / CSF, cPHulk brute force protection, or Imunify360 on Namecheap server `69.57.162.203`) dropping traffic from datacenter/commercial proxy IP ranges or subnets flagged for automated activity.
-  - Alternatively, the user's local browser proxy profile may be pointing to an offline, dead, or misconfigured upstream proxy server node.
-- **Required Operator / Hosting Actions**:
-  1. **Whitelist Proxy IP in Hosting Firewall**: In cPanel / WHM (or via hosting support ticket), inspect CSF / Imunify360 / cPHulk blocks for the specific egress IP of the user's proxy profile and whitelist it.
-  2. **Verify Upstream Proxy Node**: Test whether the proxy server node itself is responding by connecting to other HTTPS targets through the same profile.
-  3. **Cloudflare / CDN WAF Rules**: If a CDN or reverse proxy is placed in front of the origin, ensure that management/development proxy IP ranges are exempted from managed challenge / block rules.
+- **Diagnostic Finding on `ERR_TIMED_OUT` (User's Browser / Proxy Profile)**:
+  - **Root cause unverified. Possible causes include proxy availability, network routing, and destination-side filtering.**
+  - Successful direct requests from local environments establish that DNS, HTTP (301), HTTPS (TLS), LiteSpeed web server, and API routing are operational from standard connections, but do not establish why the affected proxy profile timed out.
+  - No packet capture trace, browser proxy profile credentials, or hosting firewall logs were directly accessible during testing.
+- **Recommended Operator / Hosting Actions**:
+  1. **Test Proxy Egress Separately**: Test an independent reliable HTTPS destination (e.g., `https://api.ipify.org` or `https://httpbin.org/ip`) using the exact failing browser/proxy profile to determine if the upstream proxy itself is reachable.
+  2. **File Factual Hosting Support Request**: If the proxy connects to other targets but fails on `wincashz.com`, provide the exact UTC timestamp and client egress IP to hosting support to inspect matching connection or block events (see support request template in Section 9).
+  3. **Inspect WAF / Security Rules**: Verify whether upstream reverse proxies, CDN rules, or server-level filters restrict the proxy's IP subnet.
 
 ### 2. Implemented Application Improvements & Location Widget Redesign
 
@@ -253,3 +253,91 @@ All recommendations are documented for future implementation planning only; no f
 - **Full Backend Test Suite**: `php artisan test` -> **190/190 passed**, 1,463 assertions, 0 failures.
 - **Frontend Production Build**: `npm --prefix frontend run build` -> **1,948 modules transformed cleanly** in 6.78s; Vite bundle compiled into `public_html/assets/` and `public_html/index.html`.
 - **Admin / Moderator Regressions**: Verified that `AdminLayout.jsx` and `ModeratorLayout.jsx` continue to render the default badge layout without any changes.
+
+---
+
+## 9. Final Verification & Evidence Correction (Commit 9f3e093)
+- **Verification Date:** 2026-11-03
+- **Evaluator:** Senior Full-Stack & Security Engineer
+- **Scope:** Review and factual verification of commit `9f3e093`, differentiating verified findings from unverified inferences, inspecting live deployment status, tracing IP resolution and session security, and auditing Admin/Moderator backward compatibility.
+
+### 1. Separation of Facts, Explanations, and Unverified Claims
+
+#### A. Verified Facts
+1. **Public Site Accessibility via Standard Network**: Direct HTTP requests to `https://wincashz.com/` return HTTP 200 OK via LiteSpeed web server. DNS points to `69.57.162.203` (TTL 14,400). Sectigo DV SSL certificate is valid through December 2026.
+2. **Live Deployment Status**: Commit `9f3e093` is verified as **committed**, **pushed**, **deployed**, and **live on `https://wincashz.com/`**:
+   - Live `index.html` references the exact build chunks: `src="/assets/index-BDlJbB2q.js"` and `href="/assets/index-dCeNrrcT.css"`.
+   - Asset URLs return HTTP 200 with matching compiled sizes (`82,948` bytes for JS, `74,291` bytes for CSS).
+   - Live API endpoint `GET /api/visitor-geo` returns strict `Cache-Control: must-revalidate, no-cache, no-store, private` and correctly ignores query parameters like `?ip=8.8.8.8` (returns connecting client IP instead).
+3. **Backend Location Endpoint Security**: `GET /api/me/location` in `AuthController.php` relies on `$request->ip()` and returns strict no-store cache headers with `Vary: Authorization`, preventing CDN or proxy caching between user sessions.
+4. **Moderator & Admin Scoping Unchanged**:
+   - `AdminLayout.jsx` and `ModeratorLayout.jsx` continue to invoke `<CurrentLocationBadge />` without props, falling back to the unchanged default layout.
+   - `ModeratorUsersScopeTest` (7 passed, 51 assertions) and `ModeratorCompletedOffersStrictSqlTest` (4 passed, 69 assertions) remain 100% green.
+
+#### B. Plausible Explanations
+1. **Cause of `ERR_TIMED_OUT` on User's Proxy Profile**:
+   - The browser profile's configured proxy may have an unreachable or degraded upstream node.
+   - Upstream network routing between the proxy's egress point and the hosting server may be dropping packets.
+   - Hosting-side firewall or rate-limiting software at `69.57.162.203` may be filtering traffic from the proxy's IP range.
+
+#### C. Unverified Claims (Corrected)
+1. **Specific Firewall Product Attribution**: Previous references asserting that CSF, Imunify360, or cPHulk dropped TCP SYN packets are **unverified**. No packet traces, hosting security logs, or firewall configurations were inspectable in this workspace. The official finding is:
+   > **“Root cause unverified. Possible causes include proxy availability, network routing, and destination-side filtering.”**
+2. **Visual Rendering on Target Platform**: While component markup, truncation constraints, and keyboard handlers were verified in code and build tests, real browser rendering of country flag emojis on Windows (e.g., Segoe UI Emoji displaying two-letter country codes like "BD" or "US" rather than graphical flags) was not captured via screenshot due to headless environment constraints.
+
+### 2. Operator Actions & Factual Hosting Support Request Template
+If the proxy profile connects to other HTTPS destinations but fails when opening `https://wincashz.com/`, provide hosting support with this factual request:
+
+```text
+Subject: Connection Timeout (ERR_TIMED_OUT) Investigation - wincashz.com (69.57.162.203)
+
+Hello Hosting Support Team,
+
+A user is experiencing an ERR_TIMED_OUT failure when attempting to connect to wincashz.com over HTTPS.
+
+Connection Details:
+- Target Host: wincashz.com (69.57.162.203:443)
+- Client Egress IP: [INSERT CLIENT / PROXY IP HERE - REDACTED IN PUBLIC LOGS]
+- Timestamp: [INSERT EXACT UTC TIMESTAMP e.g., 2026-11-03 09:05:00 UTC]
+- Observed Error: ERR_TIMED_OUT (Browser connection establishment timeout)
+
+Request:
+1. Please check the server firewall, iptables, and security logs (e.g., CSF, cPHulk, Imunify360, or web server fail2ban) at the timestamp above for any blocked connection attempts or rate-limit triggers matching this IP.
+2. If an active block exists, please advise on the triggered rule and remove the restriction.
+3. If no server-side block is logged, please confirm whether any upstream network or hosting datacenter filtering may be affecting this subnet.
+
+Thank you.
+```
+
+### 3. Identified Gaps & Minimal Recommended Corrective Changes (For Approval)
+
+#### Gap 1: In-Flight Request vs Logout Race Condition
+* **Observation**: In `CurrentLocationBadge.jsx`, if `api.getUserLocation()` is dispatched and the user logs out before the promise settles, the `.then()` callback sets `cachedLocation = data` without checking if `cachedUserId` was cleared or changed.
+* **Recommended Change (For Approval)**: Track an active `requestId` or check `if (currentUserId !== activeUserId || !mounted) return;` before writing to `cachedLocation`.
+
+#### Gap 2: Bounded Cache Freshness & Negative Result Backoff
+* **Observation**: `cachedLocation` has no timestamp/TTL, persisting indefinitely in memory until page reload or logout. If the initial location request fails, every route change retries the API call.
+* **Recommended Change (For Approval)**: Add a 15-minute TTL to `cachedLocation` and a 2-minute backoff window for failed lookups to prevent unnecessary retries across page transitions.
+
+#### Gap 3: Windows Flag Emoji Display UX
+* **Observation**: Windows Chrome and Edge do not render country flag emojis as color flags due to Segoe UI Emoji system limitations, rendering two-letter codes (e.g. `BD`, `US`) instead.
+* **Recommended Change (For Approval)**: Use a consistent vector `MapPin` icon or local SVG country flag assets in place of native emoji regional indicator pairs.
+
+#### Gap 4: Reverse Proxy Trust Configuration (SEC-03)
+* **Observation**: While `GET /api/me/location` safely uses `$request->ip()`, `visitorGeo()` and `register()` call `IpCountryResolver::resolveClientIp()`, which parses `X-Forwarded-For` without validating `REMOTE_ADDR` against trusted proxy ranges.
+* **Recommended Change (For Approval)**: Configure `$middleware->trustProxies()` in `bootstrap/app.php` with known upstream proxy/CDN IP ranges.
+
+---
+
+### 4. Verification Summary Table
+
+| Area | Verified Evidence | Remaining Gap | Required Next Action |
+|---|---|---|---|
+| **Connectivity through affected profile** | Public site, DNS, and TLS are healthy from standard network connections. | Profile-specific packet trace, egress IP, and hosting firewall logs are unavailable. Root cause remains unverified. | Operator to test independent HTTPS site via proxy; submit factual hosting support ticket with client IP and UTC timestamp. |
+| **Live deployment** | Live `index.html` serves `index-BDlJbB2q.js` and `index-dCeNrrcT.css` (200 OK); `/api/visitor-geo` serves `no-store` headers and rejects `?ip=` parameter. | Live authenticated `/api/me/location` response shape was verified via tests, but requires active user session token for live header inspection. | None for public assets; authorized session check can be executed if credentials are provided. |
+| **Location widget appearance** | Compact 2-level trigger (`variant="user-header"`), bounded max-width (`170px`), dialog ARIA attributes, and accessible popover verified in React code and Vite production build. | Windows Segoe UI Emoji font renders country codes ("BD") instead of graphical flags; screenshot capture not available in headless workspace. | Operator to approve replacing emoji flags with SVG flag assets or consistent vector icon on Windows. |
+| **Non-blocking geolocation** | Asynchronous execution in React `useEffect`; backend timeouts lowered to 2.5s; registration and auth routes do not block on external lookup failures; 190/190 automated tests pass. | None in application flow. | None required. |
+| **Trusted-proxy / IP handling** | `/api/me/location` uses `$request->ip()` with `no-store` headers; `/api/visitor-geo` query IP override removed. | `visitorGeo()` and `register()` call `IpCountryResolver::resolveClientIp()` which inspects `X-Forwarded-For` without trusted proxy validation in `bootstrap/app.php`. | Operator to approve configuring trusted reverse proxies in `bootstrap/app.php` (SEC-03). |
+| **Session-cache isolation** | `clearLocationCache()` is invoked in `AuthContext::logout()`; per-user ID checking (`cachedUserId`) prevents cross-user state persistence. | In-flight promise dispatched before logout can write to cache after logout; no TTL or failure backoff window. | Operator to approve minimal race-condition guard and 15-minute TTL patch in `CurrentLocationBadge.jsx`. |
+| **Admin / Moderator compatibility** | `AdminLayout.jsx` and `ModeratorLayout.jsx` omit the `variant` prop and retain default layout; `ModeratorUsersScopeTest` (7/7) and `ModeratorCompletedOffersStrictSqlTest` (4/4) pass. | None. Shared component maintains complete backward compatibility. | None required. |
+
