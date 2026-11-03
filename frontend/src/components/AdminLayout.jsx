@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate, Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Logo from './Logo';
+import CurrentLocationBadge from './CurrentLocationBadge';
 import { 
   LayoutDashboard, 
   FileSpreadsheet, 
@@ -168,6 +169,9 @@ export default function AdminLayout() {
             <Menu className="w-4 h-4" />
           </button>
 
+          {/* Current Location Badge */}
+          <CurrentLocationBadge />
+
           {/* Admin Profile Badge */}
           <div className="flex items-center gap-2.5 pl-2 border-l border-white/10">
             <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold text-xs">
@@ -182,6 +186,16 @@ export default function AdminLayout() {
               </div>
             </div>
           </div>
+
+          {/* Sign Out Button */}
+          <button
+            onClick={logout}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 border border-rose-500/20 text-xs font-semibold transition-all active:scale-95 cursor-pointer shrink-0"
+            title="Sign Out"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Sign Out</span>
+          </button>
         </div>
       </header>
 

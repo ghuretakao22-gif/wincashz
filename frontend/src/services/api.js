@@ -173,6 +173,7 @@ export const api = {
   login: (payload) => apiRequest('/login', { method: 'POST', body: JSON.stringify(payload) }),
   logout: () => apiRequest('/logout', { method: 'POST' }),
   getMe: () => apiRequest('/me'),
+  getUserLocation: () => apiRequest('/me/location'),
   getVisitorGeo: () => apiRequest('/visitor-geo'),
   getGoogleConfig: () => apiRequest('/google-auth/config'),
   startGoogleAuth: (mode = 'login') => apiRequest('/google-auth/start', { method: 'POST', body: JSON.stringify({ mode }) }),

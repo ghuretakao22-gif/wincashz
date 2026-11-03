@@ -40,6 +40,7 @@ Route::match(['get', 'post'], '/offerwall-postback/{slug}', [AdminController::cl
 
 Route::middleware(['auth:api', 'active'])->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
+    Route::get('/me/location', [AuthController::class, 'location']);
     Route::post('/refresh', [AuthController::class, 'refresh']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/profile/tabs', [ProfileController::class, 'tabs']);

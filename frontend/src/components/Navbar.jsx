@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Logo from './Logo';
+import CurrentLocationBadge from './CurrentLocationBadge';
 import { 
   Coins, 
   Wallet, 
@@ -94,9 +95,12 @@ export default function Navbar() {
           </div>
 
           {/* Right Section */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             {isAuthenticated ? (
               <>
+                {/* Current Location Badge */}
+                <CurrentLocationBadge />
+
                 {/* Balance Display Pill */}
                 <div className="flex items-center bg-background-surface/90 border border-brand-500/20 rounded-full px-3 py-1.5 shadow-inner">
                   <div className="flex items-center gap-1.5 mr-2">
@@ -223,6 +227,16 @@ export default function Navbar() {
                     </div>
                   )}
                 </div>
+
+                {/* Desktop Sign Out Shortcut Button */}
+                <button
+                  onClick={handleLogout}
+                  className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 border border-rose-500/20 text-xs font-semibold transition-all active:scale-95 cursor-pointer shrink-0"
+                  title="Sign Out"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Sign Out</span>
+                </button>
               </>
             ) : (
               <div className="flex items-center gap-3">

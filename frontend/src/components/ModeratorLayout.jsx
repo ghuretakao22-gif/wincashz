@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate, Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Logo from './Logo';
+import CurrentLocationBadge from './CurrentLocationBadge';
 import { 
   LayoutDashboard, 
   CheckCircle2, 
@@ -152,8 +153,11 @@ export default function ModeratorLayout() {
           </Link>
         </div>
 
-        {/* Center / Right: My ID Badge, Friendly Name, Settings, Logout */}
-        <div className="flex items-center gap-2.5 sm:gap-3">
+        {/* Center / Right: Location Badge, My ID Badge, Friendly Name, Settings, Logout */}
+        <div className="flex items-center gap-2 sm:gap-2.5">
+          {/* Current Location Badge */}
+          <CurrentLocationBadge />
+
           {/* My ID Badge & Friendly Name */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.04] border border-white/10 text-xs">
             <div className="flex items-center gap-1.5">

@@ -9,6 +9,7 @@ use App\Models\MyId;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Models\UserNotification;
+use App\Services\GeoLocationService;
 use App\Services\IpCountryResolver;
 use App\Services\MyIdEarningService;
 use Illuminate\Http\JsonResponse;
@@ -358,6 +359,18 @@ class AuthController extends Controller
         return response()->json([
             'user' => $this->attachEarningsSummary($request->user('api'), $request),
         ]);
+    }
+
+    public function location(Request $request, GeoLocationService $geoService): JsonResponse
+    {
+        if ($response = $this->rejectBannedUser($request->user('api'))) {
+            return $response;
+        }
+
+        $ip = (string) $request->ip();
+        $location = $geoService->resolve($ip);
+
+        return response()->json($location);
     }
 
     public function refresh(Request $request): JsonResponse
