@@ -26,6 +26,8 @@ export default function ModeratorCompletedOffersPage() {
   // Filters
   const initialUserId = searchParams.get('user_id') || '';
   const [period, setPeriod] = useState('this_month'); // 'today' | 'this_month' | 'all'
+  const [date, setDate] = useState('');
+  const [month, setMonth] = useState('');
   const [provider, setProvider] = useState('');
   const [search, setSearch] = useState('');
   const [userIdFilter, setUserIdFilter] = useState(initialUserId);
@@ -72,10 +74,16 @@ export default function ModeratorCompletedOffersPage() {
     setError(null);
     try {
       const params = {
-        period,
         page: currentPage,
         per_page: perPage,
       };
+      if (date) {
+        params.date = date;
+      } else if (month) {
+        params.month = month;
+      } else {
+        params.period = period;
+      }
       if (provider) params.provider = provider;
       if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
       if (userIdFilter.trim()) params.user_id = userIdFilter.trim();
@@ -101,18 +109,41 @@ export default function ModeratorCompletedOffersPage() {
     } finally {
       setLoading(false);
     }
-  }, [period, provider, debouncedSearch, userIdFilter, currentPage, perPage]);
+  }, [date, month, period, provider, debouncedSearch, userIdFilter, currentPage, perPage]);
 
   useEffect(() => {
     fetchOffers();
   }, [fetchOffers]);
 
   const handlePeriodChange = (newPeriod) => {
+    setDate('');
+    setMonth('');
     setPeriod(newPeriod);
     setCurrentPage(1);
   };
 
+  const handleDateChange = (newDate) => {
+    setDate(newDate);
+    setMonth('');
+    setCurrentPage(1);
+  };
+
+  const handleMonthChange = (newMonth) => {
+    setMonth(newMonth);
+    setDate('');
+    setCurrentPage(1);
+  };
+
+  const handleClearDateFilters = () => {
+    setDate('');
+    setMonth('');
+    setPeriod('this_month');
+    setCurrentPage(1);
+  };
+
   const handleClearFilters = () => {
+    setDate('');
+    setMonth('');
     setPeriod('this_month');
     setProvider('');
     setSearch('');
@@ -124,7 +155,14 @@ export default function ModeratorCompletedOffersPage() {
   // Export Handler (Server-side XLSX with client fallback)
   const handleExport = async (format = 'xlsx') => {
     try {
-      const params = { period };
+      const params = {};
+      if (date) {
+        params.date = date;
+      } else if (month) {
+        params.month = month;
+      } else {
+        params.period = period;
+      }
       if (provider) params.provider = provider;
       if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
       if (userIdFilter.trim()) params.user_id = userIdFilter.trim();
@@ -295,38 +333,75 @@ export default function ModeratorCompletedOffersPage() {
       {/* Filter & Search Bar */}
       <div className="p-4 rounded-2xl bg-[#0c1015]/90 border border-white/5 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Quick Period Buttons */}
-          <div className="inline-flex rounded-xl bg-white/[0.04] p-1 border border-white/10">
-            <button
-              onClick={() => handlePeriodChange('today')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                period === 'today'
-                  ? 'bg-brand-500 text-slate-950 shadow-glow-emerald'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Today
-            </button>
-            <button
-              onClick={() => handlePeriodChange('this_month')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                period === 'this_month'
-                  ? 'bg-brand-500 text-slate-950 shadow-glow-emerald'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              This Month
-            </button>
-            <button
-              onClick={() => handlePeriodChange('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                period === 'all'
-                  ? 'bg-brand-500 text-slate-950 shadow-glow-emerald'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              All Time
-            </button>
+          {/* Quick Period Buttons & Calendar Date/Month Pickers */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="inline-flex rounded-xl bg-white/[0.04] p-1 border border-white/10">
+              <button
+                onClick={() => handlePeriodChange('today')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  !date && !month && period === 'today'
+                    ? 'bg-brand-500 text-slate-950 shadow-glow-emerald'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Today
+              </button>
+              <button
+                onClick={() => handlePeriodChange('this_month')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  !date && !month && period === 'this_month'
+                    ? 'bg-brand-500 text-slate-950 shadow-glow-emerald'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                This Month
+              </button>
+              <button
+                onClick={() => handlePeriodChange('all')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  !date && !month && period === 'all'
+                    ? 'bg-brand-500 text-slate-950 shadow-glow-emerald'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                All Time
+              </button>
+            </div>
+
+            {/* Date (UTC) Picker */}
+            <div className="flex items-center gap-1.5 bg-white/[0.03] border border-white/10 rounded-xl px-2.5 py-1 text-xs">
+              <Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Date (UTC):</span>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => handleDateChange(e.target.value)}
+                className="bg-transparent text-white text-xs focus:outline-none cursor-pointer [color-scheme:dark]"
+              />
+            </div>
+
+            {/* Month (UTC) Picker */}
+            <div className="flex items-center gap-1.5 bg-white/[0.03] border border-white/10 rounded-xl px-2.5 py-1 text-xs">
+              <Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Month (UTC):</span>
+              <input
+                type="month"
+                value={month}
+                onChange={(e) => handleMonthChange(e.target.value)}
+                className="bg-transparent text-white text-xs focus:outline-none cursor-pointer [color-scheme:dark]"
+              />
+            </div>
+
+            {(date || month) && (
+              <button
+                onClick={handleClearDateFilters}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold transition-all cursor-pointer"
+                title="Clear date/month filters"
+              >
+                <X className="w-3 h-3 text-rose-400" />
+                <span>Clear</span>
+              </button>
+            )}
           </div>
 
           {/* Active user_id filter pill */}
@@ -436,12 +511,13 @@ export default function ModeratorCompletedOffersPage() {
         </div>
       )}
 
-      {/* Main Paginated Table: 9 Columns */}
+      {/* Main Paginated Table: 10 Columns */}
       <div className="bg-[#0c1015]/90 border border-white/5 rounded-3xl overflow-hidden shadow-xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-white/5 bg-white/[0.02] text-slate-400 uppercase text-[10px] font-bold tracking-wider">
+                <th className="py-3.5 px-4 text-center w-12">S.L</th>
                 <th className="py-3.5 px-4">Date/Time (UTC)</th>
                 <th className="py-3.5 px-4">User ID</th>
                 <th className="py-3.5 px-4">Username</th>
@@ -456,20 +532,23 @@ export default function ModeratorCompletedOffersPage() {
             <tbody className="divide-y divide-white/5 font-medium">
               {loading && data.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="py-12 text-center text-slate-500">
+                  <td colSpan="10" className="py-12 text-center text-slate-500">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-brand-400" />
                     Loading completed offers...
                   </td>
                 </tr>
               ) : data.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="py-12 text-center text-slate-500">
+                  <td colSpan="10" className="py-12 text-center text-slate-500">
                     No completed offers found matching your filters.
                   </td>
                 </tr>
               ) : (
-                data.map((row) => (
+                data.map((row, idx) => (
                   <tr key={row.id} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="py-3 px-4 font-mono text-slate-400 whitespace-nowrap text-[11px] text-center">
+                      {(pagination.from || 1) + idx}
+                    </td>
                     <td className="py-3 px-4 font-mono text-slate-300 whitespace-nowrap text-[11px]">
                       {row.completed_at || '—'}
                     </td>

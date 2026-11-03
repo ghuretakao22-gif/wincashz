@@ -117,7 +117,23 @@ class ModeratorController extends Controller
         $search = trim((string) $request->input('search', ''));
         $date = trim((string) ($request->input('date', $request->input('from_date', ''))));
         $month = trim((string) $request->input('month', ''));
-        $isSpecificSingleDate = ($date !== '' && strtolower($date) !== 'all');
+        $isValidDate = ($date !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date));
+        $isValidMonth = ($month !== '' && preg_match('/^\d{4}-\d{2}$/', $month));
+        $isSpecificSingleDate = $isValidDate;
+
+        $startStr = null;
+        $endStr = null;
+        if ($isValidDate) {
+            $dateStart = Carbon::createFromFormat('Y-m-d', $date, 'UTC')->startOfDay();
+            $dateEnd = (clone $dateStart)->addDay();
+            $startStr = $dateStart->toDateTimeString();
+            $endStr = $dateEnd->toDateTimeString();
+        } elseif ($isValidMonth) {
+            $dateStart = Carbon::createFromFormat('Y-m', $month, 'UTC')->startOfMonth();
+            $dateEnd = (clone $dateStart)->addMonth();
+            $startStr = $dateStart->toDateTimeString();
+            $endStr = $dateEnd->toDateTimeString();
+        }
         $hasCompletedTasks = Schema::hasTable('completed_tasks');
 
         // =========================================================================
@@ -167,10 +183,9 @@ class ModeratorController extends Controller
                 });
             }
 
-            if ($isSpecificSingleDate) {
-                $query->whereDate('completed_tasks.created_at', $date);
-            } elseif ($month !== '' && strtolower($month) !== 'all') {
-                $query->where('completed_tasks.created_at', 'like', $month . '%');
+            if ($startStr !== null && $endStr !== null) {
+                $query->where('completed_tasks.created_at', '>=', $startStr)
+                      ->where('completed_tasks.created_at', '<', $endStr);
             }
 
             $query->orderByDesc('completed_tasks.created_at')
@@ -248,22 +263,21 @@ class ModeratorController extends Controller
             });
         }
 
-        if ($hasCompletedTasks) {
-            if ($isSpecificSingleDate) {
-                $query->whereExists(function ($sub) use ($date) {
-                    $sub->select(DB::raw(1))
-                        ->from('completed_tasks')
-                        ->whereColumn('completed_tasks.user_id', 'users.id')
-                        ->whereDate('completed_tasks.created_at', $date);
-                });
-            } elseif ($month !== '' && strtolower($month) !== 'all') {
-                $query->whereExists(function ($sub) use ($month) {
-                    $sub->select(DB::raw(1))
-                        ->from('completed_tasks')
-                        ->whereColumn('completed_tasks.user_id', 'users.id')
-                        ->where('completed_tasks.created_at', 'like', $month . '%');
-                });
-            }
+        if ($startStr !== null && $endStr !== null) {
+            $query->where(function ($q) use ($startStr, $endStr, $hasCompletedTasks) {
+                $q->where('users.created_at', '>=', $startStr)
+                  ->where('users.created_at', '<', $endStr);
+
+                if ($hasCompletedTasks) {
+                    $q->orWhereExists(function ($sub) use ($startStr, $endStr) {
+                        $sub->select(DB::raw(1))
+                            ->from('completed_tasks')
+                            ->whereColumn('completed_tasks.user_id', 'users.id')
+                            ->where('completed_tasks.created_at', '>=', $startStr)
+                            ->where('completed_tasks.created_at', '<', $endStr);
+                    });
+                }
+            });
         }
 
         if ($search !== '') {
@@ -313,10 +327,9 @@ class ModeratorController extends Controller
                 ->orderByDesc('created_at')
                 ->orderByDesc('id');
 
-            if ($isSpecificSingleDate) {
-                $taskQuery->whereDate('created_at', $date);
-            } elseif ($month !== '' && strtolower($month) !== 'all') {
-                $taskQuery->where('created_at', 'like', $month . '%');
+            if ($startStr !== null && $endStr !== null) {
+                $taskQuery->where('created_at', '>=', $startStr)
+                          ->where('created_at', '<', $endStr);
             }
 
             $latestTasks = $taskQuery->get()->groupBy('user_id')->map(fn ($group) => $group->first());

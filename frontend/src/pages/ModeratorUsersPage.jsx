@@ -23,6 +23,8 @@ export default function ModeratorUsersPage() {
   // Search & Pagination
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [date, setDate] = useState('');
+  const [month, setMonth] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [perPage, setPerPage] = useState(25);
   const [pagination, setPagination] = useState({
@@ -52,6 +54,11 @@ export default function ModeratorUsersPage() {
         per_page: perPage,
         view: 'all',
       };
+      if (date) {
+        params.date = date;
+      } else if (month) {
+        params.month = month;
+      }
       if (debouncedSearch.trim()) {
         params.search = debouncedSearch.trim();
       }
@@ -72,11 +79,29 @@ export default function ModeratorUsersPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, perPage, debouncedSearch]);
+  }, [currentPage, perPage, debouncedSearch, date, month]);
 
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
+
+  const handleDateChange = (newDate) => {
+    setDate(newDate);
+    setMonth('');
+    setCurrentPage(1);
+  };
+
+  const handleMonthChange = (newMonth) => {
+    setMonth(newMonth);
+    setDate('');
+    setCurrentPage(1);
+  };
+
+  const handleClearDateFilters = () => {
+    setDate('');
+    setMonth('');
+    setCurrentPage(1);
+  };
 
   return (
     <div className="space-y-6">
@@ -109,27 +134,65 @@ export default function ModeratorUsersPage() {
       </div>
 
       {/* Search & Filter Toolbar */}
-      <div className="p-4 rounded-2xl bg-[#0c1015]/90 border border-white/5 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Search by User ID or username..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="w-full bg-white/[0.03] border border-white/10 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
-          />
-          {searchInput && (
+      <div className="p-4 rounded-2xl bg-[#0c1015]/90 border border-white/5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Search Input */}
+          <div className="relative w-full sm:w-72">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search by User ID or username..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-full bg-white/[0.03] border border-white/10 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
+            />
+            {searchInput && (
+              <button
+                onClick={() => setSearchInput('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Date (UTC) Picker */}
+          <div className="flex items-center gap-1.5 bg-white/[0.03] border border-white/10 rounded-xl px-2.5 py-1 text-xs">
+            <Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Date (UTC):</span>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => handleDateChange(e.target.value)}
+              className="bg-transparent text-white text-xs focus:outline-none cursor-pointer [color-scheme:dark]"
+            />
+          </div>
+
+          {/* Month (UTC) Picker */}
+          <div className="flex items-center gap-1.5 bg-white/[0.03] border border-white/10 rounded-xl px-2.5 py-1 text-xs">
+            <Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Month (UTC):</span>
+            <input
+              type="month"
+              value={month}
+              onChange={(e) => handleMonthChange(e.target.value)}
+              className="bg-transparent text-white text-xs focus:outline-none cursor-pointer [color-scheme:dark]"
+            />
+          </div>
+
+          {(date || month) && (
             <button
-              onClick={() => setSearchInput('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+              onClick={handleClearDateFilters}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold transition-all cursor-pointer"
+              title="Clear date/month filters"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-3 h-3 text-rose-400" />
+              <span>Clear</span>
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-2 self-end sm:self-auto text-xs text-slate-400">
+        <div className="flex items-center gap-2 self-end md:self-auto text-xs text-slate-400">
           <span>Rows:</span>
           <select
             value={perPage}

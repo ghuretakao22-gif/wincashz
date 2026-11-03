@@ -73,7 +73,7 @@ class ModeratorCompletedOffersController extends Controller
         $query = $this->moderatorCompletedOffersBaseQuery($request, $myIdCode);
 
         // Compute summary for the filtered result set
-        $summaryRow = (clone $query)->selectRaw('
+        $summaryRow = (clone $query)->reorder()->selectRaw('
             COUNT(*) as total_offers,
             COALESCE(SUM(my_id_earnings.payout_usd), 0) as total_usd,
             COALESCE(SUM(my_id_earnings.payout_bdt), 0) as total_bdt
@@ -210,40 +210,76 @@ class ModeratorCompletedOffersController extends Controller
 
         $query->where('my_id_earnings.my_id_code', $myIdCode);
 
-        // Date / Period filter
-        if ($date !== '' && strtolower($date) !== 'all') {
-            $query->where(function ($q) use ($date) {
-                $q->where('my_id_earnings.completed_at', 'like', $date . '%')
-                  ->orWhere(function ($q2) use ($date) {
-                      $q2->whereNull('my_id_earnings.completed_at')
-                         ->where('my_id_earnings.created_at', 'like', $date . '%');
-                  });
+        // Date / Month / Period filter (UTC, half-open ranges [start, end))
+        // Precedence: valid date wins over month and period; valid month wins over period
+        $isValidDate = ($date !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date));
+        $isValidMonth = ($month !== '' && preg_match('/^\d{4}-\d{2}$/', $month));
+
+        if ($isValidDate) {
+            $start = Carbon::createFromFormat('Y-m-d', $date, 'UTC')->startOfDay();
+            $end = (clone $start)->addDay();
+            $startStr = $start->toDateTimeString();
+            $endStr = $end->toDateTimeString();
+
+            $query->where(function ($q) use ($startStr, $endStr) {
+                $q->where(function ($sub) use ($startStr, $endStr) {
+                    $sub->where('my_id_earnings.completed_at', '>=', $startStr)
+                        ->where('my_id_earnings.completed_at', '<', $endStr);
+                })->orWhere(function ($q2) use ($startStr, $endStr) {
+                    $q2->whereNull('my_id_earnings.completed_at')
+                       ->where('my_id_earnings.created_at', '>=', $startStr)
+                       ->where('my_id_earnings.created_at', '<', $endStr);
+                });
+            });
+        } elseif ($isValidMonth) {
+            $start = Carbon::createFromFormat('Y-m', $month, 'UTC')->startOfMonth();
+            $end = (clone $start)->addMonth();
+            $startStr = $start->toDateTimeString();
+            $endStr = $end->toDateTimeString();
+
+            $query->where(function ($q) use ($startStr, $endStr) {
+                $q->where(function ($sub) use ($startStr, $endStr) {
+                    $sub->where('my_id_earnings.completed_at', '>=', $startStr)
+                        ->where('my_id_earnings.completed_at', '<', $endStr);
+                })->orWhere(function ($q2) use ($startStr, $endStr) {
+                    $q2->whereNull('my_id_earnings.completed_at')
+                       ->where('my_id_earnings.created_at', '>=', $startStr)
+                       ->where('my_id_earnings.created_at', '<', $endStr);
+                });
             });
         } elseif ($period === 'today') {
-            $query->where(function ($q) use ($todayDate) {
-                $q->where('my_id_earnings.completed_at', 'like', $todayDate . '%')
-                  ->orWhere(function ($q2) use ($todayDate) {
-                      $q2->whereNull('my_id_earnings.completed_at')
-                         ->where('my_id_earnings.created_at', 'like', $todayDate . '%');
-                  });
+            $start = Carbon::now('UTC')->startOfDay();
+            $end = (clone $start)->addDay();
+            $startStr = $start->toDateTimeString();
+            $endStr = $end->toDateTimeString();
+
+            $query->where(function ($q) use ($startStr, $endStr) {
+                $q->where(function ($sub) use ($startStr, $endStr) {
+                    $sub->where('my_id_earnings.completed_at', '>=', $startStr)
+                        ->where('my_id_earnings.completed_at', '<', $endStr);
+                })->orWhere(function ($q2) use ($startStr, $endStr) {
+                    $q2->whereNull('my_id_earnings.completed_at')
+                       ->where('my_id_earnings.created_at', '>=', $startStr)
+                       ->where('my_id_earnings.created_at', '<', $endStr);
+                });
             });
         } elseif ($period === 'all') {
             // No date filter
-        } elseif ($month !== '' && strtolower($month) !== 'all') {
-            $query->where(function ($q) use ($month) {
-                $q->where('my_id_earnings.completed_at', 'like', $month . '%')
-                  ->orWhere(function ($q2) use ($month) {
-                      $q2->whereNull('my_id_earnings.completed_at')
-                         ->where('my_id_earnings.created_at', 'like', $month . '%');
-                  });
-            });
         } elseif ($period === 'this_month') {
-            $query->where(function ($q) use ($currentMonth) {
-                $q->where('my_id_earnings.completed_at', 'like', $currentMonth . '%')
-                  ->orWhere(function ($q2) use ($currentMonth) {
-                      $q2->whereNull('my_id_earnings.completed_at')
-                         ->where('my_id_earnings.created_at', 'like', $currentMonth . '%');
-                  });
+            $start = Carbon::now('UTC')->startOfMonth();
+            $end = (clone $start)->addMonth();
+            $startStr = $start->toDateTimeString();
+            $endStr = $end->toDateTimeString();
+
+            $query->where(function ($q) use ($startStr, $endStr) {
+                $q->where(function ($sub) use ($startStr, $endStr) {
+                    $sub->where('my_id_earnings.completed_at', '>=', $startStr)
+                        ->where('my_id_earnings.completed_at', '<', $endStr);
+                })->orWhere(function ($q2) use ($startStr, $endStr) {
+                    $q2->whereNull('my_id_earnings.completed_at')
+                       ->where('my_id_earnings.created_at', '>=', $startStr)
+                       ->where('my_id_earnings.created_at', '<', $endStr);
+                });
             });
         }
 

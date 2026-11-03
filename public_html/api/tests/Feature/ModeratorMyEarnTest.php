@@ -325,7 +325,9 @@ class ModeratorMyEarnTest extends TestCase
 
     public function test_monthly_filtering_and_months_list_generation(): void
     {
-        MyId::create(['my_id_code' => '1001', 'is_active' => true]);
+        Carbon::setTestNow('2026-10-15 12:00:00');
+        try {
+            MyId::create(['my_id_code' => '1001', 'is_active' => true]);
         $mod = $this->createModerator('mod_months', '1001');
 
         $worker = User::create([
@@ -386,6 +388,9 @@ class ModeratorMyEarnTest extends TestCase
         $this->assertEquals(0.40, $resSep->json('data.summary.total_usd'));
         $this->assertEquals(48.00, $resSep->json('data.summary.total_bdt'));
         $resSep->assertJsonPath('data.items.0.offer', 'September Offer');
+        } finally {
+            Carbon::setTestNow();
+        }
     }
 
     public function test_sorting_by_provider_then_offer_then_coins(): void
