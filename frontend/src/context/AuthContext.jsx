@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { api, getStoredToken, setStoredToken } from '../services/api';
+import { clearLocationCache } from '../components/CurrentLocationBadge';
 
 const AuthContext = createContext(null);
 
@@ -84,6 +85,7 @@ export function AuthProvider({ children }) {
     } finally {
       setStoredToken(null);
       setUser(null);
+      clearLocationCache();
       try {
         sessionStorage.removeItem('wincashz_pin_verified');
       } catch (e) {}

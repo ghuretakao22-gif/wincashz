@@ -2,12 +2,13 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 class GeoLocationService
 {
     /**
-     * Resolve IP address to location data: ip, country, country_code, flag, city, region.
+     * Resolve IP address to approximate location data: ip, country, country_code, flag, city, region.
      * Caches successful lookups for 1 hour (3600s).
      * Private IPs return "Local" without external HTTP calls.
      * Any failure safely returns "Unknown" fallback, never throws.
@@ -27,54 +28,57 @@ class GeoLocationService
                 'flag' => '🏳️',
                 'city' => 'Local',
                 'region' => 'Local',
+                'approximate' => true,
             ];
         }
+
+        $cacheKey = "geo:{$ip}";
 
         try {
-            return cache()->remember("geo:{$ip}", 3600, function () use ($ip) {
-                try {
-                    $response = Http::timeout(3)->get("https://ipwho.is/{$ip}");
-                    if ($response->successful()) {
-                        $data = $response->json();
-                        if (is_array($data) && ($data['success'] ?? true)) {
-                            $countryCode = strtoupper(trim((string) ($data['country_code'] ?? $data['countryCode'] ?? '')));
-                            $country = trim((string) ($data['country'] ?? ''));
-                            $city = trim((string) ($data['city'] ?? ''));
-                            $region = trim((string) ($data['region'] ?? ''));
+            $cached = Cache::get($cacheKey);
+            if (is_array($cached) && !empty($cached['country']) && $cached['country'] !== 'Unknown') {
+                return $cached;
+            }
 
-                            return [
-                                'ip' => $ip,
-                                'country' => $country !== '' ? $country : 'Unknown',
-                                'country_code' => $countryCode !== '' ? $countryCode : '--',
-                                'flag' => $this->countryCodeToFlag($countryCode),
-                                'city' => $city,
-                                'region' => $region,
-                            ];
-                        }
+            $response = Http::timeout(2.5)->get("https://ipwho.is/{$ip}");
+            if ($response->successful()) {
+                $data = $response->json();
+                if (is_array($data) && ($data['success'] ?? true)) {
+                    $countryCode = strtoupper(trim((string) ($data['country_code'] ?? $data['countryCode'] ?? '')));
+                    $country = trim((string) ($data['country'] ?? ''));
+                    $city = trim((string) ($data['city'] ?? ''));
+                    $region = trim((string) ($data['region'] ?? ''));
+
+                    $result = [
+                        'ip' => $ip,
+                        'country' => $country !== '' ? $country : 'Unknown',
+                        'country_code' => $countryCode !== '' ? $countryCode : '--',
+                        'flag' => $this->countryCodeToFlag($countryCode),
+                        'city' => $city,
+                        'region' => $region,
+                        'approximate' => true,
+                    ];
+
+                    if ($country !== '' && $country !== 'Unknown') {
+                        Cache::put($cacheKey, $result, 3600);
                     }
-                } catch (\Throwable $e) {
-                    // Fall through to unknown fallback
-                }
 
-                return [
-                    'ip' => $ip,
-                    'country' => 'Unknown',
-                    'country_code' => '--',
-                    'flag' => '🌐',
-                    'city' => '',
-                    'region' => '',
-                ];
-            });
+                    return $result;
+                }
+            }
         } catch (\Throwable $e) {
-            return [
-                'ip' => $ip,
-                'country' => 'Unknown',
-                'country_code' => '--',
-                'flag' => '🌐',
-                'city' => '',
-                'region' => '',
-            ];
+            // Fall through to unknown fallback safely
         }
+
+        return [
+            'ip' => $ip,
+            'country' => 'Unknown',
+            'country_code' => '--',
+            'flag' => '🌐',
+            'city' => '',
+            'region' => '',
+            'approximate' => true,
+        ];
     }
 
     /**

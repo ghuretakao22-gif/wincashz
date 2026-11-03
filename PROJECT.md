@@ -199,3 +199,57 @@ All recommendations are documented for future implementation planning only; no f
 - **Live Production Database**: The audit was conducted using the local testing database (SQLite in-memory with migrations) and the code repository. Real production MySQL data volumes and live server network latency were not directly tested.
 - **External Third-Party APIs**: Third-party offerwall networks, Google OAuth endpoints, and paid geolocation APIs were evaluated from code inspection and mocked unit tests, not live network calls.
 - **Web Server Configuration**: Host-level configurations (Nginx/Apache vhost files, Cloudflare WAF rules, and cPanel settings outside the Git repository) were not directly inspectable.
+
+---
+
+## 8. Website Connectivity Diagnosis (ERR_TIMED_OUT) & Redesigned Header Location Widget
+
+### 1. Verified Connectivity Diagnostics (wincashz.com)
+- **DNS Resolution**: `wincashz.com` resolves directly to A-record IP `69.57.162.203` (TTL 14400, Namecheap shared/VPS host). `www.wincashz.com` is a CNAME pointing to `wincashz.com`. No IPv6 (AAAA) record exists.
+- **Port 80 (HTTP)**: TCP connection succeeds immediately; returns HTTP `301 Moved Permanently` redirecting to `https://wincashz.com/`.
+- **Port 443 (HTTPS)**: TLS handshake succeeds cleanly; Sectigo DV SSL certificate is active and valid (validity: 2025-12-18 through 2026-12-19).
+- **Web Server & Application Status**: The production LiteSpeed web server serves the static SPA (`index.html` and assets in `/assets/`) with HTTP 200 OK. Public API endpoints (e.g. `/api/site-pin/status`) return HTTP 200 `{"has_pin":false}`.
+- **Root Cause of `ERR_TIMED_OUT` on User's Browser / Proxy Profile**:
+  - The connection fails at the network transport level before reaching the application layer or web server. TCP SYN packets from the proxy's egress IP are dropped without receiving a SYN-ACK, causing the browser to timeout with `ERR_TIMED_OUT`.
+  - This symptom is characteristic of hosting-level security firewalls (ConfigServer Security & Firewall / CSF, cPHulk brute force protection, or Imunify360 on Namecheap server `69.57.162.203`) dropping traffic from datacenter/commercial proxy IP ranges or subnets flagged for automated activity.
+  - Alternatively, the user's local browser proxy profile may be pointing to an offline, dead, or misconfigured upstream proxy server node.
+- **Required Operator / Hosting Actions**:
+  1. **Whitelist Proxy IP in Hosting Firewall**: In cPanel / WHM (or via hosting support ticket), inspect CSF / Imunify360 / cPHulk blocks for the specific egress IP of the user's proxy profile and whitelist it.
+  2. **Verify Upstream Proxy Node**: Test whether the proxy server node itself is responding by connecting to other HTTPS targets through the same profile.
+  3. **Cloudflare / CDN WAF Rules**: If a CDN or reverse proxy is placed in front of the origin, ensure that management/development proxy IP ranges are exempted from managed challenge / block rules.
+
+### 2. Implemented Application Improvements & Location Widget Redesign
+
+#### A. Backend Geolocation & Security Hardening
+- **Timeout Reduction**: Reduced HTTP client timeout in `GeoLocationService` from 3.0s to 2.5s to prevent long hanging requests on degraded third-party API performance.
+- **Selective Caching**: Caching (`Cache::put("geo:{$ip}", $result, 3600)`) is now restricted to successful, verified location results. Failed lookups or transient network errors are no longer cached for 1 hour, allowing subsequent retries to succeed once connectivity is restored.
+- **Response Headers**: Added strict `Cache-Control: private, no-cache, no-store, must-revalidate` and `Vary: Authorization` headers on `GET /api/me/location` to ensure CDN or reverse proxy caches never leak one user's location/IP to another.
+- **Removed Query IP Spoofing**: In `AuthController::visitorGeo()`, removed the client-supplied `?ip=` query override (mitigating SEC-05), resolving client IP strictly from connection and trusted headers.
+- **Approximate Flag**: Added `'approximate' => true` to all location responses to accurately convey that location is IP-derived and does not access hardware GPS.
+
+#### B. Redesigned User Header Location Widget
+- **Compact 2-Level Trigger (`variant="user-header"`)**:
+  - Replaced the large horizontal banner (`Flag Country · City · [bright green mono IP box]`) in `Navbar.jsx` with a compact, polished 2-level widget.
+  - Small uppercase label on top: `Current location` (`text-[9px] font-semibold tracking-wider text-slate-400`).
+  - Truncated primary text below: `City, Country` (e.g., `Dhaka, Bangladesh`) with width bounding (`max-w-[100px] sm:max-w-[140px] md:max-w-[170px]`) to prevent layout shifts or navbar wrapping.
+  - Left indicator: Rounded icon box with country flag emoji or fallback pin icon.
+  - Right indicator: Subtle chevron indicating clickable detail popover.
+- **Accessible Detail Popover**:
+  - Displays on click with backdrop blur, dark card styling, and subtle borders matching the SaaS theme.
+  - Header: Connection Location title and accessible close button (`X`).
+  - Country row: Flag emoji, full country name, and ISO-2 country code badge.
+  - City / Region row: Displays detected city and region when available.
+  - Public IP row: Monospace IP address box with a "Copy IP" action button (with "Copied!" confirmation feedback and clipboard fallback).
+  - Truthful Disclaimer: Notice stating `"Approximate IP-based location. Physical GPS is not accessed."`
+  - Accessibility: Full keyboard support (Escape key closes popover, click-outside closes popover, proper ARIA `dialog` attributes).
+- **Non-Blocking & Stale-Data Management**:
+  - In-memory session caching and in-flight promise deduplication ensure zero redundant network requests on route changes.
+  - Dedicated `clearLocationCache()` exported and triggered on logout (`AuthContext::logout()`) so location data is instantly wiped when a session ends.
+  - Calm fallback (`Location Unavailable`) renders cleanly without layout disruption or uncaught errors if third-party lookup fails.
+  - Opt-in `variant="user-header"`: Admin layout (`AdminLayout.jsx`) and Moderator layout (`ModeratorLayout.jsx`) omit the variant prop and retain their existing layouts 100% untouched.
+
+### 3. Verification & Test Outcomes
+- **PHPUnit Feature Tests**: `cd public_html/api; php artisan test --filter=UserLocationTest` -> **6/6 passed**, 31 assertions.
+- **Full Backend Test Suite**: `php artisan test` -> **190/190 passed**, 1,463 assertions, 0 failures.
+- **Frontend Production Build**: `npm --prefix frontend run build` -> **1,948 modules transformed cleanly** in 6.78s; Vite bundle compiled into `public_html/assets/` and `public_html/index.html`.
+- **Admin / Moderator Regressions**: Verified that `AdminLayout.jsx` and `ModeratorLayout.jsx` continue to render the default badge layout without any changes.

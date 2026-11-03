@@ -77,6 +77,7 @@ class UserLocationTest extends TestCase
             ->getJson('/api/me/location');
 
         $response->assertStatus(200)
+            ->assertHeader('Cache-Control')
             ->assertJson([
                 'ip' => '127.0.0.1',
                 'country' => 'Local',
@@ -84,7 +85,10 @@ class UserLocationTest extends TestCase
                 'flag' => '🏳️',
                 'city' => 'Local',
                 'region' => 'Local',
+                'approximate' => true,
             ]);
+
+        $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control') ?? '');
 
         Http::assertNothingSent();
 
@@ -128,6 +132,7 @@ class UserLocationTest extends TestCase
                 'flag' => '🇧🇩',
                 'city' => 'Dhaka',
                 'region' => 'Dhaka Division',
+                'approximate' => true,
             ]);
 
         Http::assertSentCount(1);
@@ -166,6 +171,7 @@ class UserLocationTest extends TestCase
                 'flag' => '🌐',
                 'city' => '',
                 'region' => '',
+                'approximate' => true,
             ]);
     }
 

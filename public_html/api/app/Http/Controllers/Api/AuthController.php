@@ -337,8 +337,7 @@ class AuthController extends Controller
 
     public function visitorGeo(Request $request): JsonResponse
     {
-        $requestedIp = trim((string) $request->query('ip', ''));
-        $ip = $requestedIp !== '' ? $requestedIp : $this->resolveVisitorIp($request);
+        $ip = $this->resolveVisitorIp($request);
         $country = $this->resolveVisitorCountry($request, $ip);
 
         return response()->json([
@@ -347,7 +346,9 @@ class AuthController extends Controller
             'country' => $country,
             'city' => '',
             'location' => '',
-        ]);
+        ])
+            ->header('Cache-Control', 'private, no-cache, no-store, must-revalidate')
+            ->header('Pragma', 'no-cache');
     }
 
     public function me(Request $request): JsonResponse
@@ -370,7 +371,10 @@ class AuthController extends Controller
         $ip = (string) $request->ip();
         $location = $geoService->resolve($ip);
 
-        return response()->json($location);
+        return response()->json($location)
+            ->header('Cache-Control', 'private, no-cache, no-store, must-revalidate')
+            ->header('Pragma', 'no-cache')
+            ->header('Vary', 'Authorization');
     }
 
     public function refresh(Request $request): JsonResponse
