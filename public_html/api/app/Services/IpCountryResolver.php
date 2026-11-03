@@ -60,35 +60,6 @@ class IpCountryResolver
 
     public function resolveClientIp(Request $request): ?string
     {
-        $forwardedFor = trim((string) $request->header('X-Forwarded-For', ''));
-        if ($forwardedFor !== '') {
-            $fallback = null;
-
-            foreach (explode(',', $forwardedFor) as $candidate) {
-                $value = $this->normalizeIp($candidate);
-                if ($value === null) {
-                    continue;
-                }
-
-                if ($this->isPublicIp($value)) {
-                    return $value;
-                }
-
-                $fallback ??= $value;
-            }
-
-            if ($fallback !== null) {
-                return $fallback;
-            }
-        }
-
-        foreach (['X-Client-IP', 'CF-Connecting-IP', 'True-Client-IP', 'X-Real-IP'] as $header) {
-            $value = $this->normalizeIp($request->header($header));
-            if ($value !== null) {
-                return $value;
-            }
-        }
-
         return $this->normalizeIp($request->ip());
     }
 

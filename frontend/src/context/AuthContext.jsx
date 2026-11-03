@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { api, getStoredToken, setStoredToken } from '../services/api';
-import { clearLocationCache } from '../components/CurrentLocationBadge';
+import { clearLocationCache, invalidateLocationSession } from '../components/CurrentLocationBadge';
 
 const AuthContext = createContext(null);
 
@@ -43,6 +43,7 @@ export function AuthProvider({ children }) {
     try {
       const data = await api.login(credentials);
       if (data.token || data.access_token) {
+        invalidateLocationSession();
         setStoredToken(data.token || data.access_token, true);
         const userData = data.user || null;
         setUser(userData);
@@ -63,6 +64,7 @@ export function AuthProvider({ children }) {
     try {
       const data = await api.register(credentials);
       if (data.token || data.access_token) {
+        invalidateLocationSession();
         setStoredToken(data.token || data.access_token, true);
         const userData = data.user || null;
         setUser(userData);
@@ -83,9 +85,9 @@ export function AuthProvider({ children }) {
     try {
       await api.logout().catch(() => {});
     } finally {
+      invalidateLocationSession();
       setStoredToken(null);
       setUser(null);
-      clearLocationCache();
       try {
         sessionStorage.removeItem('wincashz_pin_verified');
       } catch (e) {}

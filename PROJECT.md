@@ -341,3 +341,81 @@ Thank you.
 | **Session-cache isolation** | `clearLocationCache()` is invoked in `AuthContext::logout()`; per-user ID checking (`cachedUserId`) prevents cross-user state persistence. | In-flight promise dispatched before logout can write to cache after logout; no TTL or failure backoff window. | Operator to approve minimal race-condition guard and 15-minute TTL patch in `CurrentLocationBadge.jsx`. |
 | **Admin / Moderator compatibility** | `AdminLayout.jsx` and `ModeratorLayout.jsx` omit the `variant` prop and retain default layout; `ModeratorUsersScopeTest` (7/7) and `ModeratorCompletedOffersStrictSqlTest` (4/4) pass. | None. Shared component maintains complete backward compatibility. | None required. |
 
+---
+
+## 10. Implementation of Targeted Location Fixes, Session Isolation & Canonical IP Resolution
+- **Implementation Date:** 2026-11-03
+- **Lead Full-Stack & Security Engineer**
+- **Authorized Scope:** Canonical client-IP resolution, frontend session-generation cache isolation, bounded TTL and failure backoff, vector icon replacement in `variant="user-header"`, regression testing, and non-blocking authentication verification.
+
+### 1. Exact Fixes Implemented
+
+#### A. Canonical Client-IP Resolution (`IpCountryResolver.php`)
+- **Vulnerability Remediated (SEC-03)**: Removed direct, unconditional parsing of `X-Forwarded-For`, `CF-Connecting-IP`, `X-Real-IP`, and `X-Client-IP` headers.
+- **Canonical Implementation**: `IpCountryResolver::resolveClientIp()` now calls `$this->normalizeIp($request->ip())`, delegating directly to Laravel/Symfony's trusted-proxy framework.
+- **Consistent Application**: All callers across the system—including `visitorGeo()`, `register()`, `syncVisitorGeo()`, and `offerwallPostback()`—now resolve client IPs consistently and securely.
+- **Spoofing Resistance**: Direct untrusted client connections sending forged forwarding headers are safely ignored by Symfony; the direct connecting IP (`REMOTE_ADDR`) is enforced.
+
+#### B. Frontend Session-Generation Cache Isolation (`CurrentLocationBadge.jsx` & `AuthContext.jsx`)
+- **Session-Generation Counter**: Introduced `currentSessionGeneration`, incremented on every session transition via `invalidateLocationSession()`.
+- **Authentication Lifecycle Hook**: In `AuthContext.jsx`, `invalidateLocationSession()` is invoked on `login()`, `register()`, and `logout()`.
+- **Response Guarding**: Every dispatched request captures `targetGeneration`, `targetUserId`, and `thisRequestId`. Any settling promise whose generation or user ID does not match active state is dropped immediately; it cannot repopulate the cache or overwrite UI state.
+- **In-Flight Cancellation**: Integrated `AbortController` cancellation to cancel obsolete requests at the network layer where supported.
+- **Finally Handler Guard**: An older settling request’s `finally` block verifies `activeRequestId === thisRequestId` before clearing in-flight indicators, preventing race conditions with newer requests.
+
+#### C. Bounded Freshness, Failure Backoff, and Revalidation
+- **15-Minute Freshness Window**: `FRESHNESS_TTL_MS = 15 * 60 * 1000`. Valid cached location is served immediately without network calls on route changes or component re-renders.
+- **Exponential Failure Backoff**: Provider failures and "Unknown" responses initiate a bounded backoff (initial: 30s, doubling up to 5m max). Route changes during the backoff window do not trigger repeated network requests.
+- **Auth Error Guard**: HTTP 401/403 responses halt automatic retries until re-authenticated.
+- **Throttled Revalidation**: Window `focus` and `online` events trigger revalidation at most once per 60 seconds, only when cached data has exceeded the 15-minute TTL.
+
+#### D. User-Header Vector Icon Only
+- **SVG MapPin Replacement**: In `variant="user-header"`, replaced native country-flag emojis with the existing SVG `MapPin` icon in both the trigger button and detail popover.
+- **Windows Emoji Consistency**: Resolves the platform issue on Windows Chrome/Edge where Segoe UI Emoji renders two-letter text codes ("BD", "US") instead of graphical flags.
+- **Responsive Layout Protection**: Bounded main text width (`max-w-[100px] sm:max-w-[140px] md:max-w-[170px]`) and applied `break-all` to monospace IP containers to prevent layout overflow with IPv6 addresses.
+- **Keyboard & Focus Handling**: Escape key and click-outside close the popover and restore focus to the trigger button.
+- **Preserved Default Variant**: The default badge layout used by `AdminLayout.jsx` and `ModeratorLayout.jsx` remains 100% untouched.
+
+---
+
+### 2. Tests Performed and Actual Results
+
+| Test Suite / Tool | Test File / Command | Outcome / Results |
+|---|---|---|
+| **Deterministic Session & Race Tests** | `node frontend/test-location-session.mjs` | **6/6 passed** (14.4ms duration):<br>1. Logout while request pending drops response and leaves cache empty.<br>2. Account A switching to Account B drops A's response without overwriting B.<br>3. Logout and re-login by same account invalidates previous pending response.<br>4. Old request `finally` handler does not clear newer in-flight state.<br>5. Cache freshness TTL (15 min) and request deduplication verified.<br>6. Provider failure, Unknown result, and bounded exponential backoff verified. |
+| **Backend Geolocation Tests** | `php artisan test --filter=UserLocationTest` | **8/8 passed** (38 assertions):<br>Verified cache-control headers, local IP bypass, public IP resolution, failure fallback, spoofed header rejection, and IPv6 handling. |
+| **Registration & Spoofing Tests** | `php artisan test --filter=AuthRegisterGeoTest` | **5/5 passed** (29 assertions):<br>Verified that direct untrusted requests with spoofed `X-Forwarded-For` or `CF-Connecting-IP` headers cannot manipulate user IP. |
+| **Full PHPUnit Test Suite** | `php artisan test` | **191/191 passed** (1,466 assertions, 0 failures). |
+| **Frontend Production Build** | `npm --prefix frontend run build` | **Clean build** in 8.77s; 1,948 modules transformed into `public_html/assets/` and `public_html/index.html`. |
+| **Admin & Moderator Tests** | `ModeratorUsersScopeTest` & `ModeratorCompletedOffersStrictSqlTest` | **11/11 passed** (120 assertions combined); complete backward compatibility maintained. |
+
+---
+
+### 3. Verification of Backend Authentication Non-Blocking Dependency
+
+- **Frontend Lookup**: Confirmed 100% non-blocking. Executed asynchronously inside React `useEffect` after auth; network latency or failures never delay page interactivity.
+- **Backend Trace**: Traced `AuthController::register()` and `login()` execution paths:
+  - `AuthController::register()` calls `$country = $this->resolveVisitorCountry($request)` to populate `$user->country`.
+  - `attachEarningsSummary()` in both `login()` and `register()` calls `$this->syncVisitorGeo($user, $request)` and `$this->resolveVisitorCountry($request)`.
+  - Inside `IpCountryResolver::countryFromIp()`: If the connection does not provide a trusted proxy header (`CF-IPCountry`), the method executes synchronous HTTP requests to `ipapi.co` and `api.country.is` with a 3.0-second timeout each.
+- **Conclusion**: Backend authentication is **not zero-blocking** for direct connections lacking trusted proxy headers.
+- **Smallest Safe Correction (For Future Operator Approval)**:
+  1. Add internal per-IP caching to `IpCountryResolver::countryFromIp()` (`Cache::remember("ip_country:{$ip}", 86400, ...)`), avoiding repeated external queries within the same request lifecycle.
+  2. Alternatively, defer country assignment on registration to a background queued job or fast-timeout fallback.
+  *(Not implemented in this task to avoid unauthorized changes to registration eligibility rules).*
+
+---
+
+### 4. Summary Verdict Table
+
+| Area | Verified Evidence | Remaining Gap | Required Next Action |
+|---|---|---|---|
+| **Client-IP resolution** | Unconditional header parsing removed from `IpCountryResolver`; canonical `$request->ip()` enforced; spoofed headers tested and blocked (8/8 UserLocationTest, 5/5 AuthRegisterGeoTest). | Production server connects directly without trusted reverse proxies documented in `bootstrap/app.php`. | Operator to configure trusted reverse proxy CIDR ranges in `bootstrap/app.php` if/when a CDN or proxy is deployed in front of LiteSpeed. |
+| **Session-cache isolation & races** | Session generation counter, in-flight cancellation, user ID binding, and finally guards implemented; 6/6 deterministic Node.js tests pass. | None. Full race-condition protection verified. | None required. |
+| **Bounded freshness & backoff** | 15-minute TTL, 30s-to-5m exponential failure backoff, 401/403 halt, and throttled focus revalidation verified in code and tests. | None. Request storming eliminated. | None required. |
+| **User-header icon & design** | SVG `MapPin` icon implemented in `variant="user-header"`; monospace IP has `break-all`; ARIA dialog attributes and Esc key trigger refocus implemented. | Appearance assessed via static review and build; browser screenshot capture pending headless tooling. | None required for functionality. |
+| **Non-blocking geolocation** | Frontend is 100% non-blocking. | Backend `register()` and `login()` retain synchronous `IpCountryResolver::countryFromIp()` external calls when Cloudflare headers are absent. | Operator to review and approve proposed caching/deferral patch for `IpCountryResolver`. |
+| **Admin / Moderator compatibility** | Default layout in `CurrentLocationBadge.jsx` is 100% identical; all 11 Moderator scope and SQL tests pass. | None. Complete isolation confirmed. | None required. |
+| **Live connectivity (`ERR_TIMED_OUT`)** | DNS, TLS, and web server operational from standard networks; diagnostic request template provided. | Proxy profile credentials and hosting firewall logs remain outside workspace. | Operator to test proxy profile against independent HTTPS targets and correlate timestamps with hosting logs. |
+
+

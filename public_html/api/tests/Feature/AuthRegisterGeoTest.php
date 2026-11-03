@@ -108,8 +108,8 @@ class AuthRegisterGeoTest extends TestCase
             ], 200),
         ]);
 
-        $response = $this->withHeaders([
-            'X-Forwarded-For' => '8.8.8.8',
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => '8.8.8.8',
         ])->postJson('/api/register', [
             'username' => 'geouser',
             'email' => 'geo@example.com',
@@ -125,6 +125,29 @@ class AuthRegisterGeoTest extends TestCase
         $this->assertSame('8.8.8.8', DB::table('users')->where('email', 'geo@example.com')->value('ip'));
         $this->assertSame('United States', DB::table('users')->where('email', 'geo@example.com')->value('country'));
         $this->assertSame($expectedAvatar, DB::table('users')->where('email', 'geo@example.com')->value('user_avatar'));
+    }
+
+    public function test_direct_request_with_spoofed_forwarding_headers_cannot_spoof_ip(): void
+    {
+        Http::fake();
+
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => '127.0.0.1',
+        ])->withHeaders([
+            'X-Forwarded-For' => '8.8.8.8',
+            'CF-Connecting-IP' => '1.1.1.1',
+            'X-Real-IP' => '2.2.2.2',
+            'X-Client-IP' => '3.3.3.3',
+        ])->postJson('/api/register', [
+            'username' => 'spoofuser',
+            'email' => 'spoof@example.com',
+            'password' => 'Password123!',
+        ]);
+
+        $response->assertCreated();
+        // Canonical $request->ip() safely evaluates REMOTE_ADDR (127.0.0.1) and rejects untrusted forwarded headers
+        $response->assertJsonPath('user.ip', '127.0.0.1');
+        $this->assertSame('127.0.0.1', DB::table('users')->where('email', 'spoof@example.com')->value('ip'));
     }
 
     public function test_me_syncs_visitor_country_and_ip_to_the_user_record(): void
@@ -154,9 +177,10 @@ class AuthRegisterGeoTest extends TestCase
 
         $token = auth('api')->login(\App\Models\User::query()->findOrFail($userId));
 
-        $response = $this->withHeaders([
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => '8.8.8.8',
+        ])->withHeaders([
             'Authorization' => 'Bearer '.$token,
-            'X-Forwarded-For' => '8.8.8.8',
         ])->getJson('/api/me');
 
         $response->assertOk();
@@ -178,8 +202,8 @@ class AuthRegisterGeoTest extends TestCase
             ], 200),
         ]);
 
-        $response = $this->withHeaders([
-            'X-Forwarded-For' => '8.8.8.8',
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => '8.8.8.8',
         ])->getJson('/api/visitor-geo');
 
         $response->assertOk();

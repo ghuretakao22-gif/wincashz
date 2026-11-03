@@ -195,5 +195,65 @@ class UserLocationTest extends TestCase
         $this->assertTrue($service->isPrivateIp('172.16.0.1'));
         $this->assertFalse($service->isPrivateIp('8.8.8.8'));
         $this->assertFalse($service->isPrivateIp('103.100.200.1'));
+        $this->assertFalse($service->isPrivateIp('2606:4700:4700::1111'));
+    }
+
+    public function test_authenticated_user_direct_connection_ignores_spoofed_headers(): void
+    {
+        Http::fake();
+
+        $user = $this->createUser();
+
+        $response = $this->actingAs($user, 'api')
+            ->withServerVariables(['REMOTE_ADDR' => '127.0.0.1'])
+            ->withHeaders([
+                'X-Forwarded-For' => '8.8.8.8, 1.1.1.1',
+                'CF-Connecting-IP' => '8.8.8.8',
+                'X-Real-IP' => '8.8.8.8',
+                'X-Client-IP' => '8.8.8.8',
+            ])
+            ->getJson('/api/me/location');
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'ip' => '127.0.0.1',
+                'country' => 'Local',
+                'flag' => '🏳️',
+            ]);
+
+        Http::assertNothingSent();
+    }
+
+    public function test_authenticated_user_with_public_ipv6_resolves_cleanly(): void
+    {
+        $ipv6 = '2606:4700:4700::1111';
+
+        Http::fake([
+            "https://ipwho.is/{$ipv6}" => Http::response([
+                'success' => true,
+                'country' => 'United States',
+                'country_code' => 'US',
+                'city' => 'San Jose',
+                'region' => 'California',
+            ], 200),
+        ]);
+
+        $user = $this->createUser();
+
+        $response = $this->actingAs($user, 'api')
+            ->withServerVariables(['REMOTE_ADDR' => $ipv6])
+            ->getJson('/api/me/location');
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'ip' => $ipv6,
+                'country' => 'United States',
+                'country_code' => 'US',
+                'city' => 'San Jose',
+                'region' => 'California',
+                'approximate' => true,
+            ]);
+
+        Http::assertSentCount(1);
     }
 }
