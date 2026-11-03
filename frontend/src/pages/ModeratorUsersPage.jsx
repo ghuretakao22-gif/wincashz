@@ -197,7 +197,8 @@ export default function ModeratorUsersPage() {
           <select
             value={perPage}
             onChange={(e) => {
-              setPerPage(Number(e.target.value));
+              const val = e.target.value === 'all' ? 'all' : Number(e.target.value);
+              setPerPage(val);
               setCurrentPage(1);
             }}
             className="appearance-none bg-[#0e141d] border border-white/10 text-slate-300 text-xs font-medium rounded-xl px-3 py-1.5 focus:outline-none focus:border-brand-500 cursor-pointer"
@@ -205,6 +206,7 @@ export default function ModeratorUsersPage() {
             <option value={25}>25</option>
             <option value={50}>50</option>
             <option value={100}>100</option>
+            <option value="all">All</option>
           </select>
         </div>
       </div>
@@ -221,12 +223,13 @@ export default function ModeratorUsersPage() {
         </div>
       )}
 
-      {/* Main Table: 6 Columns per requirements */}
+      {/* Main Table */}
       <div className="bg-[#0c1015]/90 border border-white/5 rounded-3xl overflow-hidden shadow-xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-white/5 bg-white/[0.02] text-slate-400 uppercase text-[10px] font-bold tracking-wider">
+                <th className="py-3.5 px-4 text-center w-12">S.L</th>
                 <th className="py-3.5 px-4">User ID</th>
                 <th className="py-3.5 px-4">Username</th>
                 <th className="py-3.5 px-4">Email (Masked)</th>
@@ -239,20 +242,25 @@ export default function ModeratorUsersPage() {
             <tbody className="divide-y divide-white/5 font-medium">
               {loading && users.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="py-12 text-center text-slate-500">
+                  <td colSpan="8" className="py-12 text-center text-slate-500">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-brand-400" />
                     Loading assigned users...
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="py-12 text-center text-slate-500">
+                  <td colSpan="8" className="py-12 text-center text-slate-500">
                     No assigned users found matching your search.
                   </td>
                 </tr>
               ) : (
-                users.map((u) => (
+                users.map((u, idx) => (
                   <tr key={u.id} className="hover:bg-white/[0.02] transition-colors">
+                    {/* S.L Serial Number */}
+                    <td className="py-3 px-4 font-mono text-slate-400 whitespace-nowrap text-[11px] text-center">
+                      {(pagination.from || 1) + idx}
+                    </td>
+
                     {/* 1. User ID */}
                     <td className="py-3 px-4 font-mono font-bold text-brand-400 whitespace-nowrap">
                       <Link

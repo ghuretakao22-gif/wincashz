@@ -106,10 +106,28 @@ class ModeratorController extends Controller
 
         // If moderator has no My ID in a full environment
         if ($isModerator && $hasMyIdCol && $myIdCode === '') {
+            $emptyPagination = [
+                'currentPage' => 1,
+                'current_page' => 1,
+                'lastPage' => 1,
+                'last_page' => 1,
+                'perPage' => 25,
+                'per_page' => 25,
+                'total' => 0,
+                'from' => 0,
+                'to' => 0,
+            ];
+
             return response()->json([
                 'status' => 'success',
                 'data' => [],
-                'pagination' => ['currentPage' => 1, 'lastPage' => 1, 'perPage' => 25, 'total' => 0, 'from' => 0, 'to' => 0],
+                'pagination' => $emptyPagination,
+                'current_page' => 1,
+                'last_page' => 1,
+                'per_page' => 25,
+                'total' => 0,
+                'from' => 0,
+                'to' => 0,
             ]);
         }
 
@@ -191,11 +209,15 @@ class ModeratorController extends Controller
             $query->orderByDesc('completed_tasks.created_at')
                   ->orderByDesc('completed_tasks.id');
 
-            if ($request->input('per_page') === 'all' || $isSpecificSingleDate) {
-                $perPage = max(1, (clone $query)->count());
+            $rawPerPage = $request->input('per_page');
+            $isAll = (is_string($rawPerPage) && strtolower(trim($rawPerPage)) === 'all');
+
+            if ($isAll || $isSpecificSingleDate) {
+                $totalCount = (clone $query)->count();
+                $perPage = max(1, $totalCount);
             } else {
                 $allowedPerPage = [25, 50, 100];
-                $perPage = (int) $request->input('per_page', 25);
+                $perPage = (int) $rawPerPage;
                 if (! in_array($perPage, $allowedPerPage, true)) {
                     $perPage = 25;
                 }
@@ -222,17 +244,35 @@ class ModeratorController extends Controller
                 ];
             })->values()->all();
 
+            $paginatorTotal = $paginator->total();
+            $perPageDisplay = $isAll ? $paginatorTotal : $paginator->perPage();
+            $from = $paginatorTotal > 0 ? ($paginator->firstItem() ?? 1) : 0;
+            $to = $paginatorTotal > 0 ? ($paginator->lastItem() ?? $paginatorTotal) : 0;
+            $currentPage = $isAll ? 1 : $paginator->currentPage();
+            $lastPage = $isAll ? 1 : $paginator->lastPage();
+
+            $paginationData = [
+                'currentPage' => $currentPage,
+                'current_page' => $currentPage,
+                'lastPage' => $lastPage,
+                'last_page' => $lastPage,
+                'perPage' => $perPageDisplay,
+                'per_page' => $perPageDisplay,
+                'total' => $paginatorTotal,
+                'from' => $from,
+                'to' => $to,
+            ];
+
             return response()->json([
                 'status' => 'success',
                 'data' => $data,
-                'pagination' => [
-                    'currentPage' => $paginator->currentPage(),
-                    'lastPage' => $paginator->lastPage(),
-                    'perPage' => $paginator->perPage(),
-                    'total' => $paginator->total(),
-                    'from' => $paginator->firstItem() ?? 0,
-                    'to' => $paginator->lastItem() ?? 0,
-                ],
+                'pagination' => $paginationData,
+                'current_page' => $currentPage,
+                'last_page' => $lastPage,
+                'per_page' => $perPageDisplay,
+                'total' => $paginatorTotal,
+                'from' => $from,
+                'to' => $to,
             ]);
         }
 
@@ -243,7 +283,7 @@ class ModeratorController extends Controller
 
         // Scope strictly to moderator's My ID
         if ($isModerator && $hasMyIdCol && $myIdCode !== '') {
-            $query->where('my_id', $myIdCode);
+            $query->where('users.my_id', $myIdCode);
         }
 
         if ($search !== '') {
@@ -304,11 +344,15 @@ class ModeratorController extends Controller
             $query->orderBy('id', 'asc');
         }
 
-        if ($request->input('per_page') === 'all' || $isSpecificSingleDate) {
-            $perPage = max(1, (clone $query)->count());
+        $rawPerPage = $request->input('per_page');
+        $isAll = (is_string($rawPerPage) && strtolower(trim($rawPerPage)) === 'all');
+
+        if ($isAll || $isSpecificSingleDate) {
+            $totalCount = (clone $query)->count();
+            $perPage = max(1, $totalCount);
         } else {
             $allowedPerPage = [25, 50, 100];
-            $perPage = (int) $request->input('per_page', 25);
+            $perPage = (int) $rawPerPage;
             if (! in_array($perPage, $allowedPerPage, true)) {
                 $perPage = 25;
             }
@@ -378,17 +422,35 @@ class ModeratorController extends Controller
             ];
         })->values()->all();
 
+        $paginatorTotal = $users->total();
+        $perPageDisplay = $isAll ? $paginatorTotal : $users->perPage();
+        $from = $paginatorTotal > 0 ? ($users->firstItem() ?? 1) : 0;
+        $to = $paginatorTotal > 0 ? ($users->lastItem() ?? $paginatorTotal) : 0;
+        $currentPage = $isAll ? 1 : $users->currentPage();
+        $lastPage = $isAll ? 1 : $users->lastPage();
+
+        $paginationData = [
+            'currentPage' => $currentPage,
+            'current_page' => $currentPage,
+            'lastPage' => $lastPage,
+            'last_page' => $lastPage,
+            'perPage' => $perPageDisplay,
+            'per_page' => $perPageDisplay,
+            'total' => $paginatorTotal,
+            'from' => $from,
+            'to' => $to,
+        ];
+
         return response()->json([
             'status' => 'success',
             'data' => $data,
-            'pagination' => [
-                'currentPage' => $users->currentPage(),
-                'lastPage' => $users->lastPage(),
-                'perPage' => $users->perPage(),
-                'total' => $users->total(),
-                'from' => $users->firstItem() ?? 0,
-                'to' => $users->lastItem() ?? 0,
-            ],
+            'pagination' => $paginationData,
+            'current_page' => $currentPage,
+            'last_page' => $lastPage,
+            'per_page' => $perPageDisplay,
+            'total' => $paginatorTotal,
+            'from' => $from,
+            'to' => $to,
         ]);
     }
 
