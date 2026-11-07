@@ -402,4 +402,59 @@ class AuthRegisterGeoTest extends TestCase
         $activeResponse->assertJsonPath('success', true);
         $activeResponse->assertJsonPath('friendly_name', 'Operator1000');
     }
+
+    public function test_it_auto_increments_daily_sequence_for_same_my_id(): void
+    {
+        DB::table('my_ids')->insert([
+            'my_id_code' => '1020',
+            'friendly_name' => 'Sumon',
+            'label' => 'Sumon Moderator',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // 1st request should suggest sequence '01'
+        $res1 = $this->getJson('/api/my-id/resolve/1020');
+        $res1->assertOk();
+        $res1->assertJsonPath('sequence', '01');
+        $dateCode = $res1->json('date_code');
+        $this->assertSame("Sumon_01_{$dateCode}", $res1->json('suggested_username'));
+
+        // Simulate 1st user account registered today
+        DB::table('users')->insert([
+            'name' => 'Sumon',
+            'username' => "Sumon_01_{$dateCode}",
+            'email' => "Sumon_01_{$dateCode}@duck.com",
+            'password' => bcrypt('password123'),
+            'my_id' => '1020',
+            'role' => 'user',
+            'created_at' => now('UTC'),
+            'updated_at' => now('UTC'),
+        ]);
+
+        // 2nd request should auto-increment to sequence '02'
+        $res2 = $this->getJson('/api/my-id/resolve/1020');
+        $res2->assertOk();
+        $res2->assertJsonPath('sequence', '02');
+        $this->assertSame("Sumon_02_{$dateCode}", $res2->json('suggested_username'));
+
+        // Simulate 2nd user account registered today
+        DB::table('users')->insert([
+            'name' => 'Sumon',
+            'username' => "Sumon_02_{$dateCode}",
+            'email' => "Sumon_02_{$dateCode}@duck.com",
+            'password' => bcrypt('password123'),
+            'my_id' => '1020',
+            'role' => 'user',
+            'created_at' => now('UTC'),
+            'updated_at' => now('UTC'),
+        ]);
+
+        // 3rd request should auto-increment to sequence '03'
+        $res3 = $this->getJson('/api/my-id/resolve/1020');
+        $res3->assertOk();
+        $res3->assertJsonPath('sequence', '03');
+        $this->assertSame("Sumon_03_{$dateCode}", $res3->json('suggested_username'));
+    }
 }

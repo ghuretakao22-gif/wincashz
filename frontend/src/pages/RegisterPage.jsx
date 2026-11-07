@@ -26,8 +26,8 @@ const getUtcDateCode = () => {
   return `${day}${monthLetter}`;
 };
 
-// 2. UTC Daily Sequence Tracker (localStorage)
-// Keyed strictly by UTC date: wincashz_seq_YYYY-MM-DD
+// 2. UTC Daily Sequence Tracker per My ID (localStorage)
+// Keyed strictly by My ID code + UTC date: wincashz_seq_{cleanId}_{todayKey}
 const getUtcDateKey = () => {
   const now = new Date();
   const y = now.getUTCFullYear();
@@ -36,10 +36,11 @@ const getUtcDateKey = () => {
   return `${y}-${m}-${d}`;
 };
 
-const getDailySequenceNumber = () => {
+const getPerIdDailySequenceNumber = (myIdCode) => {
   const todayKey = getUtcDateKey();
+  const cleanId = String(myIdCode || '').trim().replace(/^#+/, '') || 'global';
   try {
-    const raw = localStorage.getItem(`wincashz_seq_${todayKey}`);
+    const raw = localStorage.getItem(`wincashz_seq_${cleanId}_${todayKey}`);
     if (raw) {
       const parsed = parseInt(raw, 10);
       if (!isNaN(parsed) && parsed > 0) {
@@ -50,24 +51,33 @@ const getDailySequenceNumber = () => {
   return 1;
 };
 
-const getFormattedDailySequence = () => {
-  const num = getDailySequenceNumber();
+const getFormattedPerIdDailySequence = (myIdCode) => {
+  const num = getPerIdDailySequenceNumber(myIdCode);
   return String(num).padStart(2, '0'); // e.g. "01", "02", "03"
 };
 
-const incrementDailySequence = () => {
+const setPerIdDailySequence = (myIdCode, nextNum) => {
   const todayKey = getUtcDateKey();
-  const current = getDailySequenceNumber();
+  const cleanId = String(myIdCode || '').trim().replace(/^#+/, '') || 'global';
   try {
-    localStorage.setItem(`wincashz_seq_${todayKey}`, String(current + 1));
+    localStorage.setItem(`wincashz_seq_${cleanId}_${todayKey}`, String(nextNum));
   } catch (e) {}
 };
 
+const incrementPerIdDailySequence = (myIdCode) => {
+  const current = getPerIdDailySequenceNumber(myIdCode);
+  setPerIdDailySequence(myIdCode, current + 1);
+};
+
+const getDailySequenceNumber = () => getPerIdDailySequenceNumber('global');
+const getFormattedDailySequence = () => getFormattedPerIdDailySequence('global');
+const incrementDailySequence = () => incrementPerIdDailySequence('global');
+
 // Construct Dynamic Username: [prefix]_[sequence]_[dateCode]
 // Uses TWO underscores (e.g. Zahidul_01_08n, Monoyer_01_08n, User_01_08n)
-const generateDynamicUsername = (prefix, customSeq, customDateCode) => {
+const generateDynamicUsername = (prefix, customSeq, customDateCode, myIdCode) => {
   const sanitized = String(prefix || 'User').replace(/[^a-zA-Z0-9_]/g, '').trim() || 'User';
-  const seq = customSeq || getFormattedDailySequence();
+  const seq = customSeq || getFormattedPerIdDailySequence(myIdCode);
   const dateCode = customDateCode || getUtcDateCode();
   return `${sanitized}_${seq}_${dateCode}`;
 };
@@ -129,7 +139,7 @@ export default function RegisterPage() {
       if (res && res.success) {
         const serverName = res.sanitized_name || res.friendly_name || 'User';
         const cleanServerName = String(serverName).replace(/[^a-zA-Z0-9_]/g, '').trim() || 'User';
-        const serverSeq = res.sequence || getFormattedDailySequence();
+        const serverSeq = res.sequence || getFormattedPerIdDailySequence(cleanCode);
         const serverDate = res.date_code || getUtcDateCode();
         const serverUser = res.suggested_username || `${cleanServerName}_${serverSeq}_${serverDate}`;
 
@@ -138,6 +148,12 @@ export default function RegisterPage() {
         setPassword(generateRandomPassword());
         setResolvedOperator(res.friendly_name || cleanServerName);
         setError(null);
+
+        // Keep local storage sequence aligned with server's sequence
+        const parsedSeq = parseInt(serverSeq, 10);
+        if (!isNaN(parsedSeq) && parsedSeq > 0) {
+          setPerIdDailySequence(cleanCode, parsedSeq);
+        }
         return;
       }
 
@@ -297,6 +313,9 @@ export default function RegisterPage() {
       const res = await register(payload);
       if (res.success) {
         // Increment daily sequence count in localStorage on confirmed success
+        if (cleanMyId) {
+          incrementPerIdDailySequence(cleanMyId);
+        }
         incrementDailySequence();
         if (res.user?.role === 'admin') {
           navigate('/admin', { replace: true });
