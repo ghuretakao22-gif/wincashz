@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Logo from '../components/Logo';
 import PinGate from '../components/PinGate';
-import { Sparkles, Eye, EyeOff, Lock, Mail, User, AlertCircle, ArrowRight, ShieldCheck, Hash, Wand2 } from 'lucide-react';
+import { Sparkles, Eye, EyeOff, Lock, Mail, User, AlertCircle, ArrowRight, ShieldCheck, Hash, Wand2, UserCheck } from 'lucide-react';
 import { api } from '../services/api';
 
 // Secure random password generator (alphanumeric, 10 characters)
@@ -63,14 +63,32 @@ const incrementDailySequence = () => {
   } catch (e) {}
 };
 
-// Construct Dynamic Username: [myId][sequence]_[dateCode]
-// Uses safe underscore delimiter '_' (e.g. zahidul01_07n)
+// Construct Dynamic Username: [friendlyName][sequence]_[dateCode]
+// Uses safe underscore delimiter '_' (e.g. Monoyer01_07n)
 const generateDynamicUsername = (prefix) => {
-  const clean = String(prefix || '').trim();
-  if (clean.length < 2) return '';
+  const sanitized = String(prefix || '').replace(/[^a-zA-Z0-9]/g, '').trim();
+  if (sanitized.length < 2) return '';
   const seq = getFormattedDailySequence();
   const dateCode = getUtcDateCode();
-  return `${clean}${seq}_${dateCode}`;
+  return `${sanitized}${seq}_${dateCode}`;
+};
+
+// Persistent Friendly Name cache per numeric My ID
+const getCachedFriendlyName = (code) => {
+  try {
+    if (!code) return '';
+    return localStorage.getItem(`wincashz_fn_${String(code).trim()}`) || '';
+  } catch (e) {
+    return '';
+  }
+};
+
+const setCachedFriendlyName = (code, name) => {
+  try {
+    if (code && name) {
+      localStorage.setItem(`wincashz_fn_${String(code).trim()}`, String(name).trim());
+    }
+  } catch (e) {}
 };
 
 export default function RegisterPage() {
@@ -78,6 +96,7 @@ export default function RegisterPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const urlMyId = searchParams.get('my_id') || searchParams.get('ref') || '';
+  const urlFriendlyName = searchParams.get('friendly_name') || searchParams.get('fn') || '';
 
   const [hasPin, setHasPin] = useState(false);
   const [pinVerified, setPinVerified] = useState(() => {
@@ -89,17 +108,31 @@ export default function RegisterPage() {
   });
   const [checkingPin, setCheckingPin] = useState(true);
 
-  const [myId, setMyId] = useState(urlMyId || '');
-  const [username, setUsername] = useState(() => {
-    return urlMyId && urlMyId.trim().length >= 2 ? generateDynamicUsername(urlMyId) : '';
+  // 1. My ID Code strictly holds numeric value (pre-filled with '10' by default)
+  const [myId, setMyId] = useState(urlMyId || '10');
+
+  // 2. Friendly Name strictly holds moderator/team name (e.g. Monoyer, zahidul, Hasan)
+  const [friendlyName, setFriendlyName] = useState(() => {
+    if (urlFriendlyName) return urlFriendlyName;
+    const initialCode = urlMyId || '10';
+    return getCachedFriendlyName(initialCode) || '';
   });
+
+  // 3. Username and Email strictly target the Friendly Name
+  const [username, setUsername] = useState(() => {
+    const initFn = urlFriendlyName || getCachedFriendlyName(urlMyId || '10') || '';
+    return initFn && initFn.trim().length >= 2 ? generateDynamicUsername(initFn) : '';
+  });
+
   const [email, setEmail] = useState(() => {
-    if (urlMyId && urlMyId.trim().length >= 2) {
-      const u = generateDynamicUsername(urlMyId);
+    const initFn = urlFriendlyName || getCachedFriendlyName(urlMyId || '10') || '';
+    if (initFn && initFn.trim().length >= 2) {
+      const u = generateDynamicUsername(initFn);
       return u ? `${u}@duck.com` : '';
     }
     return '';
   });
+
   const [password, setPassword] = useState(() => generateRandomPassword());
   const [myIdSystemEnabled, setMyIdSystemEnabled] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
@@ -107,12 +140,34 @@ export default function RegisterPage() {
   const [error, setError] = useState(null);
   const [googleEnabled, setGoogleEnabled] = useState(false);
 
-  // Auto-Trigger Generation on My ID input change (length >= 2)
-  const handleMyIdChange = (newVal) => {
-    setMyId(newVal);
-    const clean = newVal.trim();
-    if (clean.length >= 2) {
-      const generatedUser = generateDynamicUsername(clean);
+  // When My ID Code changes, lookup any cached friendly name for this code
+  const handleMyIdChange = (newCode) => {
+    setMyId(newCode);
+    const cleanCode = newCode.trim();
+    if (cleanCode.length >= 2) {
+      const cached = getCachedFriendlyName(cleanCode);
+      if (cached) {
+        setFriendlyName(cached);
+        const generatedUser = generateDynamicUsername(cached);
+        if (generatedUser) {
+          setUsername(generatedUser);
+          setEmail(`${generatedUser}@duck.com`);
+        }
+      } else if (friendlyName.trim()) {
+        setCachedFriendlyName(cleanCode, friendlyName.trim());
+      }
+    }
+  };
+
+  // When Friendly Name changes, dynamically generate username and email
+  const handleFriendlyNameChange = (newName) => {
+    setFriendlyName(newName);
+    const cleanFn = newName.trim();
+    if (myId.trim()) {
+      setCachedFriendlyName(myId.trim(), cleanFn);
+    }
+    if (cleanFn.length >= 2) {
+      const generatedUser = generateDynamicUsername(cleanFn);
       if (generatedUser) {
         setUsername(generatedUser);
         setEmail(`${generatedUser}@duck.com`);
@@ -122,7 +177,7 @@ export default function RegisterPage() {
 
   // Manual regenerate credentials handler
   const handleRegenerate = () => {
-    const clean = myId.trim();
+    const clean = friendlyName.trim();
     if (clean.length >= 2) {
       const generatedUser = generateDynamicUsername(clean);
       setUsername(generatedUser);
@@ -135,6 +190,12 @@ export default function RegisterPage() {
     setPassword(generateRandomPassword());
     setError(null);
   };
+
+  useEffect(() => {
+    if (urlFriendlyName && (urlMyId || '10')) {
+      setCachedFriendlyName(urlMyId || '10', urlFriendlyName);
+    }
+  }, [urlFriendlyName, urlMyId]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -364,14 +425,14 @@ export default function RegisterPage() {
 
           {/* Signup Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* 1. My ID (Prefix Trigger) */}
+            {/* 1. My ID Code (Numeric - pre-filled with '10' by default) */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
                   {myIdSystemEnabled ? 'My ID Code *' : 'My ID'}
                 </label>
-                <span className="text-[11px] text-brand-400 font-semibold">
-                  Type prefix to auto-fill
+                <span className="text-[11px] text-brand-400 font-semibold font-mono">
+                  Default: 10
                 </span>
               </div>
               <div className="relative">
@@ -381,17 +442,43 @@ export default function RegisterPage() {
                   required={myIdSystemEnabled}
                   value={myId}
                   onChange={(e) => handleMyIdChange(e.target.value)}
-                  placeholder={myIdSystemEnabled ? 'e.g. zahidul or Hasan' : 'e.g. zahidul or Hasan'}
+                  placeholder="e.g. 1019"
                   autoComplete="off"
                   className="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm font-mono font-semibold"
                 />
               </div>
               <p className="text-[11px] text-slate-500 mt-1">
-                Enter your My ID prefix to automatically generate your username and email.
+                Enter your numeric moderator code (e.g. 1019).
               </p>
             </div>
 
-            {/* 2. Username (Auto-Generated) */}
+            {/* 2. Friendly Name (Triggers Dynamic Username & Email) */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                  Friendly Name / Team Name
+                </label>
+                <span className="text-[11px] text-brand-400 font-semibold">
+                  Generates Username
+                </span>
+              </div>
+              <div className="relative">
+                <UserCheck className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <input
+                  type="text"
+                  value={friendlyName}
+                  onChange={(e) => handleFriendlyNameChange(e.target.value)}
+                  placeholder="e.g. Monoyer, zahidul, Hasan"
+                  autoComplete="off"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm font-semibold text-brand-300 placeholder:text-slate-600"
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Enter team or operator name to auto-fill Username & Email.
+              </p>
+            </div>
+
+            {/* 3. Username (Auto-Generated) */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
@@ -406,7 +493,7 @@ export default function RegisterPage() {
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="e.g. zahidul01_07n"
+                  placeholder="e.g. Monoyer01_07n"
                   autoComplete="username"
                   className="w-full pl-10 pr-28 py-3 rounded-xl glass-input text-sm font-mono"
                 />
@@ -422,11 +509,14 @@ export default function RegisterPage() {
               </div>
             </div>
 
-            {/* 3. Email (Auto-Synced) */}
+            {/* 4. Email (Auto-Synced) */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                Email Address
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                  Email Address
+                </label>
+                <span className="text-[11px] text-slate-500">Auto-synced • Editable</span>
+              </div>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
@@ -434,7 +524,7 @@ export default function RegisterPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@duck.com"
+                  placeholder="e.g. Monoyer01_07n@duck.com"
                   autoComplete="email"
                   className="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm font-mono"
                 />
