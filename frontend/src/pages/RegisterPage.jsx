@@ -16,16 +16,61 @@ const generateRandomPassword = () => {
   return pass;
 };
 
-// Clean random username generator (e.g. user_8x3m, r_492kf)
-const generateRandomUsername = () => {
-  const prefixes = ['user', 'u', 'r'];
-  const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
-  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
-  let suffix = '';
-  for (let i = 0; i < 5; i++) {
-    suffix += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return `${prefix}_${suffix}`;
+// 1. UTC Date & Month Utility (strictly UTC)
+// Formats 2-digit Day + Month Letter (e.g., November 7th UTC = "07n")
+const getUtcDateCode = () => {
+  const now = new Date();
+  const day = String(now.getUTCDate()).padStart(2, '0');
+  const monthLetters = ['j', 'f', 'm', 'a', 'm', 'j', 'j', 'a', 's', 'o', 'n', 'd'];
+  const monthLetter = monthLetters[now.getUTCMonth()] || 'n';
+  return `${day}${monthLetter}`;
+};
+
+// 2. UTC Daily Sequence Tracker (localStorage)
+// Keyed strictly by UTC date: wincashz_seq_YYYY-MM-DD
+const getUtcDateKey = () => {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(now.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const getDailySequenceNumber = () => {
+  const todayKey = getUtcDateKey();
+  try {
+    const raw = localStorage.getItem(`wincashz_seq_${todayKey}`);
+    if (raw) {
+      const parsed = parseInt(raw, 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {}
+  return 1;
+};
+
+const getFormattedDailySequence = () => {
+  const num = getDailySequenceNumber();
+  return String(num).padStart(2, '0'); // e.g. "01", "02", "03"
+};
+
+const incrementDailySequence = () => {
+  const todayKey = getUtcDateKey();
+  const current = getDailySequenceNumber();
+  try {
+    localStorage.setItem(`wincashz_seq_${todayKey}`, String(current + 1));
+  } catch (e) {}
+};
+
+// Construct Dynamic Username: [myId][sequence]_[dateCode]
+// Uses safe underscore delimiter '_' (e.g. zahidul01_07n)
+const generateDynamicUsername = (prefix) => {
+  const clean = String(prefix || '').trim();
+  if (clean.length < 2) return '';
+  const seq = getFormattedDailySequence();
+  const dateCode = getUtcDateCode();
+  return `${clean}${seq}_${dateCode}`;
 };
 
 export default function RegisterPage() {
@@ -44,25 +89,50 @@ export default function RegisterPage() {
   });
   const [checkingPin, setCheckingPin] = useState(true);
 
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
+  const [myId, setMyId] = useState(urlMyId || '');
+  const [username, setUsername] = useState(() => {
+    return urlMyId && urlMyId.trim().length >= 2 ? generateDynamicUsername(urlMyId) : '';
+  });
+  const [email, setEmail] = useState(() => {
+    if (urlMyId && urlMyId.trim().length >= 2) {
+      const u = generateDynamicUsername(urlMyId);
+      return u ? `${u}@duck.com` : '';
+    }
+    return '';
+  });
   const [password, setPassword] = useState(() => generateRandomPassword());
-  const [myId, setMyId] = useState(urlMyId || '10');
   const [myIdSystemEnabled, setMyIdSystemEnabled] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [googleEnabled, setGoogleEnabled] = useState(false);
 
-  // Auto-Generate Credentials Handler (Username, Email, Password)
-  const handleAutoGen = () => {
-    const newUsername = generateRandomUsername();
-    const newEmail = `${newUsername}@duck.com`;
-    const newPassword = generateRandomPassword();
+  // Auto-Trigger Generation on My ID input change (length >= 2)
+  const handleMyIdChange = (newVal) => {
+    setMyId(newVal);
+    const clean = newVal.trim();
+    if (clean.length >= 2) {
+      const generatedUser = generateDynamicUsername(clean);
+      if (generatedUser) {
+        setUsername(generatedUser);
+        setEmail(`${generatedUser}@duck.com`);
+      }
+    }
+  };
 
-    setUsername(newUsername);
-    setEmail(newEmail);
-    setPassword(newPassword);
+  // Manual regenerate credentials handler
+  const handleRegenerate = () => {
+    const clean = myId.trim();
+    if (clean.length >= 2) {
+      const generatedUser = generateDynamicUsername(clean);
+      setUsername(generatedUser);
+      setEmail(`${generatedUser}@duck.com`);
+    } else {
+      const fallbackUser = generateDynamicUsername('user');
+      setUsername(fallbackUser);
+      setEmail(`${fallbackUser}@duck.com`);
+    }
+    setPassword(generateRandomPassword());
     setError(null);
   };
 
@@ -169,6 +239,8 @@ export default function RegisterPage() {
 
       const res = await register(payload);
       if (res.success) {
+        // Increment daily sequence count in localStorage on confirmed success
+        incrementDailySequence();
         if (res.user?.role === 'admin') {
           navigate('/admin', { replace: true });
         } else if (res.user?.role === 'moderator') {
@@ -292,13 +364,40 @@ export default function RegisterPage() {
 
           {/* Signup Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* 1. Username */}
+            {/* 1. My ID (Prefix Trigger) */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                  {myIdSystemEnabled ? 'My ID Code *' : 'My ID'}
+                </label>
+                <span className="text-[11px] text-brand-400 font-semibold">
+                  Type prefix to auto-fill
+                </span>
+              </div>
+              <div className="relative">
+                <Hash className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <input
+                  type="text"
+                  required={myIdSystemEnabled}
+                  value={myId}
+                  onChange={(e) => handleMyIdChange(e.target.value)}
+                  placeholder={myIdSystemEnabled ? 'e.g. zahidul or Hasan' : 'e.g. zahidul or Hasan'}
+                  autoComplete="off"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm font-mono font-semibold"
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Enter your My ID prefix to automatically generate your username and email.
+              </p>
+            </div>
+
+            {/* 2. Username (Auto-Generated) */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
                   Username
                 </label>
-                <span className="text-[11px] text-slate-500">Auto or Manual</span>
+                <span className="text-[11px] text-slate-500">Auto-generated • Editable</span>
               </div>
               <div className="relative">
                 <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
@@ -307,23 +406,23 @@ export default function RegisterPage() {
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="e.g. user_8x3m"
+                  placeholder="e.g. zahidul01_07n"
                   autoComplete="username"
-                  className="w-full pl-10 pr-28 py-3 rounded-xl glass-input text-sm"
+                  className="w-full pl-10 pr-28 py-3 rounded-xl glass-input text-sm font-mono"
                 />
                 <button
                   type="button"
-                  onClick={handleAutoGen}
+                  onClick={handleRegenerate}
                   className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-brand-500/15 hover:bg-brand-500/25 text-brand-300 border border-brand-500/30 flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 select-none"
-                  title="Auto-generate username, email & password"
+                  title="Regenerate username and credentials"
                 >
                   <Wand2 className="w-3.5 h-3.5 text-brand-400" />
-                  <span>Auto Gen</span>
+                  <span>Regen</span>
                 </button>
               </div>
             </div>
 
-            {/* 2. Email */}
+            {/* 3. Email (Auto-Synced) */}
             <div>
               <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
                 Email Address
@@ -335,14 +434,14 @@ export default function RegisterPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@example.com"
+                  placeholder="name@duck.com"
                   autoComplete="email"
-                  className="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm font-mono"
                 />
               </div>
             </div>
 
-            {/* 3. Password */}
+            {/* 4. Password */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
@@ -377,37 +476,6 @@ export default function RegisterPage() {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-            </div>
-
-            {/* 4. My ID */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
-                  {myIdSystemEnabled ? 'My ID Code *' : 'My ID'}
-                </label>
-                {myIdSystemEnabled ? (
-                  <span className="text-[11px] text-brand-400 font-semibold">Required</span>
-                ) : (
-                  <span className="text-[11px] text-slate-500 font-normal">Optional</span>
-                )}
-              </div>
-              <div className="relative">
-                <Hash className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                <input
-                  type="text"
-                  required={myIdSystemEnabled}
-                  value={myId}
-                  onChange={(e) => setMyId(e.target.value)}
-                  placeholder={myIdSystemEnabled ? 'e.g. 1000' : 'e.g. 1001'}
-                  autoComplete="off"
-                  className="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm font-mono font-semibold"
-                />
-              </div>
-              {myIdSystemEnabled && (
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Ask your moderator or team leader for your assigned My ID code.
-                </p>
-              )}
             </div>
 
             {/* 5. Sign Up Button */}
