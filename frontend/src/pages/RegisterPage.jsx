@@ -1,14 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Logo from '../components/Logo';
 import PinGate from '../components/PinGate';
-import { Sparkles, Eye, EyeOff, Lock, Mail, User, AlertCircle, ArrowRight, ShieldCheck, Hash } from 'lucide-react';
+import { Sparkles, Eye, EyeOff, Lock, Mail, User, AlertCircle, ArrowRight, ShieldCheck, Hash, Wand2 } from 'lucide-react';
 import { api } from '../services/api';
+
+// Secure random password generator (alphanumeric, 10 characters)
+const generateRandomPassword = () => {
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let pass = '';
+  for (let i = 0; i < 10; i++) {
+    pass += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return pass;
+};
+
+// Clean random username generator (e.g. user_8x3m, r_492kf)
+const generateRandomUsername = () => {
+  const prefixes = ['user', 'u', 'r'];
+  const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+  let suffix = '';
+  for (let i = 0; i < 5; i++) {
+    suffix += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `${prefix}_${suffix}`;
+};
 
 export default function RegisterPage() {
   const { register, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const urlMyId = searchParams.get('my_id') || searchParams.get('ref') || '';
 
   const [hasPin, setHasPin] = useState(false);
   const [pinVerified, setPinVerified] = useState(() => {
@@ -22,13 +46,25 @@ export default function RegisterPage() {
 
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [myId, setMyId] = useState('');
+  const [password, setPassword] = useState(() => generateRandomPassword());
+  const [myId, setMyId] = useState(urlMyId || '10');
   const [myIdSystemEnabled, setMyIdSystemEnabled] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [googleEnabled, setGoogleEnabled] = useState(false);
+
+  // Auto-Generate Credentials Handler (Username, Email, Password)
+  const handleAutoGen = () => {
+    const newUsername = generateRandomUsername();
+    const newEmail = `${newUsername}@duck.com`;
+    const newPassword = generateRandomPassword();
+
+    setUsername(newUsername);
+    setEmail(newEmail);
+    setPassword(newPassword);
+    setError(null);
+  };
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -258,9 +294,12 @@ export default function RegisterPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* 1. Username */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                Username
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                  Username
+                </label>
+                <span className="text-[11px] text-slate-500">Auto or Manual</span>
+              </div>
               <div className="relative">
                 <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
@@ -268,10 +307,19 @@ export default function RegisterPage() {
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="e.g. ProGamer99"
+                  placeholder="e.g. user_8x3m"
                   autoComplete="username"
-                  className="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm"
+                  className="w-full pl-10 pr-28 py-3 rounded-xl glass-input text-sm"
                 />
+                <button
+                  type="button"
+                  onClick={handleAutoGen}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-brand-500/15 hover:bg-brand-500/25 text-brand-300 border border-brand-500/30 flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 select-none"
+                  title="Auto-generate username, email & password"
+                >
+                  <Wand2 className="w-3.5 h-3.5 text-brand-400" />
+                  <span>Auto Gen</span>
+                </button>
               </div>
             </div>
 
@@ -296,9 +344,19 @@ export default function RegisterPage() {
 
             {/* 3. Password */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                Password (min. 8 characters)
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                  Password (min. 8 characters)
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setPassword(generateRandomPassword())}
+                  className="text-[11px] text-brand-400 hover:text-brand-300 font-semibold cursor-pointer transition-colors"
+                  title="Generate another password"
+                >
+                  Regenerate
+                </button>
+              </div>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
@@ -308,12 +366,13 @@ export default function RegisterPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Create a strong password"
                   autoComplete="new-password"
-                  className="w-full pl-10 pr-10 py-3 rounded-xl glass-input text-sm"
+                  className="w-full pl-10 pr-10 py-3 rounded-xl glass-input text-sm font-mono"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 cursor-pointer"
+                  title={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -339,9 +398,9 @@ export default function RegisterPage() {
                   required={myIdSystemEnabled}
                   value={myId}
                   onChange={(e) => setMyId(e.target.value)}
-                  placeholder={myIdSystemEnabled ? 'e.g. MY12345' : 'e.g. 1001'}
+                  placeholder={myIdSystemEnabled ? 'e.g. 1000' : 'e.g. 1001'}
                   autoComplete="off"
-                  className="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl glass-input text-sm font-mono font-semibold"
                 />
               </div>
               {myIdSystemEnabled && (
