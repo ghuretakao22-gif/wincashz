@@ -105,21 +105,57 @@ export default function RegisterPage() {
 
   // 1. My ID Code strictly holds numeric value (pre-filled with '10' by default)
   const [myId, setMyId] = useState(urlMyId || '10');
+  const [resolvingId, setResolvingId] = useState(false);
+  const [resolvedOperator, setResolvedOperator] = useState(() => {
+    const initialCode = (urlMyId || '10').trim();
+    return idToNameMap[initialCode] || '';
+  });
 
-  // Helper: generates credentials derived strictly from My ID lookup map (fallback: User)
-  const generateFromMyId = (codeToUse) => {
+  // Server-backed credential generator with offline fallback
+  const generateFromMyId = async (codeToUse) => {
     const cleanCode = String(codeToUse !== undefined ? codeToUse : myId).trim();
-    const mappedName = idToNameMap[cleanCode] || 'User';
-    const newUsername = generateDynamicUsername(mappedName);
-    if (newUsername) {
-      setUsername(newUsername);
-      setEmail(`${newUsername}@duck.com`);
-    }
+    if (!cleanCode) return;
+
+    // 1. Instant optimistic fallback resolution from static map
+    const fallbackName = idToNameMap[cleanCode] || 'User';
+    const fallbackSeq = getFormattedDailySequence();
+    const fallbackDate = getUtcDateCode();
+    const fallbackUser = generateDynamicUsername(fallbackName);
+
+    setUsername(fallbackUser);
+    setEmail(`${fallbackUser}@duck.com`);
     setPassword(generateRandomPassword());
     setError(null);
+    if (fallbackName !== 'User') {
+      setResolvedOperator(fallbackName);
+    }
+
+    // 2. Query server for authoritative Friendly Name & sequence
+    setResolvingId(true);
+    try {
+      const res = await api.resolveMyId(cleanCode);
+      if (res && res.success) {
+        const serverName = res.sanitized_name || res.friendly_name || fallbackName;
+        const cleanServerName = String(serverName).replace(/[^a-zA-Z0-9_]/g, '').trim() || 'User';
+        const serverSeq = res.sequence || fallbackSeq;
+        const serverDate = res.date_code || fallbackDate;
+        const serverUser = res.suggested_username || `${cleanServerName}_${serverSeq}_${serverDate}`;
+
+        setUsername(serverUser);
+        setEmail(`${serverUser}@duck.com`);
+        setResolvedOperator(res.friendly_name || cleanServerName);
+      }
+    } catch (e) {
+      // Server returned 404 or network error: fallback values already active
+      if (fallbackName === 'User') {
+        setResolvedOperator('');
+      }
+    } finally {
+      setResolvingId(false);
+    }
   };
 
-  // 2. Username and Email derived from ID Map lookup
+  // 2. Username and Email derived from initial ID lookup
   const [username, setUsername] = useState(() => {
     const initialCode = (urlMyId || '10').trim();
     const initialName = idToNameMap[initialCode];
@@ -149,11 +185,14 @@ export default function RegisterPage() {
     const cleanCode = newCode.trim();
     if (idToNameMap[cleanCode]) {
       const mappedName = idToNameMap[cleanCode];
+      setResolvedOperator(mappedName);
       const newUsername = generateDynamicUsername(mappedName);
       if (newUsername) {
         setUsername(newUsername);
         setEmail(`${newUsername}@duck.com`);
       }
+    } else {
+      setResolvedOperator('');
     }
   };
 
@@ -161,6 +200,12 @@ export default function RegisterPage() {
   const handleRegenerate = () => {
     generateFromMyId(myId);
   };
+
+  useEffect(() => {
+    if (urlMyId && urlMyId.trim().length >= 2) {
+      generateFromMyId(urlMyId);
+    }
+  }, [urlMyId]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -396,10 +441,10 @@ export default function RegisterPage() {
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
                   {myIdSystemEnabled ? 'My ID Code *' : 'My ID'}
                 </label>
-                {idToNameMap[myId.trim()] ? (
+                {resolvedOperator ? (
                   <span className="text-[11px] text-brand-300 font-semibold flex items-center gap-1">
                     <UserCheck className="w-3.5 h-3.5 text-brand-400" />
-                    Operator: {idToNameMap[myId.trim()]}
+                    Operator: {resolvedOperator}
                   </span>
                 ) : (
                   <span className="text-[11px] text-brand-400 font-semibold font-mono">
@@ -422,12 +467,13 @@ export default function RegisterPage() {
                 </div>
                 <button
                   type="button"
+                  disabled={resolvingId}
                   onClick={() => generateFromMyId(myId)}
-                  className="px-4 py-3 rounded-xl font-bold text-xs bg-brand-500/20 hover:bg-brand-500/30 text-brand-300 border border-brand-500/40 flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 shrink-0 select-none"
+                  className="px-4 py-3 rounded-xl font-bold text-xs bg-brand-500/20 hover:bg-brand-500/30 text-brand-300 border border-brand-500/40 flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 shrink-0 select-none disabled:opacity-50"
                   title="Generate credentials from My ID code"
                 >
-                  <Wand2 className="w-4 h-4 text-brand-400" />
-                  <span>Generate</span>
+                  <Wand2 className={`w-4 h-4 text-brand-400 ${resolvingId ? 'animate-spin' : ''}`} />
+                  <span>{resolvingId ? 'Resolving...' : 'Generate'}</span>
                 </button>
               </div>
               <p className="text-[11px] text-slate-500 mt-1">

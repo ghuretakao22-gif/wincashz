@@ -20,6 +20,7 @@ class AuthRegisterGeoTest extends TestCase
                 $table->id();
                 $table->string('my_id_code')->unique();
                 $table->string('label')->nullable();
+                $table->string('friendly_name')->nullable();
                 $table->boolean('is_active')->default(true);
                 $table->timestamps();
             });
@@ -299,5 +300,37 @@ class AuthRegisterGeoTest extends TestCase
             'user_avatar' => 'https://api.dicebear.com/10.x/avataaars/svg?seed=unique-member',
             'profile_setup_completed' => true,
         ]);
+    }
+
+    public function test_it_resolves_my_id_and_returns_friendly_name_and_sequence(): void
+    {
+        DB::table('my_ids')->insert([
+            'my_id_code' => '1010',
+            'friendly_name' => 'Zahidul',
+            'label' => 'Zahidul Moderator',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->getJson('/api/my-id/resolve/1010');
+
+        $response->assertOk();
+        $response->assertJson([
+            'success' => true,
+            'my_id_code' => '1010',
+            'friendly_name' => 'Zahidul',
+            'sanitized_name' => 'Zahidul',
+            'sequence' => '01',
+        ]);
+        $this->assertNotEmpty($response->json('date_code'));
+        $this->assertStringStartsWith('Zahidul_01_', $response->json('suggested_username'));
+    }
+
+    public function test_it_returns_404_when_my_id_not_found_or_inactive(): void
+    {
+        $response = $this->getJson('/api/my-id/resolve/9999');
+        $response->assertStatus(404);
+        $response->assertJsonPath('success', false);
     }
 }

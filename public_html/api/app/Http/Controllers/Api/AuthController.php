@@ -335,6 +335,84 @@ class AuthController extends Controller
         return $this->respondWithToken($request, $token, 'Login successful.');
     }
 
+    public function resolveMyId(Request $request, string $code): JsonResponse
+    {
+        $cleanCode = trim($code);
+
+        if ($cleanCode === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'My ID code is required.',
+                'friendly_name' => null,
+                'sequence' => '01',
+                'date_code' => '',
+            ], 400);
+        }
+
+        $record = MyId::where('my_id_code', $cleanCode)->first(['my_id_code', 'friendly_name', 'label', 'is_active']);
+
+        if (! $record || ! $record->is_active) {
+            return response()->json([
+                'success' => false,
+                'message' => 'My ID code not found or inactive.',
+                'friendly_name' => null,
+                'sequence' => '01',
+                'date_code' => '',
+            ], 404);
+        }
+
+        $rawName = trim((string) ($record->friendly_name ?: $record->label ?: ''));
+        $sanitizedName = preg_replace('/[^a-zA-Z0-9_]/', '', $rawName);
+        if ($sanitizedName === '') {
+            $sanitizedName = 'User';
+        }
+
+        $nowUtc = now('UTC');
+        $day = sprintf('%02d', $nowUtc->day);
+        $monthLetters = ['j', 'f', 'm', 'a', 'm', 'j', 'j', 'a', 's', 'o', 'n', 'd'];
+        $monthLetter = $monthLetters[$nowUtc->month - 1] ?? 'n';
+        $dateCode = "{$day}{$monthLetter}";
+
+        // Calculate next sequence: check today's registrations for this My ID and highest existing sequence
+        $startOfUtcDay = $nowUtc->copy()->startOfDay();
+        $endOfUtcDay = $nowUtc->copy()->endOfDay();
+
+        $todayCount = User::where('my_id', $record->my_id_code)
+            ->whereBetween('created_at', [$startOfUtcDay, $endOfUtcDay])
+            ->count();
+
+        $pattern = "{$sanitizedName}_%_{$dateCode}";
+        $existingUsernames = User::where('username', 'like', $pattern)->pluck('username')->all();
+        $maxSeq = $todayCount;
+
+        foreach ($existingUsernames as $u) {
+            $parts = explode('_', $u);
+            if (count($parts) >= 3) {
+                $seqPart = $parts[count($parts) - 2];
+                if (is_numeric($seqPart)) {
+                    $val = (int) $seqPart;
+                    if ($val > $maxSeq) {
+                        $maxSeq = $val;
+                    }
+                }
+            }
+        }
+
+        $nextSequence = sprintf('%02d', $maxSeq + 1);
+
+        return response()->json([
+            'success' => true,
+            'my_id_code' => $record->my_id_code,
+            'friendly_name' => $rawName ?: $sanitizedName,
+            'sanitized_name' => $sanitizedName,
+            'sequence' => $nextSequence,
+            'date_code' => $dateCode,
+            'suggested_username' => "{$sanitizedName}_{$nextSequence}_{$dateCode}",
+        ])
+            ->header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            ->header('Pragma', 'no-cache');
+    }
+
     public function visitorGeo(Request $request): JsonResponse
     {
         $ip = $this->resolveVisitorIp($request);

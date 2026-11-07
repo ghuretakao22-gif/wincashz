@@ -179,6 +179,7 @@ export const api = {
   startGoogleAuth: (mode = 'login') => apiRequest('/google-auth/start', { method: 'POST', body: JSON.stringify({ mode }) }),
 
   // Public / User Data
+  resolveMyId: (code) => apiRequest(`/my-id/resolve/${encodeURIComponent(code)}`),
   getSiteSettings: () => apiRequest('/site-settings'),
   getOffers: () => apiRequest('/offers'),
   
