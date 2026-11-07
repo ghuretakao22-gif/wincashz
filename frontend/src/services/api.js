@@ -109,8 +109,12 @@ export async function apiRequest(endpoint, options = {}) {
     ...options.headers,
   };
 
-  const cleanEndpoint = endpoint.startsWith('/api/') ? endpoint.slice(4) : endpoint;
-  const url = cleanEndpoint.startsWith('http') ? cleanEndpoint : `${API_BASE}${cleanEndpoint.startsWith('/') ? '' : '/'}${cleanEndpoint}`;
+  // Normalize endpoint: ensure clean path without duplicate /api prefixes
+  let cleanEndpoint = endpoint.startsWith('http') ? endpoint : endpoint.replace(/^(\/api|\/public\/api|\/api\/public)+/i, '');
+  if (!cleanEndpoint.startsWith('http') && !cleanEndpoint.startsWith('/')) {
+    cleanEndpoint = '/' + cleanEndpoint;
+  }
+  const url = cleanEndpoint.startsWith('http') ? cleanEndpoint : `${API_BASE}${cleanEndpoint}`;
 
   try {
     const response = await fetch(url, {
@@ -180,7 +184,11 @@ export const api = {
   startGoogleAuth: (mode = 'login') => apiRequest('/google-auth/start', { method: 'POST', body: JSON.stringify({ mode }) }),
 
   // Public / User Data
-  resolveMyId: (code) => apiRequest(`/my-id/resolve/${encodeURIComponent(String(code || '').trim().replace(/^#+/, ''))}`),
+  resolveMyId: (code) => {
+    const raw = String(code || '').trim();
+    const clean = raw.replace(/^#+/, '').trim();
+    return apiRequest(`/my-id/resolve/${encodeURIComponent(clean)}?code=${encodeURIComponent(clean)}`);
+  },
   getSiteSettings: () => apiRequest('/site-settings'),
   getOffers: () => apiRequest('/offers'),
   

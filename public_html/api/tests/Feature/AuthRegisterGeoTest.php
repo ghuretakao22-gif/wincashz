@@ -369,10 +369,37 @@ class AuthRegisterGeoTest extends TestCase
         $this->assertStringStartsWith('Monoyer_01_', $response->json('suggested_username'));
     }
 
-    public function test_it_returns_404_when_my_id_not_found_or_inactive(): void
+    public function test_it_returns_404_when_my_id_not_found(): void
     {
         $response = $this->getJson('/api/my-id/resolve/9999');
         $response->assertStatus(404);
         $response->assertJsonPath('success', false);
+        $response->assertJsonPath('message', "My ID '9999' not found in database.");
+    }
+
+    public function test_it_resolves_via_query_param_and_handles_inactive(): void
+    {
+        DB::table('my_ids')->insert([
+            'my_id_code' => '1000',
+            'friendly_name' => 'Operator1000',
+            'label' => 'Test Operator',
+            'is_active' => false,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Inactive returns 400
+        $inactiveResponse = $this->getJson('/api/my-id/resolve?code=1000');
+        $inactiveResponse->assertStatus(400);
+        $inactiveResponse->assertJsonPath('success', false);
+
+        // Update to active
+        DB::table('my_ids')->where('my_id_code', '1000')->update(['is_active' => true]);
+
+        // Resolving active via query param returns 200
+        $activeResponse = $this->getJson('/api/my-id/resolve?code=1000');
+        $activeResponse->assertOk();
+        $activeResponse->assertJsonPath('success', true);
+        $activeResponse->assertJsonPath('friendly_name', 'Operator1000');
     }
 }

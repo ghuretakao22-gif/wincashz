@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Logo from '../components/Logo';
 import PinGate from '../components/PinGate';
-import { Sparkles, Eye, EyeOff, Lock, Mail, User, AlertCircle, ArrowRight, ShieldCheck, Hash, Wand2, UserCheck } from 'lucide-react';
+import { Sparkles, Eye, EyeOff, Lock, Mail, User, AlertCircle, ArrowRight, ShieldCheck, Hash, Wand2, UserCheck, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
 
 // Secure random password generator (alphanumeric, 10 characters)
@@ -105,16 +105,24 @@ export default function RegisterPage() {
   const [googleEnabled, setGoogleEnabled] = useState(false);
 
   // Server-driven credential generator (100% database-driven)
-  const generateFromMyId = async (codeToUse) => {
+  const generateFromMyId = async (codeToUse, isManual = false) => {
     const rawCode = codeToUse !== undefined ? codeToUse : myId;
     const cleanCode = String(rawCode || '').trim().replace(/^#+/, '');
-    if (!cleanCode) return;
+    if (!cleanCode) {
+      if (isManual) {
+        setError('Please enter a My ID code before generating.');
+      }
+      return;
+    }
 
     latestResolveRef.current = cleanCode;
     setResolvingId(true);
-    setError(null);
+    if (isManual) {
+      setError(null);
+    }
 
     try {
+      console.log(`[MyID Resolve] Resolving My ID: "${cleanCode}"`);
       const res = await api.resolveMyId(cleanCode);
       if (latestResolveRef.current !== cleanCode) return;
 
@@ -129,28 +137,33 @@ export default function RegisterPage() {
         setEmail(`${serverUser}@duck.com`);
         setPassword(generateRandomPassword());
         setResolvedOperator(res.friendly_name || cleanServerName);
+        setError(null);
         return;
       }
+
+      throw new Error(res?.message || `My ID "${cleanCode}" could not be resolved.`);
     } catch (e) {
-      // Not found in database or network error
+      console.error('[MyID Resolve Failed]', { code: cleanCode, error: e });
+      if (latestResolveRef.current !== cleanCode) return;
+
+      setResolvedOperator('');
+      const errMsg = e.data?.message || e.message || `My ID "${cleanCode}" not found in database.`;
+      
+      // Show warning in UI if manually clicked or full ID code was entered
+      if (isManual || cleanCode.length >= 4) {
+        setError(errMsg);
+      }
     } finally {
       if (latestResolveRef.current === cleanCode) {
         setResolvingId(false);
       }
-    }
-
-    if (latestResolveRef.current === cleanCode) {
-      const fallbackUser = generateDynamicUsername('User');
-      setUsername(fallbackUser);
-      setEmail(`${fallbackUser}@duck.com`);
-      setPassword(generateRandomPassword());
-      setResolvedOperator('');
     }
   };
 
   // When My ID Code changes
   const handleMyIdChange = (newCode) => {
     setMyId(newCode);
+    if (error) setError(null);
     const clean = newCode.trim().replace(/^#+/, '');
     if (clean.length < 3) {
       setResolvedOperator('');
@@ -159,7 +172,7 @@ export default function RegisterPage() {
 
   // Manual regenerate credentials handler
   const handleRegenerate = () => {
-    generateFromMyId(myId);
+    generateFromMyId(myId, true);
   };
 
   // Dynamic debounced resolution whenever operator enters a valid My ID (>= 3 chars)
@@ -441,11 +454,15 @@ export default function RegisterPage() {
                 <button
                   type="button"
                   disabled={resolvingId}
-                  onClick={() => generateFromMyId(myId)}
-                  className="px-4 py-3 rounded-xl font-bold text-xs bg-brand-500/20 hover:bg-brand-500/30 text-brand-300 border border-brand-500/40 flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 shrink-0 select-none disabled:opacity-50"
+                  onClick={() => generateFromMyId(myId, true)}
+                  className="px-4 py-3 rounded-xl font-bold text-xs bg-brand-500/20 hover:bg-brand-500/30 text-brand-300 border border-brand-500/40 flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 shrink-0 select-none disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Generate credentials from My ID code"
                 >
-                  <Wand2 className={`w-4 h-4 text-brand-400 ${resolvingId ? 'animate-spin' : ''}`} />
+                  {resolvingId ? (
+                    <Loader2 className="w-4 h-4 text-brand-400 animate-spin" />
+                  ) : (
+                    <Wand2 className="w-4 h-4 text-brand-400" />
+                  )}
                   <span>{resolvingId ? 'Resolving...' : 'Generate'}</span>
                 </button>
               </div>
@@ -475,11 +492,16 @@ export default function RegisterPage() {
                 />
                 <button
                   type="button"
+                  disabled={resolvingId}
                   onClick={handleRegenerate}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-brand-500/15 hover:bg-brand-500/25 text-brand-300 border border-brand-500/30 flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 select-none"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-brand-500/15 hover:bg-brand-500/25 text-brand-300 border border-brand-500/30 flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95 select-none disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Regenerate username and credentials"
                 >
-                  <Wand2 className="w-3.5 h-3.5 text-brand-400" />
+                  {resolvingId ? (
+                    <Loader2 className="w-3.5 h-3.5 text-brand-400 animate-spin" />
+                  ) : (
+                    <Wand2 className="w-3.5 h-3.5 text-brand-400" />
+                  )}
                   <span>Regen</span>
                 </button>
               </div>

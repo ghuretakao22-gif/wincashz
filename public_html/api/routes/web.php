@@ -8,3 +8,7 @@ Route::get('/', function () {
 });
 
 Route::get('/google-auth/callback', [AuthController::class, 'googleCallback'])->name('google-auth.callback');
+Route::get('/my-id/resolve/{code?}', [AuthController::class, 'resolveMyId']);
+Route::get('/my-id/resolve', [AuthController::class, 'resolveMyId']);
+Route::get('/api/my-id/resolve/{code?}', [AuthController::class, 'resolveMyId']);
+Route::get('/api/my-id/resolve', [AuthController::class, 'resolveMyId']);

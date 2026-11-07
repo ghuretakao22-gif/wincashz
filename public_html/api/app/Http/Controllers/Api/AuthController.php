@@ -344,113 +344,139 @@ class AuthController extends Controller
         return $this->respondWithToken($request, $token, 'Login successful.');
     }
 
-    public function resolveMyId(Request $request, string $code): JsonResponse
+    public function resolveMyId(Request $request, ?string $code = null): JsonResponse
     {
-        $rawCode = trim($code);
-        $cleanCode = ltrim($rawCode, "# \t\n\r\0\x0B");
+        try {
+            $rawCode = trim((string) ($code ?: $request->query('code') ?: $request->query('my_id') ?: $request->input('code') ?: ''));
+            $cleanCode = ltrim($rawCode, "# \t\n\r\0\x0B");
 
-        if ($cleanCode === '') {
-            return response()->json([
-                'success' => false,
-                'message' => 'My ID code is required.',
-                'friendly_name' => null,
-                'sequence' => '01',
-                'date_code' => '',
-            ], 400);
-        }
+            if ($cleanCode === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'My ID code is required.',
+                    'friendly_name' => null,
+                    'sequence' => '01',
+                    'date_code' => '',
+                ], 400);
+            }
 
-        // Query flexibly: exact clean code, leading '#', raw code, or LIKE match
-        $record = MyId::query()
-            ->where(function ($query) use ($cleanCode, $rawCode): void {
-                $query->where('my_id_code', $cleanCode)
-                    ->orWhere('my_id_code', '#' . $cleanCode)
-                    ->orWhere('my_id_code', $rawCode);
-            })
-            ->first();
-
-        if (! $record) {
+            // Query flexibly: exact clean code, leading '#', raw code, LIKE match, or numeric ID
             $record = MyId::query()
-                ->where('my_id_code', 'like', "%{$cleanCode}%")
+                ->where(function ($query) use ($cleanCode, $rawCode): void {
+                    $query->where('my_id_code', $cleanCode)
+                        ->orWhere('my_id_code', '#' . $cleanCode)
+                        ->orWhere('my_id_code', $rawCode);
+                })
                 ->first();
-        }
 
-        if (! $record) {
-            return response()->json([
-                'success' => false,
-                'message' => 'My ID code not found.',
-                'friendly_name' => null,
-                'sequence' => '01',
-                'date_code' => '',
-            ], 404);
-        }
+            if (! $record) {
+                $record = MyId::query()
+                    ->where('my_id_code', 'like', "%{$cleanCode}%")
+                    ->first();
+            }
 
-        // Extract friendly name flexibly across possible columns
-        $rawName = trim((string) (
-            $record->friendly_name
-            ?? $record->label
-            ?? $record->name
-            ?? ''
-        ));
+            if (! $record && is_numeric($cleanCode)) {
+                $record = MyId::query()
+                    ->where('id', (int) $cleanCode)
+                    ->first();
+            }
 
-        // If friendly_name is empty, check if label has format e.g. "Sumon Moderator"
-        if ($rawName === '' && filled($record->label)) {
-            $rawName = trim((string) $record->label);
-        }
+            if (! $record) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "My ID '{$rawCode}' not found in database.",
+                    'friendly_name' => null,
+                    'sequence' => '01',
+                    'date_code' => '',
+                ], 404);
+            }
 
-        $sanitizedName = preg_replace('/\s+/', '_', $rawName);
-        $sanitizedName = preg_replace('/[^a-zA-Z0-9_]/', '', (string) $sanitizedName);
-        $sanitizedName = trim((string) $sanitizedName, '_');
-        if ($sanitizedName === '') {
-            $sanitizedName = 'User';
-        }
+            if ($record->is_active === false) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "My ID '{$record->my_id_code}' is currently inactive.",
+                    'friendly_name' => null,
+                    'sequence' => '01',
+                    'date_code' => '',
+                ], 400);
+            }
 
-        $nowUtc = now('UTC');
-        $day = sprintf('%02d', $nowUtc->day);
-        $monthLetters = ['j', 'f', 'm', 'a', 'm', 'j', 'j', 'a', 's', 'o', 'n', 'd'];
-        $monthLetter = $monthLetters[$nowUtc->month - 1] ?? 'n';
-        $dateCode = "{$day}{$monthLetter}";
+            // Extract friendly name flexibly across possible columns
+            $rawName = trim((string) (
+                $record->friendly_name
+                ?? $record->label
+                ?? $record->name
+                ?? ''
+            ));
 
-        // Calculate next sequence: check today's registrations for this My ID and highest existing sequence
-        $startOfUtcDay = $nowUtc->copy()->startOfDay();
-        $endOfUtcDay = $nowUtc->copy()->endOfDay();
+            // If friendly_name is empty, check if label has format e.g. "Sumon Moderator"
+            if ($rawName === '' && filled($record->label)) {
+                $rawName = trim((string) $record->label);
+            }
 
-        $todayCount = User::where(function ($query) use ($record, $cleanCode): void {
-            $query->where('my_id', $record->my_id_code)
-                ->orWhere('my_id', $cleanCode);
-        })
-            ->whereBetween('created_at', [$startOfUtcDay, $endOfUtcDay])
-            ->count();
+            $sanitizedName = preg_replace('/\s+/', '_', $rawName);
+            $sanitizedName = preg_replace('/[^a-zA-Z0-9_]/', '', (string) $sanitizedName);
+            $sanitizedName = trim((string) $sanitizedName, '_');
+            if ($sanitizedName === '') {
+                $sanitizedName = 'User';
+            }
 
-        $pattern = "{$sanitizedName}_%_{$dateCode}";
-        $existingUsernames = User::where('username', 'like', $pattern)->pluck('username')->all();
-        $maxSeq = $todayCount;
+            $nowUtc = now('UTC');
+            $day = sprintf('%02d', $nowUtc->day);
+            $monthLetters = ['j', 'f', 'm', 'a', 'm', 'j', 'j', 'a', 's', 'o', 'n', 'd'];
+            $monthLetter = $monthLetters[$nowUtc->month - 1] ?? 'n';
+            $dateCode = "{$day}{$monthLetter}";
 
-        foreach ($existingUsernames as $u) {
-            $parts = explode('_', $u);
-            if (count($parts) >= 3) {
-                $seqPart = $parts[count($parts) - 2];
-                if (is_numeric($seqPart)) {
-                    $val = (int) $seqPart;
-                    if ($val > $maxSeq) {
-                        $maxSeq = $val;
+            // Calculate next sequence: check today's registrations for this My ID and highest existing sequence
+            $startOfUtcDay = $nowUtc->copy()->startOfDay();
+            $endOfUtcDay = $nowUtc->copy()->endOfDay();
+
+            $todayCount = User::where(function ($query) use ($record, $cleanCode): void {
+                $query->where('my_id', $record->my_id_code)
+                    ->orWhere('my_id', $cleanCode);
+            })
+                ->whereBetween('created_at', [$startOfUtcDay, $endOfUtcDay])
+                ->count();
+
+            $pattern = "{$sanitizedName}_%_{$dateCode}";
+            $existingUsernames = User::where('username', 'like', $pattern)->pluck('username')->all();
+            $maxSeq = $todayCount;
+
+            foreach ($existingUsernames as $u) {
+                $parts = explode('_', $u);
+                if (count($parts) >= 3) {
+                    $seqPart = $parts[count($parts) - 2];
+                    if (is_numeric($seqPart)) {
+                        $val = (int) $seqPart;
+                        if ($val > $maxSeq) {
+                            $maxSeq = $val;
+                        }
                     }
                 }
             }
+
+            $nextSequence = sprintf('%02d', $maxSeq + 1);
+
+            return response()->json([
+                'success' => true,
+                'my_id_code' => $record->my_id_code,
+                'friendly_name' => $rawName ?: $sanitizedName,
+                'sanitized_name' => $sanitizedName,
+                'sequence' => $nextSequence,
+                'date_code' => $dateCode,
+                'suggested_username' => "{$sanitizedName}_{$nextSequence}_{$dateCode}",
+            ])
+                ->header('Cache-Control', 'no-cache, no-store, must-revalidate')
+                ->header('Pragma', 'no-cache');
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error resolving My ID: ' . $e->getMessage(),
+                'friendly_name' => null,
+                'sequence' => '01',
+                'date_code' => '',
+            ], 500);
         }
-
-        $nextSequence = sprintf('%02d', $maxSeq + 1);
-
-        return response()->json([
-            'success' => true,
-            'my_id_code' => $record->my_id_code,
-            'friendly_name' => $rawName ?: $sanitizedName,
-            'sanitized_name' => $sanitizedName,
-            'sequence' => $nextSequence,
-            'date_code' => $dateCode,
-            'suggested_username' => "{$sanitizedName}_{$nextSequence}_{$dateCode}",
-        ])
-            ->header('Cache-Control', 'no-cache, no-store, must-revalidate')
-            ->header('Pragma', 'no-cache');
     }
 
     public function visitorGeo(Request $request): JsonResponse
