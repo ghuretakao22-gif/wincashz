@@ -266,9 +266,18 @@ class AuthController extends Controller
         $myIdCode = null;
 
         if ($myIdInput !== '') {
-            $myIdRecord = MyId::where('my_id_code', $myIdInput)->first(['my_id_code', 'is_active']);
+            $cleanInput = ltrim($myIdInput, "# \t\n\r\0\x0B");
+            $myIdRecord = MyId::where('my_id_code', $myIdInput)
+                ->orWhere('my_id_code', $cleanInput)
+                ->orWhere('my_id_code', '#' . $cleanInput)
+                ->first(['my_id_code', 'is_active']);
 
-            if (! $myIdRecord || ! $myIdRecord->is_active) {
+            if (! $myIdRecord && $cleanInput !== '') {
+                $myIdRecord = MyId::where('my_id_code', 'like', "%{$cleanInput}%")
+                    ->first(['my_id_code', 'is_active']);
+            }
+
+            if (! $myIdRecord || ($myIdRecord->is_active === false)) {
                 throw ValidationException::withMessages([
                     'my_id_code' => ['Invalid or inactive My ID code.'],
                     'my_id' => ['Invalid or inactive My ID code.'],
@@ -337,7 +346,8 @@ class AuthController extends Controller
 
     public function resolveMyId(Request $request, string $code): JsonResponse
     {
-        $cleanCode = trim($code);
+        $rawCode = trim($code);
+        $cleanCode = ltrim($rawCode, "# \t\n\r\0\x0B");
 
         if ($cleanCode === '') {
             return response()->json([
@@ -349,20 +359,47 @@ class AuthController extends Controller
             ], 400);
         }
 
-        $record = MyId::where('my_id_code', $cleanCode)->first(['my_id_code', 'friendly_name', 'label', 'is_active']);
+        // Query flexibly: exact clean code, leading '#', raw code, or LIKE match
+        $record = MyId::query()
+            ->where(function ($query) use ($cleanCode, $rawCode): void {
+                $query->where('my_id_code', $cleanCode)
+                    ->orWhere('my_id_code', '#' . $cleanCode)
+                    ->orWhere('my_id_code', $rawCode);
+            })
+            ->first();
 
-        if (! $record || ! $record->is_active) {
+        if (! $record) {
+            $record = MyId::query()
+                ->where('my_id_code', 'like', "%{$cleanCode}%")
+                ->first();
+        }
+
+        if (! $record) {
             return response()->json([
                 'success' => false,
-                'message' => 'My ID code not found or inactive.',
+                'message' => 'My ID code not found.',
                 'friendly_name' => null,
                 'sequence' => '01',
                 'date_code' => '',
             ], 404);
         }
 
-        $rawName = trim((string) ($record->friendly_name ?: $record->label ?: ''));
-        $sanitizedName = preg_replace('/[^a-zA-Z0-9_]/', '', $rawName);
+        // Extract friendly name flexibly across possible columns
+        $rawName = trim((string) (
+            $record->friendly_name
+            ?? $record->label
+            ?? $record->name
+            ?? ''
+        ));
+
+        // If friendly_name is empty, check if label has format e.g. "Sumon Moderator"
+        if ($rawName === '' && filled($record->label)) {
+            $rawName = trim((string) $record->label);
+        }
+
+        $sanitizedName = preg_replace('/\s+/', '_', $rawName);
+        $sanitizedName = preg_replace('/[^a-zA-Z0-9_]/', '', (string) $sanitizedName);
+        $sanitizedName = trim((string) $sanitizedName, '_');
         if ($sanitizedName === '') {
             $sanitizedName = 'User';
         }
@@ -377,7 +414,10 @@ class AuthController extends Controller
         $startOfUtcDay = $nowUtc->copy()->startOfDay();
         $endOfUtcDay = $nowUtc->copy()->endOfDay();
 
-        $todayCount = User::where('my_id', $record->my_id_code)
+        $todayCount = User::where(function ($query) use ($record, $cleanCode): void {
+            $query->where('my_id', $record->my_id_code)
+                ->orWhere('my_id', $cleanCode);
+        })
             ->whereBetween('created_at', [$startOfUtcDay, $endOfUtcDay])
             ->count();
 

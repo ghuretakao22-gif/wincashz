@@ -109,7 +109,8 @@ export async function apiRequest(endpoint, options = {}) {
     ...options.headers,
   };
 
-  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+  const cleanEndpoint = endpoint.startsWith('/api/') ? endpoint.slice(4) : endpoint;
+  const url = cleanEndpoint.startsWith('http') ? cleanEndpoint : `${API_BASE}${cleanEndpoint.startsWith('/') ? '' : '/'}${cleanEndpoint}`;
 
   try {
     const response = await fetch(url, {
@@ -179,7 +180,7 @@ export const api = {
   startGoogleAuth: (mode = 'login') => apiRequest('/google-auth/start', { method: 'POST', body: JSON.stringify({ mode }) }),
 
   // Public / User Data
-  resolveMyId: (code) => apiRequest(`/my-id/resolve/${encodeURIComponent(code)}`),
+  resolveMyId: (code) => apiRequest(`/my-id/resolve/${encodeURIComponent(String(code || '').trim().replace(/^#+/, ''))}`),
   getSiteSettings: () => apiRequest('/site-settings'),
   getOffers: () => apiRequest('/offers'),
   

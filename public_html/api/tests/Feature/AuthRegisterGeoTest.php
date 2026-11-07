@@ -325,6 +325,48 @@ class AuthRegisterGeoTest extends TestCase
         ]);
         $this->assertNotEmpty($response->json('date_code'));
         $this->assertStringStartsWith('Zahidul_01_', $response->json('suggested_username'));
+
+        // Test with leading '#' in code lookup (e.g. #1010)
+        $hashResponse = $this->getJson('/api/my-id/resolve/%231010');
+        $hashResponse->assertOk();
+        $hashResponse->assertJsonPath('friendly_name', 'Zahidul');
+    }
+
+    public function test_it_resolves_code_with_hash_in_db_and_spaced_names(): void
+    {
+        DB::table('my_ids')->insert([
+            'my_id_code' => '#1003',
+            'friendly_name' => 'HZ Tanvir',
+            'label' => 'Tanvir Moderator',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Resolving '1003' should match '#1003' in database
+        $response = $this->getJson('/api/my-id/resolve/1003');
+        $response->assertOk();
+        $response->assertJsonPath('friendly_name', 'HZ Tanvir');
+        $response->assertJsonPath('sanitized_name', 'HZ_Tanvir');
+        $this->assertStringStartsWith('HZ_Tanvir_01_', $response->json('suggested_username'));
+    }
+
+    public function test_it_resolves_from_label_when_friendly_name_is_null(): void
+    {
+        DB::table('my_ids')->insert([
+            'my_id_code' => '1019',
+            'friendly_name' => null,
+            'label' => 'Monoyer',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->getJson('/api/my-id/resolve/1019');
+        $response->assertOk();
+        $response->assertJsonPath('friendly_name', 'Monoyer');
+        $response->assertJsonPath('sanitized_name', 'Monoyer');
+        $this->assertStringStartsWith('Monoyer_01_', $response->json('suggested_username'));
     }
 
     public function test_it_returns_404_when_my_id_not_found_or_inactive(): void

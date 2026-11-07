@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Logo from '../components/Logo';
@@ -63,27 +63,12 @@ const incrementDailySequence = () => {
   } catch (e) {}
 };
 
-// Hardcoded ID-to-Name Lookup Map for Operators / Moderators
-const idToNameMap = {
-  "1009": "Sumon",
-  "1010": "Zahidul",
-  "1011": "Rume",
-  "1012": "HZ_Tanvir",
-  "1013": "Aminul",
-  "1014": "Rubel",
-  "1015": "Hridoy",
-  "1016": "Shiehab",
-  "1017": "Akash",
-  "1018": "Nayem",
-  "1019": "Monoyer"
-};
-
 // Construct Dynamic Username: [prefix]_[sequence]_[dateCode]
 // Uses TWO underscores (e.g. Zahidul_01_08n, Monoyer_01_08n, User_01_08n)
-const generateDynamicUsername = (prefix) => {
+const generateDynamicUsername = (prefix, customSeq, customDateCode) => {
   const sanitized = String(prefix || 'User').replace(/[^a-zA-Z0-9_]/g, '').trim() || 'User';
-  const seq = getFormattedDailySequence();
-  const dateCode = getUtcDateCode();
+  const seq = customSeq || getFormattedDailySequence();
+  const dateCode = customDateCode || getUtcDateCode();
   return `${sanitized}_${seq}_${dateCode}`;
 };
 
@@ -106,72 +91,12 @@ export default function RegisterPage() {
   // 1. My ID Code strictly holds numeric value (pre-filled with '10' by default)
   const [myId, setMyId] = useState(urlMyId || '10');
   const [resolvingId, setResolvingId] = useState(false);
-  const [resolvedOperator, setResolvedOperator] = useState(() => {
-    const initialCode = (urlMyId || '10').trim();
-    return idToNameMap[initialCode] || '';
-  });
+  const [resolvedOperator, setResolvedOperator] = useState('');
+  const latestResolveRef = useRef('');
 
-  // Server-backed credential generator with offline fallback
-  const generateFromMyId = async (codeToUse) => {
-    const cleanCode = String(codeToUse !== undefined ? codeToUse : myId).trim();
-    if (!cleanCode) return;
-
-    // 1. Instant optimistic fallback resolution from static map
-    const fallbackName = idToNameMap[cleanCode] || 'User';
-    const fallbackSeq = getFormattedDailySequence();
-    const fallbackDate = getUtcDateCode();
-    const fallbackUser = generateDynamicUsername(fallbackName);
-
-    setUsername(fallbackUser);
-    setEmail(`${fallbackUser}@duck.com`);
-    setPassword(generateRandomPassword());
-    setError(null);
-    if (fallbackName !== 'User') {
-      setResolvedOperator(fallbackName);
-    }
-
-    // 2. Query server for authoritative Friendly Name & sequence
-    setResolvingId(true);
-    try {
-      const res = await api.resolveMyId(cleanCode);
-      if (res && res.success) {
-        const serverName = res.sanitized_name || res.friendly_name || fallbackName;
-        const cleanServerName = String(serverName).replace(/[^a-zA-Z0-9_]/g, '').trim() || 'User';
-        const serverSeq = res.sequence || fallbackSeq;
-        const serverDate = res.date_code || fallbackDate;
-        const serverUser = res.suggested_username || `${cleanServerName}_${serverSeq}_${serverDate}`;
-
-        setUsername(serverUser);
-        setEmail(`${serverUser}@duck.com`);
-        setResolvedOperator(res.friendly_name || cleanServerName);
-      }
-    } catch (e) {
-      // Server returned 404 or network error: fallback values already active
-      if (fallbackName === 'User') {
-        setResolvedOperator('');
-      }
-    } finally {
-      setResolvingId(false);
-    }
-  };
-
-  // 2. Username and Email derived from initial ID lookup
-  const [username, setUsername] = useState(() => {
-    const initialCode = (urlMyId || '10').trim();
-    const initialName = idToNameMap[initialCode];
-    return initialName ? generateDynamicUsername(initialName) : '';
-  });
-
-  const [email, setEmail] = useState(() => {
-    const initialCode = (urlMyId || '10').trim();
-    const initialName = idToNameMap[initialCode];
-    if (initialName) {
-      const u = generateDynamicUsername(initialName);
-      return u ? `${u}@duck.com` : '';
-    }
-    return '';
-  });
-
+  // 2. Credentials state
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState(() => generateRandomPassword());
   const [myIdSystemEnabled, setMyIdSystemEnabled] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
@@ -179,19 +104,55 @@ export default function RegisterPage() {
   const [error, setError] = useState(null);
   const [googleEnabled, setGoogleEnabled] = useState(false);
 
-  // When My ID Code changes, auto-generate if recognized in map
+  // Server-driven credential generator (100% database-driven)
+  const generateFromMyId = async (codeToUse) => {
+    const rawCode = codeToUse !== undefined ? codeToUse : myId;
+    const cleanCode = String(rawCode || '').trim().replace(/^#+/, '');
+    if (!cleanCode) return;
+
+    latestResolveRef.current = cleanCode;
+    setResolvingId(true);
+    setError(null);
+
+    try {
+      const res = await api.resolveMyId(cleanCode);
+      if (latestResolveRef.current !== cleanCode) return;
+
+      if (res && res.success) {
+        const serverName = res.sanitized_name || res.friendly_name || 'User';
+        const cleanServerName = String(serverName).replace(/[^a-zA-Z0-9_]/g, '').trim() || 'User';
+        const serverSeq = res.sequence || getFormattedDailySequence();
+        const serverDate = res.date_code || getUtcDateCode();
+        const serverUser = res.suggested_username || `${cleanServerName}_${serverSeq}_${serverDate}`;
+
+        setUsername(serverUser);
+        setEmail(`${serverUser}@duck.com`);
+        setPassword(generateRandomPassword());
+        setResolvedOperator(res.friendly_name || cleanServerName);
+        return;
+      }
+    } catch (e) {
+      // Not found in database or network error
+    } finally {
+      if (latestResolveRef.current === cleanCode) {
+        setResolvingId(false);
+      }
+    }
+
+    if (latestResolveRef.current === cleanCode) {
+      const fallbackUser = generateDynamicUsername('User');
+      setUsername(fallbackUser);
+      setEmail(`${fallbackUser}@duck.com`);
+      setPassword(generateRandomPassword());
+      setResolvedOperator('');
+    }
+  };
+
+  // When My ID Code changes
   const handleMyIdChange = (newCode) => {
     setMyId(newCode);
-    const cleanCode = newCode.trim();
-    if (idToNameMap[cleanCode]) {
-      const mappedName = idToNameMap[cleanCode];
-      setResolvedOperator(mappedName);
-      const newUsername = generateDynamicUsername(mappedName);
-      if (newUsername) {
-        setUsername(newUsername);
-        setEmail(`${newUsername}@duck.com`);
-      }
-    } else {
+    const clean = newCode.trim().replace(/^#+/, '');
+    if (clean.length < 3) {
       setResolvedOperator('');
     }
   };
@@ -201,9 +162,21 @@ export default function RegisterPage() {
     generateFromMyId(myId);
   };
 
+  // Dynamic debounced resolution whenever operator enters a valid My ID (>= 3 chars)
   useEffect(() => {
-    if (urlMyId && urlMyId.trim().length >= 2) {
-      generateFromMyId(urlMyId);
+    const clean = String(myId || '').trim().replace(/^#+/, '');
+    if (clean.length >= 3) {
+      const timer = setTimeout(() => {
+        generateFromMyId(clean);
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+  }, [myId]);
+
+  useEffect(() => {
+    if (urlMyId && urlMyId.trim()) {
+      setMyId(urlMyId.trim());
+      generateFromMyId(urlMyId.trim());
     }
   }, [urlMyId]);
 
