@@ -2334,8 +2334,34 @@ class AdminController extends Controller
             ? $this->sanitizeOfferwallSlug((string) ($offerwall->postback_slug ?? $offerwallName))
             : $this->sanitizeOfferwallSlug($slug);
 
-        $userIdValue = $this->resolvePostbackValue($request, 'userId', $parameterMap, null);
-        $userId = $userIdValue === null || trim((string) $userIdValue) === '' ? 0 : (int) $userIdValue;
+        $rawUserIdentifier = $this->resolvePostbackValue($request, 'userId', $parameterMap, null);
+        $user = null;
+        if ($rawUserIdentifier !== null && trim((string) $rawUserIdentifier) !== '') {
+            $userCandidate = trim((string) $rawUserIdentifier);
+            if (is_numeric($userCandidate) && (int) $userCandidate > 0) {
+                $user = User::query()->where('id', (int) $userCandidate)->first();
+            }
+            if (! $user) {
+                $decodedCand = trim(urldecode($userCandidate));
+                foreach (array_unique([$userCandidate, $decodedCand]) as $cand) {
+                    if ($cand === '') continue;
+                    $user = User::query()
+                        ->where('username', $cand)
+                        ->orWhereRaw('LOWER(username) = ?', [strtolower($cand)])
+                        ->first();
+                    if ($user) break;
+
+                    $user = User::query()
+                        ->where('name', $cand)
+                        ->orWhere('email', $cand)
+                        ->first();
+                    if ($user) break;
+                }
+            }
+        }
+
+        $userId = $user?->id ?? (is_numeric($rawUserIdentifier) && (int) $rawUserIdentifier > 0 ? (int) $rawUserIdentifier : 0);
+        $userIdResolved = $user instanceof User;
         $transactionId = trim((string) $this->resolvePostbackValue($request, 'transactionId', $parameterMap, ''));
         $rawRevenue = $this->resolvePostbackValue($request, 'revenue', $parameterMap, null);
         $rawReward = $this->resolvePostbackValue($request, 'reward', $parameterMap, null);
@@ -2376,11 +2402,24 @@ class AdminController extends Controller
         );
         $requestIp = trim((string) (app(IpCountryResolver::class)->resolveClientIp($request) ?? ''));
         $postbackIp = trim((string) $this->resolvePostbackValue($request, 'ip', $parameterMap, ''));
-        $country = trim((string) $this->resolvePostbackValue($request, 'country', $parameterMap, ''));
-        if ($country === '') {
-            $country = app(IpCountryResolver::class)->countryFromIp($postbackIp !== '' ? $postbackIp : null, $request);
+        $rawCountry = trim((string) $this->resolvePostbackValue($request, 'country', $parameterMap, ''));
+
+        $resolvedConversionCountry = null;
+        if ($rawCountry !== '' && strcasecmp($rawCountry, 'Unknown') !== 0 && strcasecmp($rawCountry, 'Local') !== 0) {
+            $resolvedConversionCountry = app(IpCountryResolver::class)->normalizeCountryValue($rawCountry);
+        } elseif ($postbackIp !== '' && app(IpCountryResolver::class)->isPublicClientIp($postbackIp)) {
+            $countryFromPostbackIp = app(IpCountryResolver::class)->countryFromIp($postbackIp);
+            if ($countryFromPostbackIp !== 'Unknown' && $countryFromPostbackIp !== 'Local') {
+                $resolvedConversionCountry = $countryFromPostbackIp;
+            }
         }
-        $country = $country !== '' ? $country : null;
+
+        if (! $resolvedConversionCountry && $user && filled($user->country) && $user->country !== 'Unknown' && $user->country !== 'Local') {
+            $resolvedConversionCountry = $user->country;
+        }
+
+        $country = $resolvedConversionCountry ?? 'unknown';
+        $conversionIp = $postbackIp !== '' ? $postbackIp : ($user?->ip ?? ($requestIp !== '' ? $requestIp : null));
 
         if ($transactionId === '') {
             $transactionId = (string) Str::uuid();
@@ -2389,9 +2428,6 @@ class AdminController extends Controller
         $whitelistRequired = (bool) ($offerwall->postback_whitelist_ip_required ?? false);
         $whitelistIps = $this->normalizeWhitelistIps($offerwall->postback_whitelist_ips ?? []);
         $ipWhitelistPassed = !$whitelistRequired || $whitelistIps === [] || in_array($requestIp, $whitelistIps, true);
-
-        $user = $userId > 0 ? User::query()->where('id', $userId)->first() : null;
-        $userIdResolved = $user instanceof User;
 
         $existingCompletedTask = CompletedTask::query()
             ->where('transaction_id', $transactionId)
@@ -2460,10 +2496,26 @@ class AdminController extends Controller
                     'status' => $status,
                     'offer_name' => $offerName,
                     'offer_id' => $offerId,
-                    'ip' => $requestIp,
+                    'ip' => $conversionIp,
                     'country' => $country,
                 ],
             ], $testPass ? 200 : 422);
+        }
+
+        if (! $userIdResolved) {
+            Log::warning("Postback drop: USER_NOT_FOUND for provider {$offerwallSlug}", [
+                'provider' => $offerwallSlug,
+                'request_ip' => $requestIp,
+                'user_identifier' => $rawUserIdentifier,
+                'query_params' => $request->all(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'status' => 'FAIL',
+                'result' => 'FAIL',
+                'message' => "Postback drop: User could not be resolved for identifier '".($rawUserIdentifier ?? '')."'.",
+            ], 422);
         }
 
         if (!$ipWhitelistPassed) {
@@ -2485,7 +2537,7 @@ class AdminController extends Controller
             DB::transaction(function () use (
                 $offerwallSlug,
                 $offerwallName,
-                $requestIp,
+                $conversionIp,
                 $country,
                 $transactionId,
                 $offerName,
@@ -2515,7 +2567,7 @@ class AdminController extends Controller
                     'offer_id' => $offerId !== '' ? $offerId : null,
                     'revenue' => round($revenue, 2),
                     'currency_reward' => round($reversalAmount, 2),
-                    'ip' => $requestIp !== '' ? $requestIp : null,
+                    'ip' => $conversionIp !== '' ? $conversionIp : null,
                     'country' => $country ?? 'unknown',
                     'status' => 'chargeback',
                 ]);
@@ -2560,7 +2612,7 @@ class AdminController extends Controller
         DB::transaction(function () use (
             $offerwallSlug,
             $offerwallName,
-            $requestIp,
+            $conversionIp,
             $country,
             $transactionId,
             $offerName,
@@ -2580,7 +2632,7 @@ class AdminController extends Controller
                 'offer_id' => $offerId !== '' ? $offerId : null,
                 'revenue' => round($revenue, 2),
                 'currency_reward' => round($reward, 2),
-                'ip' => $requestIp !== '' ? $requestIp : null,
+                'ip' => $conversionIp !== '' ? $conversionIp : null,
                 'country' => $country ?? 'unknown',
             ]);
 
@@ -2628,7 +2680,7 @@ class AdminController extends Controller
                         $timelineData['country'] = $country ?? ($lockedUser->country ?? 'unknown');
                     }
                     if (Schema::hasColumn('timeline_entries', 'ip')) {
-                        $timelineData['ip'] = $requestIp !== '' ? $requestIp : null;
+                        $timelineData['ip'] = $conversionIp !== '' ? $conversionIp : null;
                     }
                     if (Schema::hasColumn('timeline_entries', 'status')) {
                         $timelineData['status'] = 'approved';
@@ -2663,7 +2715,7 @@ class AdminController extends Controller
 
     private function postbackAcknowledgementResponse(): Response
     {
-        return response('Ok', 200)->header('Content-Type', 'text/plain; charset=UTF-8');
+        return response('1', 200)->header('Content-Type', 'text/plain; charset=UTF-8');
     }
 
     private function formatTimelineEntry(TimelineEntry $entry): array
@@ -2842,24 +2894,45 @@ class AdminController extends Controller
                 }
 
                 $norm = trim((string) $value);
-                if (is_numeric($norm) && (int) $norm > 0) {
-                    return (int) $norm;
-                }
+                $decoded = trim(urldecode($norm));
+                $candidates = array_values(array_unique(array_filter([$norm, $decoded])));
 
-                if (preg_match('/^(?:user_|usr[-_]|id[=:]?|uid[-_]?|#)?(\d+)$/i', $norm, $matches)) {
-                    $extractedId = (int) $matches[1];
-                    if ($extractedId > 0) {
-                        $foundById = User::query()->where('id', $extractedId)->first();
+                foreach ($candidates as $cand) {
+                    if (is_numeric($cand) && (int) $cand > 0) {
+                        $foundById = User::query()->where('id', (int) $cand)->first();
                         if ($foundById instanceof User) {
                             return $foundById->id;
                         }
                     }
+
+                    if (preg_match('/^(?:user_|usr[-_]|id[=:]?|uid[-_]?|#)?(\d+)$/i', $cand, $matches)) {
+                        $extractedId = (int) $matches[1];
+                        if ($extractedId > 0) {
+                            $foundById = User::query()->where('id', $extractedId)->first();
+                            if ($foundById instanceof User) {
+                                return $foundById->id;
+                            }
+                        }
+                    }
+
+                    $foundUser = User::query()
+                        ->where('username', $cand)
+                        ->orWhereRaw('LOWER(username) = ?', [strtolower($cand)])
+                        ->first();
+                    if ($foundUser instanceof User) {
+                        return $foundUser->id;
+                    }
+
+                    $foundByNameOrEmail = User::query()
+                        ->where('name', $cand)
+                        ->orWhere('email', $cand)
+                        ->first();
+                    if ($foundByNameOrEmail instanceof User) {
+                        return $foundByNameOrEmail->id;
+                    }
                 }
 
-                $foundUser = User::query()->where('username', $norm)->orWhere('name', $norm)->first();
-                if ($foundUser instanceof User) {
-                    return $foundUser->id;
-                }
+                return $norm;
             }
 
             return $default;
@@ -3533,6 +3606,38 @@ class AdminController extends Controller
         return Str::headline($this->firstNonEmptyString($fallback, 'Offer'));
     }
 
+    private function resolveRequestCountryCode(Request $request, ?string $ip = null, ?User $user = null): string
+    {
+        foreach (['CF-IPCountry', 'X-Country-Code', 'X-Country'] as $header) {
+            $val = strtoupper(trim((string) $request->header($header, '')));
+            if (strlen($val) === 2 && ctype_alpha($val) && $val !== 'XX') {
+                return $val;
+            }
+        }
+
+        if ($ip && app(IpCountryResolver::class)->isPublicClientIp($ip)) {
+            $geo = app(GeoLocationService::class)->resolve($ip);
+            $code = strtoupper(trim((string) ($geo['country_code'] ?? '')));
+            if (strlen($code) === 2 && ctype_alpha($code) && $code !== '--') {
+                return $code;
+            }
+        }
+
+        $userCountry = strtoupper(trim((string) ($user?->country ?? '')));
+        if (strlen($userCountry) === 2 && ctype_alpha($userCountry) && $userCountry !== 'XX') {
+            return $userCountry;
+        }
+
+        if (str_contains(strtolower($userCountry), 'kingdom') || str_contains(strtolower($userCountry), 'britain')) {
+            return 'GB';
+        }
+        if (str_contains(strtolower($userCountry), 'united states') || str_contains(strtolower($userCountry), 'america')) {
+            return 'US';
+        }
+
+        return 'ALL';
+    }
+
     private function dynamicHomepageOffers(Request $request): array
     {
         if (!Schema::hasTable('offer_api_links')) {
@@ -3549,7 +3654,13 @@ class AdminController extends Controller
         }
 
         $currentUser = auth('api')->user() ?? $request->user('api');
-        $rawOffers = $this->loadNotikApiOffers(trim($notikLink));
+        $resolver = app(IpCountryResolver::class);
+        $clientIp = $resolver->resolveClientIp($request);
+        $publicVisitorIp = ($clientIp && $resolver->isPublicClientIp($clientIp)) ? $clientIp : null;
+        $countryCode = $this->resolveRequestCountryCode($request, $publicVisitorIp, $currentUser);
+        $userAgent = (string) $request->header('User-Agent', '');
+
+        $rawOffers = $this->loadNotikApiOffers(trim($notikLink), $countryCode, $publicVisitorIp, $userAgent);
 
         if ($rawOffers === []) {
             return [];
@@ -3558,20 +3669,39 @@ class AdminController extends Controller
         return $this->normalizeNotikOffers($rawOffers, $currentUser);
     }
 
-    private function loadNotikApiOffers(string $apiLink): array
-    {
-        $cacheKey = 'notik-api-offers:'.sha1($apiLink);
+    private function loadNotikApiOffers(
+        string $apiLink,
+        string $countryCode = 'ALL',
+        ?string $visitorIp = null,
+        ?string $userAgent = null
+    ): array {
+        $cacheKey = "notik-api-offers:{$countryCode}:" . sha1($apiLink);
 
-        return Cache::remember($cacheKey, now()->addMinutes(15), function () use ($apiLink): array {
+        return Cache::remember($cacheKey, now()->addMinutes(15), function () use ($apiLink, $countryCode, $visitorIp, $userAgent): array {
             $offers = [];
             $currentUrl = $apiLink;
+
+            $additions = [];
+            if ($visitorIp && !str_contains($currentUrl, 'user_ip=') && !str_contains($currentUrl, 'ip=')) {
+                $additions['user_ip'] = $visitorIp;
+            }
+            if ($countryCode !== 'ALL' && !str_contains($currentUrl, 'country=') && !str_contains($currentUrl, 'country_code=')) {
+                $additions['country'] = strtolower($countryCode);
+            }
+            if (!empty($additions)) {
+                $sep = str_contains($currentUrl, '?') ? '&' : '?';
+                $currentUrl .= $sep . http_build_query($additions);
+            }
+
             $requestCount = 0;
 
             while ($currentUrl !== '' && $requestCount < 30) {
                 try {
-                    $response = Http::acceptJson()
-                        ->timeout(20)
-                        ->get($currentUrl);
+                    $client = Http::acceptJson()->timeout(20);
+                    if ($userAgent !== null && $userAgent !== '') {
+                        $client = $client->withUserAgent($userAgent);
+                    }
+                    $response = $client->get($currentUrl);
                 } catch (\Throwable) {
                     break;
                 }

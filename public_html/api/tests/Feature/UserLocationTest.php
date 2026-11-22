@@ -198,9 +198,18 @@ class UserLocationTest extends TestCase
         $this->assertFalse($service->isPrivateIp('2606:4700:4700::1111'));
     }
 
-    public function test_authenticated_user_direct_connection_ignores_spoofed_headers(): void
+    public function test_authenticated_user_behind_reverse_proxy_resolves_forwarded_ip(): void
     {
-        Http::fake();
+        Http::fake([
+            'https://ipwho.is/8.8.8.8' => Http::response([
+                'success' => true,
+                'ip' => '8.8.8.8',
+                'country' => 'United States',
+                'country_code' => 'US',
+                'city' => 'Mountain View',
+                'region' => 'California',
+            ], 200),
+        ]);
 
         $user = $this->createUser();
 
@@ -212,6 +221,24 @@ class UserLocationTest extends TestCase
                 'X-Real-IP' => '8.8.8.8',
                 'X-Client-IP' => '8.8.8.8',
             ])
+            ->getJson('/api/me/location');
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'ip' => '8.8.8.8',
+                'country' => 'United States',
+                'country_code' => 'US',
+            ]);
+    }
+
+    public function test_authenticated_user_direct_connection_resolves_local(): void
+    {
+        Http::fake();
+
+        $user = $this->createUser();
+
+        $response = $this->actingAs($user, 'api')
+            ->withServerVariables(['REMOTE_ADDR' => '127.0.0.1'])
             ->getJson('/api/me/location');
 
         $response->assertStatus(200)

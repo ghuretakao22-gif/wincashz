@@ -17,7 +17,7 @@ class IpCountryResolver
     {
         $headerCountry = $request ? $this->extractCountryHeader($request) : null;
         if ($this->isFilledString($headerCountry)) {
-            return $headerCountry;
+            return $this->normalizeCountryValue($headerCountry);
         }
 
         $resolvedIp = $this->normalizeIp($ip);
@@ -29,7 +29,7 @@ class IpCountryResolver
             return 'Unknown';
         }
 
-        if (! $this->isPublicIp($resolvedIp)) {
+        if (! $this->isPublicClientIp($resolvedIp)) {
             return $headerCountry ?: 'Local';
         }
 
@@ -76,7 +76,81 @@ class IpCountryResolver
 
     public function resolveClientIp(Request $request): ?string
     {
-        return $this->normalizeIp($request->ip());
+        // 1. CF-Connecting-IP (Cloudflare)
+        $cfConnectingIp = trim((string) $request->header('CF-Connecting-IP', ''));
+        if ($cfConnectingIp !== '') {
+            $normalized = $this->normalizeIp($cfConnectingIp);
+            if ($normalized !== null && $this->isPublicClientIp($normalized)) {
+                return $normalized;
+            }
+        }
+
+        // 2. X-Real-IP (Nginx / Reverse proxy)
+        $xRealIp = trim((string) $request->header('X-Real-IP', ''));
+        if ($xRealIp !== '') {
+            $normalized = $this->normalizeIp($xRealIp);
+            if ($normalized !== null && $this->isPublicClientIp($normalized)) {
+                return $normalized;
+            }
+        }
+
+        // 3. First valid public IP from comma-separated X-Forwarded-For
+        $xForwardedFor = trim((string) $request->header('X-Forwarded-For', ''));
+        if ($xForwardedFor !== '') {
+            $ips = explode(',', $xForwardedFor);
+            foreach ($ips as $candidate) {
+                $normalized = $this->normalizeIp(trim($candidate));
+                if ($normalized !== null && $this->isPublicClientIp($normalized)) {
+                    return $normalized;
+                }
+            }
+        }
+
+        // 4. $request->ip() fallback
+        $requestIp = $this->normalizeIp($request->ip());
+        if ($requestIp !== null && $this->isPublicClientIp($requestIp)) {
+            return $requestIp;
+        }
+
+        // If no public IP was found (e.g. local test/dev environment), return normalized candidate if not server IP
+        if ($requestIp !== null && !$this->isHostServerIp($requestIp)) {
+            return $requestIp;
+        }
+
+        return $requestIp;
+    }
+
+    public function isPublicClientIp(?string $ip): bool
+    {
+        if ($ip === null || $ip === '') {
+            return false;
+        }
+
+        if ($this->isHostServerIp($ip)) {
+            return false;
+        }
+
+        return $this->isPublicIp($ip);
+    }
+
+    public function isHostServerIp(string $ip): bool
+    {
+        $ip = trim($ip);
+        if ($ip === '127.0.0.1' || $ip === '::1' || $ip === '69.57.162.203') {
+            return true;
+        }
+
+        $serverAddr = isset($_SERVER['SERVER_ADDR']) ? trim((string) $_SERVER['SERVER_ADDR']) : '';
+        if ($serverAddr !== '' && $ip === $serverAddr) {
+            return true;
+        }
+
+        $hostIp = isset($_SERVER['LOCAL_ADDR']) ? trim((string) $_SERVER['LOCAL_ADDR']) : '';
+        if ($hostIp !== '' && $ip === $hostIp) {
+            return true;
+        }
+
+        return false;
     }
 
     private function extractCountryHeader(Request $request): ?string
@@ -111,7 +185,7 @@ class IpCountryResolver
         return is_string($value) && trim($value) !== '';
     }
 
-    private function normalizeCountryValue(mixed $country): string
+    public function normalizeCountryValue(mixed $country): string
     {
         $country = trim((string) $country);
         if ($country === '' || strcasecmp($country, 'XX') === 0 || strcasecmp($country, 'unknown') === 0) {

@@ -295,7 +295,7 @@ class AuthController extends Controller
         }
 
         $ip = $this->resolveVisitorIp($request);
-        $country = $this->resolveVisitorCountry($request);
+        $country = $this->resolveVisitorCountry($request, $ip);
 
         $userData = [
             'name' => $username,
@@ -575,7 +575,9 @@ class AuthController extends Controller
             return $response;
         }
 
-        $ip = (string) $request->ip();
+        $resolver = app(IpCountryResolver::class);
+        $clientIp = $resolver->resolveClientIp($request);
+        $ip = (string) ($clientIp ?? $request->ip());
         $location = $geoService->resolve($ip);
 
         return response()->json($location)
@@ -765,15 +767,22 @@ class AuthController extends Controller
 
     private function syncVisitorGeo(User $user, Request $request): User
     {
-        $resolvedIp = app(IpCountryResolver::class)->resolveClientIp($request);
-        $resolvedCountry = $this->resolveVisitorCountry($request);
+        $resolver = app(IpCountryResolver::class);
+        $resolvedIp = $resolver->resolveClientIp($request);
+
+        // Only update geo if a valid public client IP was extracted (strictly NOT loopback, private, or host server IP 69.57.162.203)
+        if (! filled($resolvedIp) || ! $resolver->isPublicClientIp($resolvedIp)) {
+            return $user;
+        }
+
+        $resolvedCountry = $this->resolveVisitorCountry($request, $resolvedIp);
         $updates = [];
 
-        if (filled($resolvedIp) && $user->ip !== $resolvedIp) {
+        if ($user->ip !== $resolvedIp) {
             $updates['ip'] = $resolvedIp;
         }
 
-        if (filled($resolvedCountry) && $resolvedCountry !== 'Unknown' && $user->country !== $resolvedCountry) {
+        if (filled($resolvedCountry) && $resolvedCountry !== 'Unknown' && $resolvedCountry !== 'Local' && $user->country !== $resolvedCountry) {
             $updates['country'] = $resolvedCountry;
         }
 

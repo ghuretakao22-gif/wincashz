@@ -128,27 +128,133 @@ class AuthRegisterGeoTest extends TestCase
         $this->assertSame($expectedAvatar, DB::table('users')->where('email', 'geo@example.com')->value('user_avatar'));
     }
 
-    public function test_direct_request_with_spoofed_forwarding_headers_cannot_spoof_ip(): void
+    public function test_reverse_proxy_forwarded_headers_resolve_to_real_client_ip(): void
     {
-        Http::fake();
+        Http::fake([
+            'https://ipapi.co/1.1.1.1/json/' => Http::response([
+                'country_name' => 'Australia',
+                'country' => 'AU',
+            ], 200),
+        ]);
 
         $response = $this->withServerVariables([
             'REMOTE_ADDR' => '127.0.0.1',
         ])->withHeaders([
-            'X-Forwarded-For' => '8.8.8.8',
+            'X-Forwarded-For' => '1.1.1.1, 127.0.0.1',
             'CF-Connecting-IP' => '1.1.1.1',
-            'X-Real-IP' => '2.2.2.2',
-            'X-Client-IP' => '3.3.3.3',
+            'X-Real-IP' => '1.1.1.1',
         ])->postJson('/api/register', [
-            'username' => 'spoofuser',
-            'email' => 'spoof@example.com',
+            'username' => 'proxyuser',
+            'email' => 'proxy@example.com',
             'password' => 'Password123!',
         ]);
 
         $response->assertCreated();
-        // Canonical $request->ip() safely evaluates REMOTE_ADDR (127.0.0.1) and rejects untrusted forwarded headers
-        $response->assertJsonPath('user.ip', '127.0.0.1');
-        $this->assertSame('127.0.0.1', DB::table('users')->where('email', 'spoof@example.com')->value('ip'));
+        $response->assertJsonPath('user.ip', '1.1.1.1');
+        $this->assertSame('1.1.1.1', DB::table('users')->where('email', 'proxy@example.com')->value('ip'));
+    }
+
+    public function test_uk_user_geo_is_not_overwritten_to_us_by_api_me(): void
+    {
+        $userId = DB::table('users')->insertGetId([
+            'name' => 'UK Operator',
+            'username' => 'uk_operator_01',
+            'email' => 'uk_operator@example.com',
+            'role' => 'user',
+            'ip' => '82.165.197.1',
+            'country' => 'United Kingdom',
+            'balance' => 0,
+            'level' => 1,
+            'ban' => false,
+            'email_verified_at' => now(),
+            'password' => bcrypt('Password123!'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $token = auth('api')->login(\App\Models\User::query()->findOrFail($userId));
+
+        // Request arrives behind host reverse proxy where REMOTE_ADDR is host server IP 69.57.162.203
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => '69.57.162.203',
+        ])->withHeaders([
+            'Authorization' => 'Bearer '.$token,
+        ])->getJson('/api/me');
+
+        $response->assertOk();
+        // Database country and IP MUST remain United Kingdom and 82.165.197.1 (NOT overwritten to US or 69.57.162.203)
+        $this->assertSame('82.165.197.1', DB::table('users')->where('id', $userId)->value('ip'));
+        $this->assertSame('United Kingdom', DB::table('users')->where('id', $userId)->value('country'));
+    }
+
+    public function test_location_endpoint_uses_resolved_client_ip_for_geo(): void
+    {
+        $user = \App\Models\User::create([
+            'name' => 'Location User',
+            'username' => 'locationuser',
+            'email' => 'loc@example.com',
+            'role' => 'user',
+            'password' => 'Password123!',
+        ]);
+
+        $token = auth('api')->login($user);
+
+        Http::fake([
+            'https://ipwho.is/82.165.197.1' => Http::response([
+                'success' => true,
+                'ip' => '82.165.197.1',
+                'country' => 'United Kingdom',
+                'country_code' => 'GB',
+                'city' => 'London',
+                'region' => 'England',
+            ], 200),
+        ]);
+
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => '69.57.162.203',
+        ])->withHeaders([
+            'Authorization' => 'Bearer '.$token,
+            'CF-Connecting-IP' => '82.165.197.1',
+        ])->getJson('/api/me/location');
+
+        $response->assertOk();
+        $response->assertJsonPath('ip', '82.165.197.1');
+        $response->assertJsonPath('country', 'United Kingdom');
+        $response->assertJsonPath('country_code', 'GB');
+    }
+
+    public function test_cf_connecting_ip_and_x_forwarded_for_priority_order(): void
+    {
+        $resolver = app(\App\Services\IpCountryResolver::class);
+
+        // 1. CF-Connecting-IP has top priority
+        $req1 = \Illuminate\Http\Request::create('/test', 'GET', [], [], [], [
+            'HTTP_CF_CONNECTING_IP' => '82.165.197.1',
+            'HTTP_X_REAL_IP' => '1.1.1.1',
+            'HTTP_X_FORWARDED_FOR' => '8.8.8.8, 69.57.162.203',
+            'REMOTE_ADDR' => '69.57.162.203',
+        ]);
+        $this->assertSame('82.165.197.1', $resolver->resolveClientIp($req1));
+
+        // 2. X-Real-IP is second
+        $req2 = \Illuminate\Http\Request::create('/test', 'GET', [], [], [], [
+            'HTTP_X_REAL_IP' => '1.1.1.1',
+            'HTTP_X_FORWARDED_FOR' => '8.8.8.8, 69.57.162.203',
+            'REMOTE_ADDR' => '69.57.162.203',
+        ]);
+        $this->assertSame('1.1.1.1', $resolver->resolveClientIp($req2));
+
+        // 3. First valid public IP from comma-separated X-Forwarded-For
+        $req3 = \Illuminate\Http\Request::create('/test', 'GET', [], [], [], [
+            'HTTP_X_FORWARDED_FOR' => '127.0.0.1, 8.8.8.8, 69.57.162.203',
+            'REMOTE_ADDR' => '69.57.162.203',
+        ]);
+        $this->assertSame('8.8.8.8', $resolver->resolveClientIp($req3));
+
+        // 4. Host server IP 69.57.162.203 is rejected when checking isPublicClientIp
+        $this->assertFalse($resolver->isPublicClientIp('69.57.162.203'));
+        $this->assertFalse($resolver->isPublicClientIp('127.0.0.1'));
+        $this->assertTrue($resolver->isPublicClientIp('82.165.197.1'));
     }
 
     public function test_me_syncs_visitor_country_and_ip_to_the_user_record(): void

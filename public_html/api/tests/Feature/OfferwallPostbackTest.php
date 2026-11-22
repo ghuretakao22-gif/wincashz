@@ -130,10 +130,19 @@ class OfferwallPostbackTest extends TestCase
             $table->timestamp('read_at')->nullable()->index();
             $table->timestamps();
         });
+
+        Schema::create('offer_api_links', function (Blueprint $table): void {
+            $table->id();
+            $table->string('provider_key');
+            $table->text('api_link');
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+        });
     }
 
     protected function tearDown(): void
     {
+        Schema::dropIfExists('offer_api_links');
         Schema::dropIfExists('user_notifications');
         Schema::dropIfExists('transactions');
         Schema::dropIfExists('chargebacks');
@@ -197,7 +206,7 @@ class OfferwallPostbackTest extends TestCase
         ]);
 
         $approve = $this->get('/api/offerwall-postback/surveywall?player_id='.$userId.'&txid=tx-1001&payout=1.25&points=250&offer_name=Survey+Complete&offer_id=SV-1&status=approved&ip_address=127.0.0.1&country=BD');
-        $approve->assertOk()->assertContent('Ok');
+        $approve->assertOk()->assertContent('1');
 
         $completedTask = DB::table('completed_tasks')->where('transaction_id', 'tx-1001')->first();
         $this->assertNotNull($completedTask);
@@ -225,7 +234,7 @@ class OfferwallPostbackTest extends TestCase
         $this->assertSame('You have received 250 coins from surveywall for Survey Complete.', $rewardNotification->message);
 
         $chargeback = $this->get('/api/offerwall-postback/surveywall?player_id='.$userId.'&txid=tx-1001&payout=1.25&points=250&offer_name=Survey+Complete&offer_id=SV-1&status=2&ip_address=127.0.0.1&country=BD');
-        $chargeback->assertOk()->assertContent('Ok');
+        $chargeback->assertOk()->assertContent('1');
 
         $this->assertFalse(DB::table('completed_tasks')->where('transaction_id', 'tx-1001')->exists());
 
@@ -243,7 +252,7 @@ class OfferwallPostbackTest extends TestCase
         $this->assertSame('chargeback', $notification->type);
 
         $missingStatusApprove = $this->get('/api/offerwall-postback/surveywall?player_id='.$userId.'&txid=tx-1002&payout=1.25&points=250&offer_name=Survey+Complete+2&offer_id=SV-2&ip_address=127.0.0.1&country=BD');
-        $missingStatusApprove->assertOk()->assertContent('Ok');
+        $missingStatusApprove->assertOk()->assertContent('1');
 
         $completedTaskMissingStatus = DB::table('completed_tasks')->where('transaction_id', 'tx-1002')->first();
         $this->assertNotNull($completedTaskMissingStatus);
@@ -251,7 +260,7 @@ class OfferwallPostbackTest extends TestCase
         $this->assertSame(250.0, (float) DB::table('users')->where('id', $userId)->value('balance'));
 
         $falseChargeback = $this->get('/api/offerwall-postback/surveywall?player_id='.$userId.'&txid=tx-1002&payout=1.25&points=250&offer_name=Survey+Complete+2&offer_id=SV-2&status=false&ip_address=127.0.0.1&country=BD');
-        $falseChargeback->assertOk()->assertContent('Ok');
+        $falseChargeback->assertOk()->assertContent('1');
 
         $this->assertFalse(DB::table('completed_tasks')->where('transaction_id', 'tx-1002')->exists());
 
@@ -261,7 +270,7 @@ class OfferwallPostbackTest extends TestCase
         $this->assertSame(0.0, (float) DB::table('users')->where('id', $userId)->value('balance'));
 
         $successStatus = $this->get('/api/offerwall-postback/surveywall?player_id='.$userId.'&txid=tx-1003&payout=1.25&points=250&offer_name=Survey+Complete+3&offer_id=SV-3&status=success&ip_address=127.0.0.1&country=BD');
-        $successStatus->assertOk()->assertContent('Ok');
+        $successStatus->assertOk()->assertContent('1');
 
         $completedTaskSuccess = DB::table('completed_tasks')->where('transaction_id', 'tx-1003')->first();
         $this->assertNotNull($completedTaskSuccess);
@@ -269,7 +278,7 @@ class OfferwallPostbackTest extends TestCase
         $this->assertSame(250.0, (float) DB::table('users')->where('id', $userId)->value('balance'));
 
         $trueStatus = $this->get('/api/offerwall-postback/surveywall?player_id='.$userId.'&txid=tx-1004&payout=1.25&points=250&offer_name=Survey+Complete+4&offer_id=SV-4&status=true&ip_address=127.0.0.1&country=BD');
-        $trueStatus->assertOk()->assertContent('Ok');
+        $trueStatus->assertOk()->assertContent('1');
 
         $completedTaskTrue = DB::table('completed_tasks')->where('transaction_id', 'tx-1004')->first();
         $this->assertNotNull($completedTaskTrue);
@@ -337,14 +346,14 @@ class OfferwallPostbackTest extends TestCase
         ]);
 
         $approve = $this->get('/api/offerwall-postback/surveywall?player_id='.$userId.'&txid=tx-2001&payout=1.25&points=250&offer_name=Survey+Complete&offer_id=SV-1&status=approved&ip_address=8.8.4.4');
-        $approve->assertOk()->assertContent('Ok');
+        $approve->assertOk()->assertContent('1');
 
         $completedTask = DB::table('completed_tasks')->where('transaction_id', 'tx-2001')->first();
         $this->assertNotNull($completedTask);
         $this->assertSame('United States', $completedTask->country);
     }
 
-    public function test_offerwall_postback_returns_success_when_user_id_is_missing(): void
+    public function test_offerwall_postback_returns_422_when_user_id_is_missing_or_unresolvable(): void
     {
         DB::table('offerwalls')->insert([
             'name' => 'Survey Partners',
@@ -379,15 +388,12 @@ class OfferwallPostbackTest extends TestCase
 
         $response = $this->get('/api/offerwall-postback/surveywall?txid=tx-3001&payout=1.25&points=250&offer_name=Survey+Complete&offer_id=SV-1&status=approved&ip_address=127.0.0.1&country=BD');
 
-        $response->assertOk()->assertContent('Ok');
-        $completedTask = DB::table('completed_tasks')->where('transaction_id', 'tx-3001')->first();
-        $this->assertNotNull($completedTask);
-        $this->assertSame(0, (int) $completedTask->user_id);
-        $this->assertSame('anonymous', $completedTask->user_name);
+        $response->assertStatus(422);
+        $this->assertFalse(DB::table('completed_tasks')->where('transaction_id', 'tx-3001')->exists());
         $this->assertFalse(DB::table('chargebacks')->where('transaction_id', 'tx-3001')->exists());
     }
 
-    public function test_offerwall_postback_silently_acknowledges_invalid_parameters(): void
+    public function test_offerwall_postback_rejects_unresolvable_parameters_with_422(): void
     {
         DB::table('offerwalls')->insert([
             'name' => 'Survey Partners',
@@ -416,7 +422,7 @@ class OfferwallPostbackTest extends TestCase
 
         $response = $this->get('/api/offerwall-postback/surveywall?event_id[]=invalid&user_id[]=invalid&offer_id[]=invalid&reward_amount[]=invalid');
 
-        $response->assertOk()->assertContent('Ok');
+        $response->assertStatus(422);
     }
 
     public function test_cpalead_postback_converts_usd_payout_to_coins_correctly(): void
@@ -470,7 +476,7 @@ class OfferwallPostbackTest extends TestCase
         ]);
 
         $response = $this->get('/api/offerwall-postback/cpalead?subid='.$userId.'&transid=cpa-tx-101&payout=0.47&campaign_name=Hero+Wars&campaign_id=987&ip=127.0.0.1&country=US');
-        $response->assertOk()->assertContent('Ok');
+        $response->assertOk()->assertContent('1');
 
         $completedTask = DB::table('completed_tasks')->where('transaction_id', 'cpa-tx-101')->first();
         $this->assertNotNull($completedTask);
@@ -524,7 +530,7 @@ class OfferwallPostbackTest extends TestCase
 
         // 1. Postback to vortexwall alias with sub_id, event_id, status=1
         $response = $this->get('/api/offerwall-postback/vortexwall?sub_id='.$userId.'&event_id=vortex-tx-555&payout=0.35&reward=350&status=1&campaign_name=Prime+Video');
-        $response->assertOk()->assertContent('Ok');
+        $response->assertOk()->assertContent('1');
 
         $completedTask = DB::table('completed_tasks')->where('transaction_id', 'vortex-tx-555')->first();
         $this->assertNotNull($completedTask);
@@ -534,7 +540,7 @@ class OfferwallPostbackTest extends TestCase
 
         // 2. Postback to unseeded provider (e.g. clickwall)
         $response2 = $this->get('/api/offerwall-postback/clickwall?user_id='.$userId.'&txid=click-tx-777&payout=0.20&reward=200&status=approved&offer_name=App+Install');
-        $response2->assertOk()->assertContent('Ok');
+        $response2->assertOk()->assertContent('1');
 
         $completedTask2 = DB::table('completed_tasks')->where('transaction_id', 'click-tx-777')->first();
         $this->assertNotNull($completedTask2);
@@ -544,11 +550,135 @@ class OfferwallPostbackTest extends TestCase
 
         // 3. User resolution by username
         $response3 = $this->get('/api/offerwall-postback/vortex?user_id=vortexplayer&txid=vortex-tx-888&payout=0.15&reward=150&status=approved&offer_name=Survey');
-        $response3->assertOk()->assertContent('Ok');
+        $response3->assertOk()->assertContent('1');
 
         $completedTask3 = DB::table('completed_tasks')->where('transaction_id', 'vortex-tx-888')->first();
         $this->assertNotNull($completedTask3);
         $this->assertSame($userId, (int) $completedTask3->user_id);
         $this->assertSame(700.0, (float) DB::table('users')->where('id', $userId)->value('balance'));
+    }
+
+    public function test_postback_with_alphanumeric_username_resolves_user_and_credits_balance(): void
+    {
+        DB::table('offerwalls')->insert([
+            'name' => 'Torox',
+            'logo_url' => 'https://example.com/torox.png',
+            'category' => 'offerwall',
+            'iframe_url' => 'https://torox.io/visit/?pub_id=123&user_id=[USER_ID]',
+            'rating' => 5,
+            'is_active' => true,
+            'sort_order' => 1,
+            'unlock_level' => 1,
+            'postback_slug' => 'torox',
+            'postback_parameters' => json_encode([]),
+            'postback_url' => 'https://example.com/api/offerwall-postback/torox',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $userId = DB::table('users')->insertGetId([
+            'name' => 'Zahidul',
+            'username' => 'Zahidul_01_08n',
+            'email' => 'zahidul_01_08n@duck.com',
+            'role' => 'user',
+            'balance' => 100.0,
+            'level' => 1,
+            'ip' => '82.165.197.1',
+            'country' => 'United Kingdom',
+            'referral_code' => 'ZAH123',
+            'password' => bcrypt('secret123'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Incoming postback with alphanumeric username and user residential proxy IP
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => '54.175.64.120', // Torox webhook server IP
+        ])->get('/api/offerwall-postback/torox?user_id=Zahidul_01_08n&id=tx-zahidul-1&amount=500&payout=0.50&status=1&ip=82.165.197.1');
+
+        $response->assertOk()->assertContent('1');
+
+        // Check balance increment
+        $this->assertSame(600.0, (float) DB::table('users')->where('id', $userId)->value('balance'));
+
+        // Check completed task attribution
+        $completedTask = DB::table('completed_tasks')->where('transaction_id', 'tx-zahidul-1')->first();
+        $this->assertNotNull($completedTask);
+        $this->assertSame($userId, (int) $completedTask->user_id);
+        $this->assertSame('Zahidul_01_08n', $completedTask->user_name);
+        $this->assertSame(500.0, (float) $completedTask->currency_reward);
+        $this->assertSame('82.165.197.1', $completedTask->ip);
+        $this->assertSame('United Kingdom', $completedTask->country);
+    }
+
+    public function test_notik_offers_cache_key_isolates_by_country_code(): void
+    {
+        DB::table('offer_api_links')->insert([
+            'provider_key' => 'notik',
+            'api_link' => 'https://notik.me/api/v2/get-offers?api_key=test_key&pub_id=123&app_id=456',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Http::fake([
+            'https://notik.me/api/v2/get-offers*country=gb*' => Http::response([
+                'offers' => [
+                    [
+                        'id' => 'uk-offer-1',
+                        'title' => 'UK Banking App',
+                        'payout' => 3.50,
+                        'points' => 3500,
+                        'click_url' => 'https://notik.me/click/uk1',
+                        'countries' => ['GB'],
+                    ],
+                ],
+            ], 200),
+            'https://notik.me/api/v2/get-offers*country=us*' => Http::response([
+                'offers' => [
+                    [
+                        'id' => 'us-offer-1',
+                        'title' => 'US Credit Card',
+                        'payout' => 5.00,
+                        'points' => 5000,
+                        'click_url' => 'https://notik.me/click/us1',
+                        'countries' => ['US'],
+                    ],
+                ],
+            ], 200),
+            'https://notik.me/api/v2/get-offers*' => Http::response([
+                'offers' => [
+                    [
+                        'id' => 'global-offer-1',
+                        'title' => 'Global Survey',
+                        'payout' => 1.00,
+                        'points' => 1000,
+                        'click_url' => 'https://notik.me/click/global1',
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        // UK Client
+        $ukResponse = $this->withHeaders([
+            'CF-IPCountry' => 'GB',
+            'CF-Connecting-IP' => '82.165.197.1',
+        ])->getJson('/api/offers');
+
+        $ukResponse->assertOk();
+        $ukRows = $ukResponse->json('rows');
+        $this->assertNotEmpty($ukRows);
+        $this->assertSame('UK Banking App', $ukRows[0]['title']);
+
+        // US Client
+        $usResponse = $this->withHeaders([
+            'CF-IPCountry' => 'US',
+            'CF-Connecting-IP' => '8.8.8.8',
+        ])->getJson('/api/offers');
+
+        $usResponse->assertOk();
+        $usRows = $usResponse->json('rows');
+        $this->assertNotEmpty($usRows);
+        $this->assertSame('US Credit Card', $usRows[0]['title']);
     }
 }
