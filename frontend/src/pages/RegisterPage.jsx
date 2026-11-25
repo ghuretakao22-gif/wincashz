@@ -370,13 +370,13 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative bg-[#070a0e] overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center px-4 py-6 relative bg-[#070a0e] overflow-x-clip">
       {/* Background ambient lighting */}
       <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[300px] bg-brand-500/10 blur-[120px] rounded-full pointer-events-none" />
 
       <div className="w-full max-w-md relative z-10">
         {/* Logo at Top */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6 sm:mb-8">
           <Logo size="large" />
           <p className="text-xs text-slate-400 mt-2">
             Create your account & get started in seconds
@@ -384,7 +384,7 @@ export default function RegisterPage() {
         </div>
 
         {/* Auth Card */}
-        <div className="rounded-3xl glass-card border border-white/10 p-8 shadow-2xl space-y-6">
+        <div className="rounded-3xl glass-card border border-white/10 p-5 sm:p-8 shadow-2xl space-y-6">
           <div className="text-center space-y-1">
             <h1 className="text-2xl font-bold text-white">Create Free Account</h1>
             <p className="text-xs text-slate-400">
@@ -458,7 +458,7 @@ export default function RegisterPage() {
                 )}
               </div>
               <div className="flex gap-2">
-                <div className="relative flex-1">
+                <div className="relative flex-1 min-w-0">
                   <Hash className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                   <input
                     type="text"

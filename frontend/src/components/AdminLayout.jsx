@@ -103,34 +103,56 @@ export default function AdminLayout() {
     setSidebarCollapsed(prev => !prev);
   };
 
+  const handleLogout = async () => {
+    setMobileDrawerOpen(false);
+    await logout();
+    navigate('/login');
+  };
+
   return (
     <div className="min-h-screen bg-[#070a0e] text-slate-100 flex flex-col">
       {/* Top Header Navigation Bar */}
-      <header className="sticky top-0 z-40 bg-[#0c1015]/90 backdrop-blur-md border-b border-white/5 px-4 sm:px-6 py-2.5 flex items-center justify-between gap-4">
-        {/* Left Controls: [ Back ] [ Homepage ] [ Page Title / Breadcrumb ] */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {/* Back Button */}
+      <header className="sticky top-0 z-40 bg-[#0c1015]/95 backdrop-blur-md border-b border-white/5 px-3 sm:px-6 py-2.5 flex items-center justify-between gap-2 sm:gap-4">
+        {/* Left Controls: [ Mobile Hamburger ] [ Back ] [ Site / Earn ] [ Page Title / Breadcrumb ] */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          {/* Mobile / Tablet Sidebar Drawer Toggle (< lg) */}
+          <button
+            type="button"
+            onClick={() => setMobileDrawerOpen((prev) => !prev)}
+            className="lg:hidden min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 hover:text-white border border-white/10 transition-colors shrink-0"
+            title="Toggle Admin Menu"
+            aria-label="Toggle Admin Menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+
+          {/* Back Button (sm+) */}
           <button
             onClick={handleBack}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold transition-all active:scale-95 shadow-sm"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold transition-all active:scale-95 shadow-sm shrink-0"
             title="Go Back"
           >
             <ArrowLeft className="w-3.5 h-3.5 text-brand-400" />
-            <span className="hidden sm:inline">Back</span>
+            <span className="hidden md:inline">Back</span>
           </button>
 
-          {/* Homepage Button */}
+          {/* Mobile Current Section Title */}
+          <span className="lg:hidden text-xs sm:text-sm font-bold text-white truncate">
+            {currentLink.name}
+          </span>
+
+          {/* Site / Earn Button */}
           <Link
             to="/earn"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-brand-500/10 to-cyan-500/10 hover:from-brand-500/20 hover:to-cyan-500/20 text-brand-400 hover:text-brand-300 border border-brand-500/25 text-xs font-semibold transition-all active:scale-95"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-brand-500/10 to-cyan-500/10 hover:from-brand-500/20 hover:to-cyan-500/20 text-brand-400 hover:text-brand-300 border border-brand-500/25 text-xs font-semibold transition-all active:scale-95 shrink-0"
             title="Open Public User Homepage / Earn Hub"
           >
             <Globe className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Homepage</span>
+            <span>Site / Earn</span>
           </Link>
 
-          {/* Breadcrumb Separator */}
-          <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 pl-1">
+          {/* Desktop Breadcrumb Separator */}
+          <div className="hidden lg:flex items-center gap-2 text-xs text-slate-500 pl-1">
             <span>/</span>
             <span className="font-semibold text-white flex items-center gap-1.5">
               {currentLink.name}
@@ -138,12 +160,22 @@ export default function AdminLayout() {
           </div>
         </div>
 
-        {/* Center / Right: [ Sidebar Toggle / Three Dots ] [ Admin Profile ] */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        {/* Center / Right: [ Quick Site Link on xs ] [ Sidebar Toggle ] [ Admin Profile ] [ Log Out ] */}
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+          {/* Quick Site / Earn shortcut on extra-small screens */}
+          <Link
+            to="/earn"
+            className="sm:hidden min-h-[38px] flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-brand-500/10 text-brand-400 border border-brand-500/25 text-[11px] font-bold shrink-0"
+            title="Site / Earn"
+          >
+            <Globe className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Earn</span>
+          </Link>
+
           {/* Desktop Sidebar Collapse / Three-Dot Layout Toggle */}
           <button
             onClick={toggleSidebar}
-            className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold transition-all active:scale-95 shadow-sm"
+            className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold transition-all active:scale-95 shadow-sm"
             title={sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar to Full-Width'}
           >
             <MoreVertical className="w-4 h-4 text-brand-400" />
@@ -160,20 +192,13 @@ export default function AdminLayout() {
             )}
           </button>
 
-          {/* Mobile Sidebar Drawer Toggle */}
-          <button
-            onClick={() => setMobileDrawerOpen(prev => !prev)}
-            className="md:hidden p-2 rounded-xl bg-white/5 text-slate-300 hover:text-white border border-white/10"
-            title="Toggle Menu"
-          >
-            <Menu className="w-4 h-4" />
-          </button>
-
-          {/* Current Location Badge */}
-          <CurrentLocationBadge />
+          {/* Current Location Badge (hidden on tiny xs to prevent header overflow, shown inside Drawer) */}
+          <div className="hidden sm:block">
+            <CurrentLocationBadge />
+          </div>
 
           {/* Admin Profile Badge */}
-          <div className="flex items-center gap-2.5 pl-2 border-l border-white/10">
+          <div className="hidden sm:flex items-center gap-2.5 pl-2 border-l border-white/10">
             <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold text-xs">
               {user?.name?.charAt(0) || 'A'}
             </div>
@@ -189,21 +214,21 @@ export default function AdminLayout() {
 
           {/* Sign Out Button */}
           <button
-            onClick={logout}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 border border-rose-500/20 text-xs font-semibold transition-all active:scale-95 cursor-pointer shrink-0"
-            title="Sign Out"
+            onClick={handleLogout}
+            className="min-h-[38px] flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-rose-200 border border-rose-500/25 text-xs font-bold transition-all active:scale-95 cursor-pointer shrink-0"
+            title="Log Out"
           >
             <LogOut className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Sign Out</span>
+            <span>Log Out</span>
           </button>
         </div>
       </header>
 
       {/* Main Body with Dynamic Sidebar & Expandable Full-Width Content */}
-      <div className="flex-1 flex relative">
-        {/* Desktop Sidebar */}
+      <div className="flex-1 flex relative min-w-0">
+        {/* Desktop Sidebar (hidden on < lg) */}
         <aside
-          className={`bg-background-surface border-r border-white/5 flex flex-col justify-between shrink-0 transition-all duration-300 ease-in-out ${
+          className={`hidden lg:flex bg-background-surface border-r border-white/5 flex-col justify-between shrink-0 transition-all duration-300 ease-in-out ${
             sidebarCollapsed
               ? 'w-0 p-0 overflow-hidden border-0 opacity-0 pointer-events-none'
               : 'w-64 p-4 opacity-100'
@@ -259,7 +284,7 @@ export default function AdminLayout() {
               <span>User Experience</span>
             </Link>
             <button
-              onClick={logout}
+              onClick={handleLogout}
               className="w-full flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-500/10 transition-colors"
             >
               <LogOut className="w-4 h-4" />
@@ -268,67 +293,107 @@ export default function AdminLayout() {
           </div>
         </aside>
 
-        {/* Mobile Slide-Out Drawer Overlay */}
+        {/* Mobile / Tablet Slide-Out Drawer Overlay (< lg) */}
         {mobileDrawerOpen && (
-          <div className="fixed inset-0 z-50 flex md:hidden bg-black/80 backdrop-blur-sm animate-fade-in">
-            <div className="w-72 bg-background-surface border-r border-white/10 p-5 flex flex-col justify-between shadow-2xl">
-              <div className="space-y-6">
-                <div className="flex items-center justify-between pb-3 border-b border-white/5">
+          <div className="fixed inset-0 z-[55] flex lg:hidden">
+            <div
+              onClick={() => setMobileDrawerOpen(false)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <aside className="relative z-[56] w-[85vw] max-w-[300px] h-full bg-[#0a0f17] border-r border-white/10 flex flex-col shadow-2xl">
+              {/* Drawer Top Header */}
+              <div className="flex items-center justify-between px-4 h-14 border-b border-white/10 shrink-0">
+                <div className="flex items-center gap-2">
                   <Logo size="small" />
-                  <button
-                    onClick={() => setMobileDrawerOpen(false)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10"
-                  >
-                    ✕
-                  </button>
+                  <span className="text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded">
+                    Admin
+                  </span>
                 </div>
-                <nav className="space-y-1.5">
-                  {adminLinks.map((link) => {
-                    const active = location.pathname === link.path;
-                    return (
-                      <Link
-                        key={link.name}
-                        to={link.path}
-                        onClick={() => setMobileDrawerOpen(false)}
-                        className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold ${
-                          active
-                            ? 'bg-brand-500 text-slate-950 font-bold'
-                            : 'text-slate-300 hover:bg-white/5'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <link.icon className="w-4 h-4" />
-                          <span>{link.name}</span>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </nav>
+                <button
+                  type="button"
+                  onClick={() => setMobileDrawerOpen(false)}
+                  className="min-w-[44px] min-h-[44px] -mr-2 flex items-center justify-center rounded-xl text-slate-400 hover:text-white hover:bg-white/10"
+                  aria-label="Close Admin Menu"
+                >
+                  ✕
+                </button>
               </div>
-              <div className="pt-4 border-t border-white/5 space-y-2">
+
+              {/* Admin Identity + Location */}
+              <div className="px-4 py-3 border-b border-white/10 bg-[#0d131d]/70 flex items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold text-xs shrink-0">
+                    {user?.name?.charAt(0) || 'A'}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-white truncate">
+                      {user?.name || user?.username || 'Admin'}
+                    </div>
+                    <div className="text-[10px] text-amber-400 font-semibold uppercase tracking-wider">
+                      Administrator
+                    </div>
+                  </div>
+                </div>
+                <CurrentLocationBadge />
+              </div>
+
+              {/* Scrollable Nav Links */}
+              <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-1">
+                {adminLinks.map((link) => {
+                  const active = location.pathname === link.path;
+                  return (
+                    <Link
+                      key={link.name}
+                      to={link.path}
+                      onClick={() => setMobileDrawerOpen(false)}
+                      className={`min-h-[44px] flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                        active
+                          ? 'bg-brand-500 text-slate-950 font-bold shadow-glow-emerald'
+                          : 'text-slate-300 hover:text-white hover:bg-white/5 active:bg-white/10'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <link.icon className={`w-4 h-4 ${active ? 'text-slate-950' : 'text-slate-400'}`} />
+                        <span>{link.name}</span>
+                      </div>
+                      {link.badge && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                          active ? 'bg-slate-950/20 text-slate-950' : 'bg-white/10 text-brand-400'
+                        }`}>
+                          {link.badge}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </nav>
+
+              {/* Sticky Drawer Footer */}
+              <div className="p-3.5 border-t border-white/10 bg-[#090d14] space-y-2 pb-[calc(0.875rem+env(safe-area-inset-bottom,0px))] shrink-0">
                 <Link
                   to="/earn"
                   onClick={() => setMobileDrawerOpen(false)}
-                  className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-cyan-400 hover:bg-white/5"
+                  className="min-h-[44px] flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/15 border border-cyan-500/25"
                 >
                   <Globe className="w-4 h-4" />
-                  <span>Homepage / Earn</span>
+                  <span>Site / Earn Hub</span>
                 </Link>
                 <button
-                  onClick={logout}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-500/10"
+                  type="button"
+                  onClick={handleLogout}
+                  className="w-full min-h-[44px] flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-rose-300 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30"
                 >
-                  <LogOut className="w-4 h-4" />
-                  <span>Sign Out</span>
+                  <LogOut className="w-4 h-4 text-rose-400" />
+                  <span>Log Out</span>
                 </button>
               </div>
-            </div>
+            </aside>
           </div>
         )}
 
         {/* Full-Width Expandable Main Content Area */}
         <main
-          className={`flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto transition-all duration-300 ${
+          className={`flex-1 min-w-0 p-3 sm:p-6 lg:p-8 overflow-y-auto overflow-x-clip transition-all duration-300 ${
             sidebarCollapsed ? 'w-full max-w-full' : 'max-w-7xl'
           }`}
         >

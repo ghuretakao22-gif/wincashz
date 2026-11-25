@@ -166,13 +166,13 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative bg-[#070a0e] overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center px-4 py-6 relative bg-[#070a0e] overflow-x-clip">
       {/* Background ambient lighting */}
       <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[300px] bg-cyan-500/10 blur-[120px] rounded-full pointer-events-none" />
 
       <div className="w-full max-w-md relative z-10">
         {/* Logo at Top */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6 sm:mb-8">
           <Logo size="large" />
           <p className="text-xs text-slate-400 mt-2">
             {isAdminMode ? 'Administrator Management Access' : 'Welcome back to your rewards dashboard'}
@@ -180,7 +180,7 @@ export default function LoginPage() {
         </div>
 
         {/* Auth Card */}
-        <div className="rounded-3xl glass-card border border-white/10 p-8 shadow-2xl space-y-6">
+        <div className="rounded-3xl glass-card border border-white/10 p-5 sm:p-8 shadow-2xl space-y-6">
           <div className="text-center space-y-1">
             <h1 className="text-2xl font-bold text-white">
               {isAdminMode ? 'Admin Sign In' : 'Sign In'}

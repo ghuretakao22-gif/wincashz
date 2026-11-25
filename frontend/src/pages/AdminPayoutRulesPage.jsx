@@ -926,8 +926,8 @@ export default function AdminPayoutRulesPage() {
 
       {/* ADD RULE MODAL */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="glass-card w-full max-w-lg p-6 rounded-3xl border border-white/10 shadow-2xl relative space-y-5">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="glass-card w-full max-w-lg max-h-[90dvh] overflow-y-auto p-5 sm:p-6 rounded-3xl border border-white/10 shadow-2xl relative space-y-5">
             <button
               onClick={() => setShowAddModal(false)}
               className="absolute right-5 top-5 text-slate-400 hover:text-white transition-colors"
@@ -1091,8 +1091,8 @@ export default function AdminPayoutRulesPage() {
 
       {/* EDIT RULE MODAL */}
       {editingRule && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="glass-card w-full max-w-lg p-6 rounded-3xl border border-white/10 shadow-2xl relative space-y-5">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="glass-card w-full max-w-lg max-h-[90dvh] overflow-y-auto p-5 sm:p-6 rounded-3xl border border-white/10 shadow-2xl relative space-y-5">
             <button
               onClick={() => setEditingRule(null)}
               className="absolute right-5 top-5 text-slate-400 hover:text-white transition-colors"

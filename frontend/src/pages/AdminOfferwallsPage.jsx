@@ -805,8 +805,8 @@ export default function AdminOfferwallsPage() {
           ADD / EDIT OFFERWALL & DYNAMIC POSTBACK GENERATOR MODAL
          ========================================================================= */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in">
-          <div className="relative w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-3xl glass-panel border border-white/10 shadow-2xl p-5 sm:p-7 space-y-5">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-3xl max-h-[90dvh] overflow-y-auto rounded-3xl glass-panel border border-white/10 shadow-2xl p-4 sm:p-7 space-y-5">
             <div ref={modalTopRef} className="flex items-center justify-between pb-3 border-b border-white/10">
               <div>
                 <h3 className="text-xl font-extrabold text-white flex items-center gap-2">
@@ -1122,8 +1122,8 @@ export default function AdminOfferwallsPage() {
 
       {/* Incoming Postback Tester Modal */}
       {testModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
-          <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl glass-panel border border-white/10 shadow-2xl p-6 sm:p-8 space-y-6">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-2xl max-h-[90dvh] overflow-y-auto rounded-3xl glass-panel border border-white/10 shadow-2xl p-4 sm:p-8 space-y-6">
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
               <div>
                 <h3 className="text-xl font-extrabold text-white flex items-center gap-2">

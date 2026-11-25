@@ -3,11 +3,17 @@
 @tailwind utilities;
 
 @layer base {
+  html,
+  body,
+  #root {
+    overflow-x: clip;
+    max-width: 100%;
+  }
+
   body {
     background-color: #070a0e;
     color: #f1f5f9;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-    overflow-x: hidden;
   }
 }
 

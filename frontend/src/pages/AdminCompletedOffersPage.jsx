@@ -643,8 +643,8 @@ export default function AdminCompletedOffersPage() {
 
       {/* Task Details Modal */}
       {selectedTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
-          <div className="bg-[#0b0e14] border border-white/10 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#0b0e14] border border-white/10 rounded-3xl max-w-lg w-full max-h-[90dvh] overflow-y-auto p-5 sm:p-6 space-y-4 shadow-2xl relative">
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <FileSpreadsheet className="w-4 h-4 text-brand-400" />

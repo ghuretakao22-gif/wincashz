@@ -125,7 +125,7 @@ export default function LandingPage() {
               </div>
 
               {/* Dominant Cinematic Headline */}
-              <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-white leading-[1.12]">
+              <h1 className="text-3xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-white leading-[1.12]">
                 Earn Real Cash & Crypto For{' '}
                 <span className="gradient-text-brand">Gaming & Surveys</span>
               </h1>
@@ -155,24 +155,27 @@ export default function LandingPage() {
               </div>
 
               {/* Verified Platform Features (Real Value Props) */}
-              <div className="grid grid-cols-3 gap-4 pt-6 border-t border-white/5 max-w-lg mx-auto lg:mx-0 text-left">
+              <div className="grid grid-cols-3 gap-2 sm:gap-4 pt-6 border-t border-white/5 max-w-lg mx-auto lg:mx-0 text-left">
                 <div>
-                  <div className="text-sm sm:text-base font-bold text-white flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4 text-brand-400" /> S2S Postback
+                  <div className="text-xs sm:text-base font-bold text-white flex items-center gap-1 sm:gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-400 shrink-0" />
+                    <span className="truncate">S2S Postback</span>
                   </div>
-                  <div className="text-xs text-slate-400 mt-0.5">Instant Tracking</div>
+                  <div className="text-[11px] sm:text-xs text-slate-400 mt-0.5">Instant Tracking</div>
                 </div>
                 <div>
-                  <div className="text-sm sm:text-base font-bold text-brand-400 flex items-center gap-1.5">
-                    <Zap className="w-4 h-4 text-brand-400" /> Direct Payouts
+                  <div className="text-xs sm:text-base font-bold text-brand-400 flex items-center gap-1 sm:gap-1.5">
+                    <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-400 shrink-0" />
+                    <span className="truncate">Direct Payouts</span>
                   </div>
-                  <div className="text-xs text-slate-400 mt-0.5">Fast Redemptions</div>
+                  <div className="text-[11px] sm:text-xs text-slate-400 mt-0.5">Fast Redemptions</div>
                 </div>
                 <div>
-                  <div className="text-sm sm:text-base font-bold text-cyan-400 flex items-center gap-1.5">
-                    <Lock className="w-4 h-4 text-cyan-400" /> 0% Fees
+                  <div className="text-xs sm:text-base font-bold text-cyan-400 flex items-center gap-1 sm:gap-1.5">
+                    <Lock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-400 shrink-0" />
+                    <span className="truncate">0% Fees</span>
                   </div>
-                  <div className="text-xs text-slate-400 mt-0.5">100% Kept Rewards</div>
+                  <div className="text-[11px] sm:text-xs text-slate-400 mt-0.5">100% Kept</div>
                 </div>
               </div>
             </div>

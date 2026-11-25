@@ -415,161 +415,159 @@ export default function AdminDashboardPage() {
       )}
 
       {/* KPI Summary Cards - Interactive & Clickable */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-5">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">
         {/* Total Users */}
         <Link
           to="/admin/users"
-          className="rounded-3xl glass-card p-6 border border-white/10 hover:border-brand-500/50 hover:shadow-glow-emerald cursor-pointer transition-all flex flex-col justify-between group"
+          className="rounded-2xl sm:rounded-3xl glass-card p-3.5 sm:p-6 border border-white/10 hover:border-brand-500/50 hover:shadow-glow-emerald cursor-pointer transition-all flex flex-col justify-between group"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              {period === 'all_time' ? 'Total Registered Users' : 'Users Registered'}
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider line-clamp-1">
+              {period === 'all_time' ? 'Total Users' : 'Users'}
             </span>
-            <div className="w-10 h-10 rounded-2xl bg-brand-500/10 text-brand-400 flex items-center justify-center group-hover:scale-105 transition-transform">
-              <Users className="w-5 h-5" />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-brand-500/10 text-brand-400 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+              <Users className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className="my-3">
-            <div className="text-3xl font-extrabold text-white group-hover:text-brand-300 transition-colors">
+          <div className="my-2 sm:my-3">
+            <div className="text-xl sm:text-3xl font-extrabold text-white group-hover:text-brand-300 transition-colors">
               {loading ? '...' : stats.totalUsers.toLocaleString()}
             </div>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className="text-[11px] sm:text-xs text-slate-400 mt-1 line-clamp-1">
               {period === 'all_time'
-                ? 'Full database registered member accounts'
-                : `New user accounts registered in ${monthDisplayLabel}`}
+                ? 'Registered accounts'
+                : `New in ${monthDisplayLabel}`}
             </p>
           </div>
-          <div className="text-[11px] font-semibold text-brand-400 flex items-center gap-1 pt-2 border-t border-white/5">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Open Users Table ({stats.totalUsers.toLocaleString()}) →
+          <div className="text-[10px] sm:text-[11px] font-semibold text-brand-400 flex items-center gap-1 pt-2 border-t border-white/5 truncate">
+            <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" /> Users ({stats.totalUsers.toLocaleString()}) →
           </div>
         </Link>
 
         {/* Total Completed Offers */}
         <Link
           to="/admin/completed-offers"
-          className="rounded-3xl glass-card p-6 border border-white/10 hover:border-cyan-500/50 hover:shadow-glow-cyan cursor-pointer transition-all flex flex-col justify-between group"
+          className="rounded-2xl sm:rounded-3xl glass-card p-3.5 sm:p-6 border border-white/10 hover:border-cyan-500/50 hover:shadow-glow-cyan cursor-pointer transition-all flex flex-col justify-between group"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              {period === 'all_time' ? 'Total Completed Offers' : 'Completed Offers'}
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider line-clamp-1">
+              {period === 'all_time' ? 'Completed' : 'Offers'}
             </span>
-            <div className="w-10 h-10 rounded-2xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center group-hover:scale-105 transition-transform">
-              <FileSpreadsheet className="w-5 h-5" />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+              <FileSpreadsheet className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className="my-3">
-            <div className="text-3xl font-extrabold text-white group-hover:text-cyan-300 transition-colors">
+          <div className="my-2 sm:my-3">
+            <div className="text-xl sm:text-3xl font-extrabold text-white group-hover:text-cyan-300 transition-colors">
               {loading ? '...' : stats.totalCompletedOffers.toLocaleString()}
             </div>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className="text-[11px] sm:text-xs text-slate-400 mt-1 line-clamp-1">
               {stats.todayCompletedOffers > 0 ? (
                 <span className="text-emerald-400 font-semibold">+{stats.todayCompletedOffers} today • </span>
               ) : null}
-              {period === 'all_time' ? 'All-time verified postback logs' : `${monthDisplayLabel} verified postback logs`}
+              {period === 'all_time' ? 'Verified logs' : `${monthDisplayLabel} logs`}
             </p>
           </div>
-          <div className="text-[11px] font-semibold text-cyan-400 flex items-center gap-1 pt-2 border-t border-white/5">
-            <Zap className="w-3.5 h-3.5" /> View Completed Offers Grid →
+          <div className="text-[10px] sm:text-[11px] font-semibold text-cyan-400 flex items-center gap-1 pt-2 border-t border-white/5 truncate">
+            <Zap className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" /> Offers Grid →
           </div>
         </Link>
 
         {/* Total Gross Revenue USD */}
-        <div className="rounded-3xl glass-card p-6 border border-white/10 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              {period === 'all_time' ? 'Total Gross Revenue' : 'Gross Revenue'}
+        <div className="rounded-2xl sm:rounded-3xl glass-card p-3.5 sm:p-6 border border-white/10 flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider line-clamp-1">
+              {period === 'all_time' ? 'Gross Revenue' : 'Revenue'}
             </span>
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
-              <DollarSign className="w-5 h-5" />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0">
+              <DollarSign className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className="my-3">
-            <div className="text-3xl font-extrabold text-emerald-400">
-              {loading ? '...' : `$${stats.totalRevenueUsd.toFixed(2)} USD`}
+          <div className="my-2 sm:my-3">
+            <div className="text-xl sm:text-3xl font-extrabold text-emerald-400 truncate">
+              {loading ? '...' : `$${stats.totalRevenueUsd.toFixed(2)}`}
             </div>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className="text-[11px] sm:text-xs text-slate-400 mt-1 line-clamp-1">
               {stats.todayRevenueUsd > 0 ? (
-                <span className="text-emerald-400 font-semibold">+${stats.todayRevenueUsd.toFixed(2)} earned today</span>
+                <span className="text-emerald-400 font-semibold">+${stats.todayRevenueUsd.toFixed(2)} today</span>
               ) : (
-                period === 'all_time'
-                  ? 'Cumulative provider payout received'
-                  : `${monthDisplayLabel} provider payout received`
+                'Provider payout'
               )}
             </p>
           </div>
-          <div className="text-[11px] font-semibold text-slate-400 flex items-center gap-1 pt-2 border-t border-white/5">
-            <span className="text-emerald-400">●</span> Authoritative offerwall revenue sum
+          <div className="text-[10px] sm:text-[11px] font-semibold text-slate-400 flex items-center gap-1 pt-2 border-t border-white/5 truncate">
+            <span className="text-emerald-400">●</span> Offerwall revenue
           </div>
         </div>
 
         {/* Total Chargebacks USD */}
         <Link
           to="/admin/chargebacks"
-          className="rounded-3xl glass-card p-6 border border-white/10 hover:border-rose-500/50 cursor-pointer transition-all flex flex-col justify-between group"
+          className="rounded-2xl sm:rounded-3xl glass-card p-3.5 sm:p-6 border border-white/10 hover:border-rose-500/50 cursor-pointer transition-all flex flex-col justify-between group"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              {period === 'all_time' ? 'Total Chargebacks' : 'Chargebacks'}
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider line-clamp-1">
+              Chargebacks
             </span>
-            <div className="w-10 h-10 rounded-2xl bg-rose-500/10 text-rose-400 flex items-center justify-center group-hover:scale-105 transition-transform">
-              <ShieldAlert className="w-5 h-5" />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-rose-500/10 text-rose-400 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+              <ShieldAlert className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className="my-3">
-            <div className="text-3xl font-extrabold text-rose-400">
-              {loading ? '...' : `$${stats.totalChargebackUsd.toFixed(2)} USD`}
+          <div className="my-2 sm:my-3">
+            <div className="text-xl sm:text-3xl font-extrabold text-rose-400 truncate">
+              {loading ? '...' : `$${stats.totalChargebackUsd.toFixed(2)}`}
             </div>
-            <p className="text-xs text-slate-400 mt-1">
-              {stats.totalChargebacks} reversed fraud incident{stats.totalChargebacks === 1 ? '' : 's'}
+            <p className="text-[11px] sm:text-xs text-slate-400 mt-1 line-clamp-1">
+              {stats.totalChargebacks} reversal{stats.totalChargebacks === 1 ? '' : 's'}
             </p>
           </div>
-          <div className="text-[11px] font-semibold text-rose-400 flex items-center gap-1 pt-2 border-t border-white/5">
-            <ShieldAlert className="w-3.5 h-3.5" /> View Reversal Log →
+          <div className="text-[10px] sm:text-[11px] font-semibold text-rose-400 flex items-center gap-1 pt-2 border-t border-white/5 truncate">
+            <ShieldAlert className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" /> Reversal Log →
           </div>
         </Link>
 
         {/* Net Revenue USD */}
-        <div className="rounded-3xl glass-card p-6 border border-white/10 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Net Platform Revenue</span>
-            <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
-              <TrendingUp className="w-5 h-5" />
+        <div className="rounded-2xl sm:rounded-3xl glass-card p-3.5 sm:p-6 border border-white/10 flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider line-clamp-1">Net Revenue</span>
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center shrink-0">
+              <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className="my-3">
-            <div className="text-3xl font-extrabold text-indigo-300">
-              {loading ? '...' : `$${stats.netRevenueUsd.toFixed(2)} USD`}
+          <div className="my-2 sm:my-3">
+            <div className="text-xl sm:text-3xl font-extrabold text-indigo-300 truncate">
+              {loading ? '...' : `$${stats.netRevenueUsd.toFixed(2)}`}
             </div>
-            <p className="text-xs text-slate-400 mt-1">Gross Revenue minus Chargebacks</p>
+            <p className="text-[11px] sm:text-xs text-slate-400 mt-1 line-clamp-1">Gross minus Chargebacks</p>
           </div>
-          <div className="text-[11px] font-semibold text-slate-400 flex items-center gap-1 pt-2 border-t border-white/5">
-            <span className="text-indigo-400">●</span> Retained platform net profit
+          <div className="text-[10px] sm:text-[11px] font-semibold text-slate-400 flex items-center gap-1 pt-2 border-t border-white/5 truncate">
+            <span className="text-indigo-400">●</span> Net profit
           </div>
         </div>
 
         {/* Pending Cashouts */}
         <Link
           to="/admin/withdrawals"
-          className="rounded-3xl glass-card p-6 border border-white/10 hover:border-amber-500/50 cursor-pointer transition-all flex flex-col justify-between group"
+          className="rounded-2xl sm:rounded-3xl glass-card p-3.5 sm:p-6 border border-white/10 hover:border-amber-500/50 cursor-pointer transition-all flex flex-col justify-between group"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              {period === 'all_time' ? 'Pending Cashouts' : 'Pending Cashouts'}
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider line-clamp-1">
+              Pending Cashouts
             </span>
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:scale-105 transition-transform">
-              <Clock className="w-5 h-5" />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+              <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
           </div>
-          <div className="my-3">
-            <div className="text-3xl font-extrabold text-amber-400">
+          <div className="my-2 sm:my-3">
+            <div className="text-xl sm:text-3xl font-extrabold text-amber-400 truncate">
               {loading ? '...' : `$${stats.pendingWithdrawalsAmount.toFixed(2)}`}
             </div>
-            <p className="text-xs text-slate-400 mt-1">
-              {stats.pendingWithdrawalsCount} payout request{stats.pendingWithdrawalsCount === 1 ? '' : 's'} awaiting approval
+            <p className="text-[11px] sm:text-xs text-slate-400 mt-1 line-clamp-1">
+              {stats.pendingWithdrawalsCount} awaiting approval
             </p>
           </div>
-          <div className="text-[11px] font-semibold text-amber-400 flex items-center gap-1 pt-2 border-t border-white/5">
-            <Wallet className="w-3.5 h-3.5" /> Manage Payouts →
+          <div className="text-[10px] sm:text-[11px] font-semibold text-amber-400 flex items-center gap-1 pt-2 border-t border-white/5 truncate">
+            <Wallet className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" /> Manage Payouts →
           </div>
         </Link>
       </div>

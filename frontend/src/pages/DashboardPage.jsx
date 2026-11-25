@@ -197,82 +197,82 @@ export default function DashboardPage() {
           </div>
 
           {/* Real Account KPI Cards */}
-          <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="lg:col-span-5 grid grid-cols-2 gap-3 sm:gap-4">
             
             {/* Total Lifetime Earnings */}
-            <div className="rounded-3xl glass-card p-6 border border-white/10 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Earned</span>
-                <div className="w-9 h-9 rounded-xl bg-brand-500/10 text-brand-400 flex items-center justify-center">
-                  <TrendingUp className="w-4 h-4" />
+            <div className="rounded-2xl sm:rounded-3xl glass-card p-3.5 sm:p-6 border border-white/10 flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Total Earned</span>
+                <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-xl bg-brand-500/10 text-brand-400 flex items-center justify-center shrink-0">
+                  <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </div>
               </div>
               <div className="my-2">
-                <div className="text-2xl sm:text-3xl font-extrabold text-white">
+                <div className="text-xl sm:text-3xl font-extrabold text-white">
                   ${totalEarningsUSD}
                 </div>
-                <p className="text-xs text-slate-400 mt-1">Lifetime completed task revenue</p>
+                <p className="text-[11px] sm:text-xs text-slate-400 mt-1 line-clamp-1">Lifetime task revenue</p>
               </div>
-              <div className="text-[11px] font-semibold text-brand-400 flex items-center gap-1 pt-2 border-t border-white/5">
+              <div className="text-[10px] sm:text-[11px] font-semibold text-brand-400 flex items-center gap-1 pt-2 border-t border-white/5">
                 <Zap className="w-3 h-3" /> S2S Credited
               </div>
             </div>
 
             {/* Completed Offers Count */}
-            <div className="rounded-3xl glass-card p-6 border border-white/10 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Completed Tasks</span>
-                <div className="w-9 h-9 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center">
-                  <Award className="w-4 h-4" />
+            <div className="rounded-2xl sm:rounded-3xl glass-card p-3.5 sm:p-6 border border-white/10 flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Completed</span>
+                <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center shrink-0">
+                  <Award className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </div>
               </div>
               <div className="my-2">
-                <div className="text-2xl sm:text-3xl font-extrabold text-white">
+                <div className="text-xl sm:text-3xl font-extrabold text-white">
                   {completedTasksCount.toLocaleString()}
                 </div>
-                <p className="text-xs text-slate-400 mt-1">Verified partner completions</p>
+                <p className="text-[11px] sm:text-xs text-slate-400 mt-1 line-clamp-1">Verified completions</p>
               </div>
-              <div className="text-[11px] font-semibold text-cyan-400 flex items-center gap-1 pt-2 border-t border-white/5">
+              <div className="text-[10px] sm:text-[11px] font-semibold text-cyan-400 flex items-center gap-1 pt-2 border-t border-white/5">
                 <CheckCircle2 className="w-3 h-3" /> Recorded in DB
               </div>
             </div>
 
             {/* Total Cashout Orders */}
-            <div className="rounded-3xl glass-card p-6 border border-white/10 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Cashout Orders</span>
-                <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
-                  <Wallet className="w-4 h-4" />
+            <div className="rounded-2xl sm:rounded-3xl glass-card p-3.5 sm:p-6 border border-white/10 flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Cashouts</span>
+                <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center shrink-0">
+                  <Wallet className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </div>
               </div>
               <div className="my-2">
-                <div className="text-2xl sm:text-3xl font-extrabold text-amber-400">
+                <div className="text-xl sm:text-3xl font-extrabold text-amber-400">
                   {withdrawalsCount.toLocaleString()}
                 </div>
-                <p className="text-xs text-slate-400 mt-1">Total redemption requests</p>
+                <p className="text-[11px] sm:text-xs text-slate-400 mt-1 line-clamp-1">Redemption requests</p>
               </div>
-              <Link to="/cashout" className="text-[11px] font-semibold text-amber-400 hover:underline pt-2 border-t border-white/5 flex items-center gap-1">
-                <span>View Payout History</span>
+              <Link to="/cashout" className="text-[10px] sm:text-[11px] font-semibold text-amber-400 hover:underline pt-2 border-t border-white/5 flex items-center gap-1">
+                <span>Payout History</span>
                 <ArrowUpRight className="w-3 h-3" />
               </Link>
             </div>
 
             {/* Account Tier / Level */}
-            <div className="rounded-3xl glass-card p-6 border border-white/10 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Account Tier</span>
-                <div className="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
-                  <Layers className="w-4 h-4" />
+            <div className="rounded-2xl sm:rounded-3xl glass-card p-3.5 sm:p-6 border border-white/10 flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Tier</span>
+                <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center shrink-0">
+                  <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </div>
               </div>
               <div className="my-2">
-                <div className="text-2xl sm:text-3xl font-extrabold text-white">
+                <div className="text-xl sm:text-3xl font-extrabold text-white">
                   Level {userLevel}
                 </div>
-                <p className="text-xs text-slate-400 mt-1">Standard member access</p>
+                <p className="text-[11px] sm:text-xs text-slate-400 mt-1 line-clamp-1">Member access</p>
               </div>
-              <div className="text-[11px] font-semibold text-purple-400 flex items-center gap-1 pt-2 border-t border-white/5">
-                <ShieldCheck className="w-3 h-3" /> Full Offerwall Access
+              <div className="text-[10px] sm:text-[11px] font-semibold text-purple-400 flex items-center gap-1 pt-2 border-t border-white/5">
+                <ShieldCheck className="w-3 h-3" /> Full Access
               </div>
             </div>
 
@@ -308,39 +308,39 @@ export default function DashboardPage() {
               <p className="text-sm text-slate-400">No active offerwalls currently configured in system.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
               {offerwalls.map((wall) => (
                 <div
                   key={wall.id}
                   onClick={() => handleOpenOfferwall(wall)}
-                  className="p-5 rounded-2xl glass-card hover:border-brand-500/40 cursor-pointer transition-all flex items-center justify-between group"
+                  className="p-3.5 sm:p-5 rounded-2xl glass-card hover:border-brand-500/40 cursor-pointer transition-all flex items-center justify-between gap-2 group"
                 >
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 p-2 flex items-center justify-center text-xl font-bold text-brand-400 group-hover:scale-105 transition-transform">
+                  <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/5 border border-white/10 p-1.5 sm:p-2 flex items-center justify-center text-base sm:text-xl font-bold text-brand-400 group-hover:scale-105 transition-transform shrink-0">
                       {wall.image_url ? (
                         <img src={wall.image_url} alt={wall.name} className="w-full h-full object-contain" />
                       ) : (
                         wall.name?.charAt(0) || 'W'
                       )}
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-bold text-sm text-white group-hover:text-brand-300 transition-colors">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h3 className="font-bold text-xs sm:text-sm text-white group-hover:text-brand-300 transition-colors truncate">
                           {wall.name}
                         </h3>
                         {wall.bonus_multiplier && Number(wall.bonus_multiplier) > 0 && (
-                          <span className="text-[10px] font-extrabold bg-brand-500/20 text-brand-400 px-1.5 py-0.5 rounded">
+                          <span className="text-[9px] sm:text-[10px] font-extrabold bg-brand-500/20 text-brand-400 px-1.5 py-0.5 rounded shrink-0">
                             +{wall.bonus_multiplier}%
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-400">
+                      <p className="text-[11px] sm:text-xs text-slate-400 truncate">
                         {wall.description || 'Games, surveys & tasks'}
                       </p>
                     </div>
                   </div>
 
-                  <div className="p-2 rounded-xl bg-white/5 group-hover:bg-brand-500 group-hover:text-slate-950 text-slate-400 transition-colors">
+                  <div className="hidden sm:flex p-2 rounded-xl bg-white/5 group-hover:bg-brand-500 group-hover:text-slate-950 text-slate-400 transition-colors shrink-0">
                     <ArrowRight className="w-4 h-4" />
                   </div>
                 </div>
@@ -411,8 +411,8 @@ export default function DashboardPage() {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+            <div className="w-full overflow-x-auto">
+              <table className="w-full min-w-[540px] text-left text-xs border-collapse whitespace-nowrap">
                 <thead>
                   <tr className="text-slate-400 border-b border-white/5">
                     <th className="pb-3 font-semibold">Event / Name</th>

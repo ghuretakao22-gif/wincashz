@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
   User, 
@@ -10,15 +11,22 @@ import {
   Clock, 
   Lock, 
   AlertCircle,
-  Award
+  Award,
+  LogOut
 } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function ProfilePage() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   const [completedTasks, setCompletedTasks] = useState([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
 
   useEffect(() => {
     if (activeTab === 'completed') {
@@ -75,20 +83,30 @@ export default function ProfilePage() {
             </p>
           </div>
 
-          {/* Quick Balance Stat */}
-          <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-center sm:text-right">
-            <span className="text-xs text-slate-400 uppercase font-semibold">Balance</span>
-            <div className="text-2xl font-extrabold text-white mt-0.5">
-              ${dollarValue}
+          {/* Quick Balance Stat & Log Out */}
+          <div className="w-full sm:w-auto flex flex-col sm:items-end gap-3">
+            <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-center sm:text-right">
+              <span className="text-xs text-slate-400 uppercase font-semibold">Balance</span>
+              <div className="text-2xl font-extrabold text-white mt-0.5">
+                ${dollarValue}
+              </div>
+              <span className="text-xs text-brand-400 font-medium">
+                {points.toLocaleString()} Coins
+              </span>
             </div>
-            <span className="text-xs text-brand-400 font-medium">
-              {points.toLocaleString()} Coins
-            </span>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-full sm:w-auto min-h-[44px] flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-xs font-bold transition-all"
+            >
+              <LogOut className="w-4 h-4 text-rose-400" />
+              <span>Log Out</span>
+            </button>
           </div>
         </div>
 
         {/* Tab Selection */}
-        <div className="flex items-center gap-2 border-b border-white/10 pb-2">
+        <div className="flex items-center justify-start gap-2 border-b border-white/10 pb-2 overflow-x-auto no-scrollbar">
           {[
             { id: 'overview', label: 'Overview' },
             { id: 'completed', label: 'Completed Offers' },
@@ -97,7 +115,7 @@ export default function ProfilePage() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold capitalize transition-all ${
+              className={`shrink-0 min-h-[44px] px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold capitalize transition-all whitespace-nowrap ${
                 activeTab === tab.id
                   ? 'bg-white/10 text-white shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -172,8 +190,8 @@ export default function ProfilePage() {
                 No completed offers found.
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
+              <div className="w-full overflow-x-auto">
+                <table className="w-full min-w-[560px] text-left text-xs border-collapse whitespace-nowrap">
                   <thead>
                     <tr className="text-slate-400 border-b border-white/10 font-semibold">
                       <th className="pb-3 font-semibold">Offer Name</th>
