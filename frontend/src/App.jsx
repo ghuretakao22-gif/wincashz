@@ -4,6 +4,8 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import LiveDropTicker from './components/LiveDropTicker';
+import MobileBottomNav from './components/MobileBottomNav';
+import MobileMenuDrawer from './components/MobileMenuDrawer';
 import PinGate from './components/PinGate';
 import { api } from './services/api';
 
@@ -69,12 +71,22 @@ function ProtectedRoute({ children }) {
 }
 
 function MainLayout({ children }) {
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+
   return (
-    <div className="min-h-screen flex flex-col bg-[#070a0e] pb-16 md:pb-0 overflow-x-hidden">
+    <div className="min-h-screen flex flex-col bg-[#070a0e] pb-24 md:pb-8 overflow-x-hidden">
       <Navbar />
       <LiveDropTicker />
       <main className="flex-1 max-w-full">{children}</main>
       <Footer />
+      <MobileMenuDrawer
+        isOpen={mobileDrawerOpen}
+        onClose={() => setMobileDrawerOpen(false)}
+      />
+      <MobileBottomNav
+        menuOpen={mobileDrawerOpen}
+        onOpenMenu={() => setMobileDrawerOpen((prev) => !prev)}
+      />
     </div>
   );
 }

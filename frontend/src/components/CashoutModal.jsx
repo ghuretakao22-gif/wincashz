@@ -55,7 +55,7 @@ export default function CashoutModal({ method, isOpen, onClose, onSuccess }) {
   const presetAmounts = [5, 10, 25, 50, 100];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-md animate-fade-in">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-background/80 backdrop-blur-md animate-fade-in">
       <div className="relative w-full max-w-lg rounded-3xl glass-card border border-white/10 shadow-2xl p-6 sm:p-8">
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-white/10">

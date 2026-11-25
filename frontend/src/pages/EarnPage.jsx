@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { 
   Coins, 
   Search, 
@@ -20,6 +21,7 @@ import { api } from '../services/api';
 
 export default function EarnPage() {
   const { user } = useAuth();
+  const location = useLocation();
   const [offerwalls, setOfferwalls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState('all');
@@ -54,6 +56,18 @@ export default function EarnPage() {
     window.addEventListener('wincashz-offerwalls-sync', handleSync);
     return () => window.removeEventListener('wincashz-offerwalls-sync', handleSync);
   }, [fetchWalls]);
+
+  useEffect(() => {
+    if (location.hash === '#offers-section') {
+      const timer = setTimeout(() => {
+        const el = document.getElementById('offers-section');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [location.hash, loading]);
 
   // Filter active walls only, sorted strictly by numeric position / sort_order
   const activeWalls = offerwalls
@@ -132,7 +146,7 @@ export default function EarnPage() {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
               {featuredWalls.map((wall, idx) => (
                 <ProviderCard
                   key={`featured-${wall.id || idx}`}
@@ -146,8 +160,8 @@ export default function EarnPage() {
         )}
 
         {/* Filter Controls Bar */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4 p-4 rounded-3xl glass-card border border-white/10">
-          <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 no-scrollbar">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 sm:gap-4 py-3 md:p-4 rounded-3xl glass-card border border-white/10">
+          <div className="flex items-center justify-start gap-2 overflow-x-auto w-full md:w-auto px-4 md:px-0 py-1 no-scrollbar">
             {categories.map((cat) => {
               const active = category === cat.id;
               const Icon = cat.icon;
@@ -155,33 +169,35 @@ export default function EarnPage() {
                 <button
                   key={cat.id}
                   onClick={() => setCategory(cat.id)}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap transition-all ${
+                  className={`shrink-0 min-h-[44px] flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-bold whitespace-nowrap transition-all ${
                     active
                       ? 'bg-gradient-to-r from-brand-400 to-cyan-400 text-slate-950 shadow-glow-emerald scale-[1.02]'
                       : 'bg-white/5 text-slate-400 hover:text-white hover:bg-white/10'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="w-4 h-4 shrink-0" />
                   <span>{cat.label}</span>
                 </button>
               );
             })}
           </div>
 
-          <div className="relative w-full md:w-72">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search providers or games..."
-              className="w-full pl-10 pr-4 py-2 rounded-2xl glass-input text-xs"
-            />
+          <div className="w-full md:w-72 px-4 md:px-0">
+            <div className="relative w-full">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search providers or games..."
+                className="w-full min-h-[44px] pl-10 pr-4 py-2 rounded-2xl glass-input text-xs"
+              />
+            </div>
           </div>
         </div>
 
         {/* All Active Offerwalls Grid */}
-        <div className="space-y-4">
+        <div id="offers-section" className="space-y-4 scroll-mt-20">
           <div className="flex items-center justify-between">
             <h2 className="text-lg sm:text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
               <Layers className="w-5 h-5 text-brand-400" />
@@ -202,7 +218,7 @@ export default function EarnPage() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
               {filteredWalls.map((wall, idx) => (
                 <ProviderCard
                   key={wall.id || idx}

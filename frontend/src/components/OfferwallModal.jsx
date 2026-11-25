@@ -40,7 +40,7 @@ export default function OfferwallModal({ offerwall, isOpen, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in">
       <div className="relative w-full max-w-5xl h-[95vh] sm:h-[88vh] flex flex-col rounded-t-3xl sm:rounded-3xl glass-panel border border-white/10 shadow-2xl overflow-hidden pb-[env(safe-area-inset-bottom,0px)]">
         {/* Modal Header */}
         <div className="flex items-center justify-between px-3.5 sm:px-6 py-3 sm:py-3.5 border-b border-white/10 bg-[#0c1015]/95 shrink-0">
