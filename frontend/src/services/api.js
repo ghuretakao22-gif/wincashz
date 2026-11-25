@@ -307,6 +307,7 @@ export const api = {
   createAdminPayoutRule: (data) => apiRequest('/admin/my-id-payout-rules', { method: 'POST', body: JSON.stringify(data) }),
   updateAdminPayoutRule: (id, data) => apiRequest(`/admin/my-id-payout-rules/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteAdminPayoutRule: (id) => apiRequest(`/admin/my-id-payout-rules/${id}`, { method: 'DELETE' }),
+  syncAdminPayoutRules: () => apiRequest('/admin/payout-rules/sync-all', { method: 'POST' }),
 
   // Admin My ID Settings (Activation, Start Date, USD->BDT Rate)
   getAdminMyIdSettings: () => apiRequest('/admin/my-id-settings'),

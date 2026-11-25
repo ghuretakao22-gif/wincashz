@@ -878,8 +878,8 @@ class MyIdSystemRefinementsTest extends TestCase
         $this->assertEquals(1.00, (float) $unmappedGeneric->payout_usd);
         $this->assertEquals(122.00, (float) $unmappedGeneric->payout_bdt);
 
-        // Specific unmapped row MUST NOT be stolen by the wildcard rule!
+        // Specific row must resolve to its specific rule ($3.00) and NOT be overwritten by the $1.00 wildcard rule!
         $unmappedSpecific->refresh();
-        $this->assertEquals(0.0, (float) $unmappedSpecific->payout_usd);
+        $this->assertEquals(3.00, (float) $unmappedSpecific->payout_usd);
     }
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\MyIdPayoutRule;
 use App\Models\Setting;
 use App\Services\MyIdEarningService;
+use App\Services\PayoutRuleSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -260,16 +261,17 @@ class AdminMyIdPayoutRuleController extends Controller
 
         $rule = MyIdPayoutRule::create($ruleData);
 
-        // Feature 3: Auto-backfill unmapped earnings for this rule
-        $this->backfillUnmappedEarnings($rule);
+        // Instantly recalculate and synchronize all completed offers & totals
+        $syncSummary = PayoutRuleSyncService::syncAllCompletedOffers();
 
         return response()->json([
             'success' => true,
-            'message' => 'Payout rule created successfully.',
+            'message' => 'Payout rule created and all matching offers synchronized.',
             'data' => array_merge($rule->toArray(), [
                 'today_count' => 0,
                 'total_count' => 0,
             ]),
+            'sync_summary' => $syncSummary,
         ], 201);
     }
 
@@ -357,13 +359,14 @@ class AdminMyIdPayoutRuleController extends Controller
 
         $rule->save();
 
-        // Feature 3: Auto-backfill unmapped earnings for this rule
-        $this->backfillUnmappedEarnings($rule);
+        // Instantly recalculate and synchronize all completed offers & totals
+        $syncSummary = PayoutRuleSyncService::syncAllCompletedOffers();
 
         return response()->json([
             'success' => true,
-            'message' => 'Payout rule updated successfully.',
+            'message' => 'Payout rule updated and all matching offers synchronized.',
             'data' => $rule,
+            'sync_summary' => $syncSummary,
         ]);
     }
 
@@ -471,9 +474,27 @@ class AdminMyIdPayoutRuleController extends Controller
 
         $rule->delete();
 
+        // Instantly recalculate and synchronize all completed offers & totals
+        $syncSummary = PayoutRuleSyncService::syncAllCompletedOffers();
+
         return response()->json([
             'success' => true,
-            'message' => 'Payout rule deleted successfully.',
+            'message' => 'Payout rule deleted and all matching offers synchronized.',
+            'sync_summary' => $syncSummary,
+        ]);
+    }
+
+    /**
+     * Manually recalculate and synchronize all completed offers against current active payout rules.
+     */
+    public function syncAll(): JsonResponse
+    {
+        $syncSummary = PayoutRuleSyncService::syncAllCompletedOffers();
+
+        return response()->json([
+            'success' => true,
+            'message' => "Synchronized {$syncSummary['updated_tasks_count']} completed offer(s) across {$syncSummary['affected_users_count']} user(s).",
+            'sync_summary' => $syncSummary,
         ]);
     }
 }

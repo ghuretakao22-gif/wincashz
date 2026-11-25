@@ -95,6 +95,8 @@ Route::prefix('admin')
     Route::patch('/my-ids/{myId}', [AdminMyIdController::class, 'update']);
     Route::get('/my-id-overview', [AdminMyIdController::class, 'overview']);
     Route::get('/my-id-payout-rules', [AdminMyIdPayoutRuleController::class, 'index']);
+    Route::post('/my-id-payout-rules/sync-all', [AdminMyIdPayoutRuleController::class, 'syncAll']);
+    Route::post('/payout-rules/sync-all', [AdminMyIdPayoutRuleController::class, 'syncAll']);
     Route::post('/my-id-payout-rules', [AdminMyIdPayoutRuleController::class, 'store']);
     Route::match(['put', 'patch'], '/my-id-payout-rules/{id}', [AdminMyIdPayoutRuleController::class, 'update']);
     Route::delete('/my-id-payout-rules/{id}', [AdminMyIdPayoutRuleController::class, 'destroy']);

@@ -48,6 +48,7 @@ export default function AdminPayoutRulesPage() {
   const [providerFilter, setProviderFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [actionLoading, setActionLoading] = useState(null);
+  const [syncingAll, setSyncingAll] = useState(false);
   const [msg, setMsg] = useState(null);
 
   // Pagination State
@@ -191,6 +192,29 @@ export default function AdminPayoutRulesPage() {
     fetchRules('', '', 'all', 1, perPage);
   };
 
+  // Manual sync all completed offers
+  const handleSyncAllOffers = async () => {
+    setSyncingAll(true);
+    setMsg(null);
+    try {
+      const res = await api.syncAdminPayoutRules();
+      const updatedCount = res?.sync_summary?.updated_tasks_count ?? 0;
+      const affectedUsers = res?.sync_summary?.affected_users_count ?? 0;
+      setMsg({
+        type: 'success',
+        text: `Live sync complete — ${updatedCount} completed offer(s) updated across ${affectedUsers} user(s).`,
+      });
+      await fetchRules(search, providerFilter, statusFilter, page, perPage, false);
+    } catch (err) {
+      setMsg({
+        type: 'error',
+        text: extractErrorMessage(err, 'Failed to sync completed offers.'),
+      });
+    } finally {
+      setSyncingAll(false);
+    }
+  };
+
   // Toggle active/disabled
   const handleToggleStatus = async (rule) => {
     const nextStatus = !rule.is_active;
@@ -198,9 +222,10 @@ export default function AdminPayoutRulesPage() {
     try {
       const res = await api.updateAdminPayoutRule(rule.id, { is_active: nextStatus });
       if (res.success || res.data) {
+        const updatedCount = res?.sync_summary?.updated_tasks_count ?? 0;
         setMsg({ 
           type: 'success', 
-          text: `Rule for ${rule.provider} (${Number(rule.coin_amount)} coins) successfully ${nextStatus ? 'enabled' : 'disabled'}.` 
+          text: `Rule for ${rule.provider} (${Number(rule.coin_amount)} coins) ${nextStatus ? 'enabled' : 'disabled'} — ${updatedCount} completed offer(s) updated instantly.` 
         });
         await fetchRules(search, providerFilter, statusFilter, page, perPage, false);
       }
@@ -216,7 +241,7 @@ export default function AdminPayoutRulesPage() {
 
   // Delete rule
   const handleDeleteRule = async (rule) => {
-    if (!window.confirm(`Are you sure you want to delete this rule for ${rule.provider} (${rule.coin_amount} coins)? This cannot be undone.`)) {
+    if (!window.confirm(`Are you sure you want to delete this rule for ${rule.provider} (${rule.coin_amount} coins)? All matching completed offers will be recalculated immediately.`)) {
       return;
     }
 
@@ -224,7 +249,11 @@ export default function AdminPayoutRulesPage() {
     try {
       const res = await api.deleteAdminPayoutRule(rule.id);
       if (res.success) {
-        setMsg({ type: 'success', text: `Payout rule #${rule.id} for ${rule.provider} deleted successfully.` });
+        const updatedCount = res?.sync_summary?.updated_tasks_count ?? 0;
+        setMsg({
+          type: 'success',
+          text: `Payout rule #${rule.id} deleted — ${updatedCount} completed offer(s) updated instantly.`,
+        });
         await fetchRules(search, providerFilter, statusFilter, page, perPage, false);
       }
     } catch (err) {
@@ -245,12 +274,12 @@ export default function AdminPayoutRulesPage() {
       return;
     }
 
-    if (!coinAmount || isNaN(Number(coinAmount)) || Number(coinAmount) < 0) {
+    if (coinAmount === '' || coinAmount === null || coinAmount === undefined || isNaN(Number(coinAmount)) || Number(coinAmount) < 0) {
       setModalError('Please enter a valid coin amount (0 or greater).');
       return;
     }
 
-    if (!userPayoutUsd || isNaN(Number(userPayoutUsd)) || Number(userPayoutUsd) < 0) {
+    if (userPayoutUsd === '' || userPayoutUsd === null || userPayoutUsd === undefined || isNaN(Number(userPayoutUsd)) || Number(userPayoutUsd) < 0) {
       setModalError('Please enter a valid user payout USD (0 or greater).');
       return;
     }
@@ -275,6 +304,7 @@ export default function AdminPayoutRulesPage() {
       });
 
       if (res.success || res.data) {
+        const updatedCount = res?.sync_summary?.updated_tasks_count ?? 0;
         setShowAddModal(false);
         setProvider('');
         setOfferId('');
@@ -289,7 +319,7 @@ export default function AdminPayoutRulesPage() {
         setPage(1);
         setMsg({ 
           type: 'success', 
-          text: `Payout rule for ${cleanProvider} (${Number(coinAmount)} coins -> $${Number(userPayoutUsd).toFixed(2)}) created successfully.` 
+          text: `Rule saved (${cleanProvider} $${Number(userPayoutUsd).toFixed(2)}) — ${updatedCount} completed offer(s) updated instantly.` 
         });
         await fetchRules('', '', 'all', 1, perPage, false);
       }
@@ -325,12 +355,12 @@ export default function AdminPayoutRulesPage() {
       return;
     }
 
-    if (!editCoinAmount || isNaN(Number(editCoinAmount)) || Number(editCoinAmount) < 0) {
+    if (editCoinAmount === '' || editCoinAmount === null || editCoinAmount === undefined || isNaN(Number(editCoinAmount)) || Number(editCoinAmount) < 0) {
       setEditError('Please enter a valid coin amount (0 or greater).');
       return;
     }
 
-    if (!editUserPayoutUsd || isNaN(Number(editUserPayoutUsd)) || Number(editUserPayoutUsd) < 0) {
+    if (editUserPayoutUsd === '' || editUserPayoutUsd === null || editUserPayoutUsd === undefined || isNaN(Number(editUserPayoutUsd)) || Number(editUserPayoutUsd) < 0) {
       setEditError('Please enter a valid user payout USD (0 or greater).');
       return;
     }
@@ -356,8 +386,12 @@ export default function AdminPayoutRulesPage() {
 
       if (res.success || res.data) {
         const updatedId = editingRule.id;
+        const updatedCount = res?.sync_summary?.updated_tasks_count ?? 0;
         setEditingRule(null);
-        setMsg({ type: 'success', text: `Payout rule #${updatedId} updated successfully.` });
+        setMsg({
+          type: 'success',
+          text: `Rule #${updatedId} saved — ${updatedCount} completed offer(s) updated instantly.`,
+        });
         await fetchRules(search, providerFilter, statusFilter, page, perPage, false);
       }
     } catch (err) {
@@ -443,9 +477,20 @@ export default function AdminPayoutRulesPage() {
           </button>
 
           <button
+            type="button"
+            onClick={handleSyncAllOffers}
+            disabled={syncingAll}
+            className="min-h-[40px] px-3.5 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/35 text-xs font-bold text-emerald-300 hover:text-emerald-200 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            title="Recalculate all completed offers against current payout rules"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${syncingAll ? 'animate-spin' : ''}`} />
+            <span>{syncingAll ? 'Syncing...' : 'Sync All Offers Now'}</span>
+          </button>
+
+          <button
             onClick={() => fetchRules(search, providerFilter, statusFilter, page, perPage)}
             disabled={loading}
-            className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-slate-300 hover:text-white transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            className="min-h-[40px] px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-slate-300 hover:text-white transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
             title="Refresh rules"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
